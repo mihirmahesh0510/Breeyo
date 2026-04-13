@@ -1,7 +1,7 @@
 # Requirements: Breeyo
 
 **Defined:** 2026-04-10
-**Core Value:** Solo vets can manage their entire practice — walk-ins, medical records, inventory, and billing — from their phone without spending time on admin work.
+**Core Value:** Solo vets can manage their entire practice -- walk-ins, medical records, inventory, and billing -- from their phone without spending time on admin work.
 
 ## v1 Requirements
 
@@ -15,6 +15,14 @@ Requirements for Beta launch (20 pilot clinics, solo vets).
 - [ ] **AUTH-04**: Admin can assign roles: Admin, Clinician, Front Desk, Inventory Manager
 - [ ] **AUTH-05**: Role-based permissions restrict access to authorized features only
 - [ ] **AUTH-06**: User can log out from any screen
+
+### UI/UX Design & Design System
+
+- [ ] **UX-01**: Design system established with color palette, typography scale, spacing tokens, and elevation system suitable for medical/clinical context
+- [ ] **UX-02**: Reusable component library created (buttons, inputs, cards, lists, modals, navigation) following mobile-first patterns
+- [ ] **UX-03**: Screen flow wireframes defined for all major modules (auth, queue, EMR, inventory, billing, scheduling, WhatsApp, dashboard)
+- [ ] **UX-04**: Mobile-first UX patterns established for one-handed use, large tap targets, and low-literacy-friendly iconography
+- [ ] **UX-05**: Walk-in queue UX designed with real-time status board layout, 2-tap check-in flow, and consultation transition patterns
 
 ### Patient Management
 
@@ -134,65 +142,70 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| AUTH-01 | — | Pending |
-| AUTH-02 | — | Pending |
-| AUTH-03 | — | Pending |
-| AUTH-04 | — | Pending |
-| AUTH-05 | — | Pending |
-| AUTH-06 | — | Pending |
-| PAT-01 | — | Pending |
-| PAT-02 | — | Pending |
-| PAT-03 | — | Pending |
-| PAT-04 | — | Pending |
-| PAT-05 | — | Pending |
-| QUE-01 | — | Pending |
-| QUE-02 | — | Pending |
-| QUE-03 | — | Pending |
-| QUE-04 | — | Pending |
-| QUE-05 | — | Pending |
-| QUE-06 | — | Pending |
-| EMR-01 | — | Pending |
-| EMR-02 | — | Pending |
-| EMR-03 | — | Pending |
-| EMR-04 | — | Pending |
-| EMR-05 | — | Pending |
-| EMR-06 | — | Pending |
-| EMR-07 | — | Pending |
-| INV-01 | — | Pending |
-| INV-02 | — | Pending |
-| INV-03 | — | Pending |
-| INV-04 | — | Pending |
-| INV-05 | — | Pending |
-| INV-06 | — | Pending |
-| INV-07 | — | Pending |
-| INV-08 | — | Pending |
-| BIL-01 | — | Pending |
-| BIL-02 | — | Pending |
-| BIL-03 | — | Pending |
-| BIL-04 | — | Pending |
-| BIL-05 | — | Pending |
-| BIL-06 | — | Pending |
-| WHA-01 | — | Pending |
-| WHA-02 | — | Pending |
-| WHA-03 | — | Pending |
-| WHA-04 | — | Pending |
-| WHA-05 | — | Pending |
-| SCH-01 | — | Pending |
-| SCH-02 | — | Pending |
-| SCH-03 | — | Pending |
-| SCH-04 | — | Pending |
-| SCH-05 | — | Pending |
-| PLT-01 | — | Pending |
-| PLT-02 | — | Pending |
-| PLT-03 | — | Pending |
-| PLT-04 | — | Pending |
-| PLT-05 | — | Pending |
+| AUTH-01 | Phase 1 | Pending |
+| AUTH-02 | Phase 1 | Pending |
+| AUTH-03 | Phase 1 | Pending |
+| AUTH-04 | Phase 1 | Pending |
+| AUTH-05 | Phase 1 | Pending |
+| AUTH-06 | Phase 1 | Pending |
+| UX-01 | Phase 2 | Pending |
+| UX-02 | Phase 2 | Pending |
+| UX-03 | Phase 2 | Pending |
+| UX-04 | Phase 2 | Pending |
+| UX-05 | Phase 2 | Pending |
+| PAT-01 | Phase 3 | Pending |
+| PAT-02 | Phase 3 | Pending |
+| PAT-03 | Phase 3 | Pending |
+| PAT-04 | Phase 3 | Pending |
+| PAT-05 | Phase 3 | Pending |
+| QUE-01 | Phase 3 | Pending |
+| QUE-02 | Phase 3 | Pending |
+| QUE-03 | Phase 3 | Pending |
+| QUE-04 | Phase 3 | Pending |
+| QUE-05 | Phase 3 | Pending |
+| QUE-06 | Phase 3 | Pending |
+| EMR-01 | Phase 4 | Pending |
+| EMR-02 | Phase 4 | Pending |
+| EMR-03 | Phase 4 | Pending |
+| EMR-04 | Phase 4 | Pending |
+| EMR-05 | Phase 4 | Pending |
+| EMR-06 | Phase 4 | Pending |
+| EMR-07 | Phase 4 | Pending |
+| INV-01 | Phase 5 | Pending |
+| INV-02 | Phase 5 | Pending |
+| INV-03 | Phase 5 | Pending |
+| INV-04 | Phase 5 | Pending |
+| INV-05 | Phase 5 | Pending |
+| INV-06 | Phase 5 | Pending |
+| INV-07 | Phase 5 | Pending |
+| INV-08 | Phase 5 | Pending |
+| BIL-01 | Phase 6 | Pending |
+| BIL-02 | Phase 6 | Pending |
+| BIL-03 | Phase 6 | Pending |
+| BIL-04 | Phase 6 | Pending |
+| BIL-05 | Phase 6 | Pending |
+| BIL-06 | Phase 6 | Pending |
+| WHA-01 | Phase 7 | Pending |
+| WHA-02 | Phase 7 | Pending |
+| WHA-03 | Phase 7 | Pending |
+| WHA-04 | Phase 7 | Pending |
+| WHA-05 | Phase 7 | Pending |
+| SCH-01 | Phase 8 | Pending |
+| SCH-02 | Phase 8 | Pending |
+| SCH-03 | Phase 8 | Pending |
+| SCH-04 | Phase 8 | Pending |
+| SCH-05 | Phase 8 | Pending |
+| PLT-01 | Phase 9 | Pending |
+| PLT-02 | Phase 9 | Pending |
+| PLT-03 | Phase 10 | Pending |
+| PLT-04 | Phase 1 | Pending |
+| PLT-05 | Phase 1 | Pending |
 
 **Coverage:**
-- v1 requirements: 48 total
-- Mapped to phases: 0
-- Unmapped: 48 (will be mapped during roadmap creation)
+- v1 requirements: 58 total
+- Mapped to phases: 58
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-04-10*
-*Last updated: 2026-04-10 after initial definition*
+*Last updated: 2026-04-13 after roadmap revision (Phase 2 UI/UX inserted)*
