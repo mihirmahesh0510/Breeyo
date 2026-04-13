@@ -35,12 +35,12 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. Admin can create users and assign roles (Admin, Clinician, Front Desk, Inventory Manager) with permissions enforced across all API endpoints
   4. Data created by Clinic A is completely invisible to Clinic B (multi-tenant isolation verified)
   5. All data is stored in the India region (AWS Mumbai)
-**Plans**: TBD
+**Plans:** 3 plans
 
 Plans:
-- [ ] 01-01: TBD
-- [ ] 01-02: TBD
-- [ ] 01-03: TBD
+- [ ] 01-01-PLAN.md -- Monorepo scaffold, Prisma schema with RLS, Fastify app skeleton, Docker, test infrastructure
+- [ ] 01-02-PLAN.md -- Auth system: signup, email verification, login, OTP, token refresh, logout
+- [ ] 01-03-PLAN.md -- RBAC, permissions, staff management, tenant isolation tests, CI/CD
 
 ### Phase 2: UI/UX Design & Design System
 **Goal**: Every screen in the app draws from a single design system with consistent tokens and reusable components, so that all subsequent feature phases build UI from pre-validated patterns instead of ad-hoc designs
@@ -197,7 +197,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9 -> 10
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation & Authentication | 0/3 | Not started | - |
+| 1. Foundation & Authentication | 0/3 | Planned | - |
 | 2. UI/UX Design & Design System | 0/3 | Not started | - |
 | 3. Patient Registration & Walk-in Queue | 0/3 | Not started | - |
 | 4. EMR & Clinical Records | 0/3 | Not started | - |
