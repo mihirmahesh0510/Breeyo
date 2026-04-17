@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: planning
-stopped_at: Phase 1 planned and verified
-last_updated: "2026-04-13T12:51:00.583Z"
-last_activity: 2026-04-13 -- Roadmap revised (Phase 2 UI/UX Design inserted, phases renumbered)
+stopped_at: Phase 3 context gathered
+last_updated: "2026-04-17T13:26:20.489Z"
+last_activity: "2026-04-17 -- Scope confirmed: GST invoicing v2, AI diagnosis v2, owner web portal added to v1 Phase 9 (OWN-01 to OWN-06)"
 progress:
   total_phases: 10
   completed_phases: 0
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-04-10)
 Phase: 1 of 10 (Foundation & Authentication)
 Plan: 0 of 3 in current phase
 Status: Ready to plan
-Last activity: 2026-04-13 -- Roadmap revised (Phase 2 UI/UX Design inserted, phases renumbered)
+Last activity: 2026-04-17 -- Scope confirmed: GST invoicing v2, AI diagnosis v2, owner web portal added to v1 Phase 9 (OWN-01 to OWN-06)
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -77,6 +77,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-13T12:51:00.561Z
-Stopped at: Phase 1 planned and verified
-Resume file: .planning/phases/01-foundation-authentication/01-01-PLAN.md
+Last session: 2026-04-17T13:26:20.381Z
+Stopped at: Phase 3 context gathered
+Resume file: .planning/phases/03-patient-registration-walk-in-queue/03-CONTEXT.md
