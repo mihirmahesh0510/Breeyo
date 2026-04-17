@@ -20,7 +20,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [ ] **Phase 6: Invoicing & Payments** - Invoice builder with stock validation, GST calculation, Razorpay integration, payment recording
 - [ ] **Phase 7: WhatsApp Communication** - Simulator with abstraction layer, appointment reminders, invoice delivery, booking flow, message log
 - [ ] **Phase 8: Scheduling & Calendar** - Future appointments merging into walk-in queue, calendar views, multi-device sync, push notifications
-- [ ] **Phase 9: Web Dashboard** - Browser-based admin interface for analytics, inventory management, user/role management
+- [ ] **Phase 9: Web Dashboard & Owner Portal** - Browser-based admin interface for analytics, inventory management, user/role management; pet owner portal via tokenised magic links for EMR access and invoice payment
 - [ ] **Phase 10: Offline Hardening & Integration Polish** - Full offline sync for core mobile flows, cross-module integration testing, performance optimization
 
 ## Phase Details
@@ -52,13 +52,13 @@ Plans:
   3. Screen flow wireframes exist for every major module (auth, queue, EMR, inventory, billing, scheduling, WhatsApp, dashboard) showing navigation paths and key states (empty, loading, populated, error)
   4. All interactive elements meet mobile-first targets: minimum 44x44pt tap targets, one-handed reachability for primary actions, and iconography that communicates meaning without text labels
   5. Walk-in queue UX is designed end-to-end: the 2-tap check-in flow, real-time status board layout, consultation transition animation, and queue position display are all wireframed and component-mapped
-**Plans**: TBD
+**Plans:** 3 plans
 **UI hint**: yes
 
 Plans:
-- [ ] 02-01: TBD
-- [ ] 02-02: TBD
-- [ ] 02-03: TBD
+- [ ] 02-01-PLAN.md -- packages/ui scaffold, design tokens (colors, typography, spacing, elevation, border radii, animation), Breeyo theme extending MD3, i18n, CSS token generator
+- [ ] 02-02-PLAN.md -- Atom components (Button, TextInput, StatusBadge, Typography, Avatar, Chip, IconButton, Divider, ProgressIndicator) and molecule components (SearchBar, ListItem, FormField, EmptyState, Toast, AccordionItem, SkeletonLoader) with accessibility tests
+- [ ] 02-03-PLAN.md -- Organism components (Card, Modal, BottomSheet, NavigationBar, BottomTabBar, QueueCard, WizardStepper), wireframe screens for all modules with 4 states, Storybook integration, human verification
 
 ### Phase 3: Patient Registration & Walk-in Queue
 **Goal**: A front desk user can register walk-in patients and manage the queue as the primary daily workflow, with real-time updates visible on all connected devices
@@ -161,14 +161,16 @@ Plans:
 - [ ] 08-01: TBD
 - [ ] 08-02: TBD
 
-### Phase 9: Web Dashboard
-**Goal**: An admin user can manage the clinic from a browser -- viewing the queue, managing inventory, handling user roles, and monitoring WhatsApp messages on a larger screen
+### Phase 9: Web Dashboard & Owner Portal
+**Goal**: An admin user can manage the clinic from a browser AND pet owners can access their pet's records and pay outstanding invoices via a tokenised web portal — no app install required
 **Depends on**: Phase 8
-**Requirements**: PLT-01, PLT-02
+**Requirements**: PLT-01, PLT-02, OWN-01, OWN-02, OWN-03, OWN-04, OWN-05, OWN-06
 **Success Criteria** (what must be TRUE):
   1. Mobile app runs on Android 8+ and iOS 14+ via React Native/Expo with all clinical workflows functional
   2. Web dashboard is accessible via modern browsers (Chrome, Safari, Firefox) and provides admin-oriented views for queue, inventory, scheduling, billing, and user management
   3. Mobile and web share the same data and reflect changes in real time
+  4. Pet owner can open a magic link from WhatsApp and view their pet's EMR history (diagnosis + prescriptions only), past invoices, and pay any outstanding balance via UPI — without logging in or installing an app
+  5. Owner portal enforces strict data isolation — owner sees only their own pets and invoices, token mismatch returns 403 with no data exposed
 **Plans**: TBD
 **UI hint**: yes
 
@@ -198,7 +200,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9 -> 10
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundation & Authentication | 0/3 | Planned | - |
-| 2. UI/UX Design & Design System | 0/3 | Not started | - |
+| 2. UI/UX Design & Design System | 0/3 | Planned | - |
 | 3. Patient Registration & Walk-in Queue | 0/3 | Not started | - |
 | 4. EMR & Clinical Records | 0/3 | Not started | - |
 | 5. Inventory Management | 0/3 | Not started | - |
