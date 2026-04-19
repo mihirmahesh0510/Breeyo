@@ -91,13 +91,17 @@ Plans:
   3. User can use voice-to-text to transcribe clinical notes into a text field on their phone
   4. User can view a complete medical history timeline for any pet, including attached lab/imaging files
   5. All EMR changes are audit-trailed with who changed what and when
-**Plans**: TBD
+**Plans:** 7 plans
 **UI hint**: yes
 
 Plans:
-- [ ] 04-01: TBD
-- [ ] 04-02: TBD
-- [ ] 04-03: TBD
+- [ ] 04-01-PLAN.md -- Shared types, validators, constants (vitals ranges, body systems, drug data, vaccination intervals), Prisma schema (Consultation, Vitals, Drug, Prescription, VaccinationRecord, DewormingRecord, ConsultationAttachment, ConsultationDraft, ConsultationLock, audit triggers)
+- [ ] 04-02-PLAN.md -- EMR API: consultation lifecycle (create/saveDraft/finalize/addendum), consultation locking (5-min TTL + heartbeat), dosage validation, drug search/seed, file attachment presigned URLs
+- [ ] 04-03-PLAN.md -- Vaccination API: vaccination/deworming CRUD with auto-calculated next due dates, preventive care status, certificate data generation
+- [ ] 04-04-PLAN.md -- Mobile consultation screen: accordion layout (7 sections), patient banner, vitals with species-aware ranges, SOAP sections with quick-pick chips, body system checklist, auto-save drafts, consultation lock UI
+- [ ] 04-05-PLAN.md -- Mobile prescriptions: drug search (client-side cached), medication form, dosage warnings, owner-friendly instructions, Repeat Rx, prescription list management
+- [ ] 04-06-PLAN.md -- Mobile voice-to-text (expo-speech-recognition), file attachments (S3 presigned URLs), medical history timeline, preventive care cards, weight trend chart, PDF generation (4 templates), share options
+- [ ] 04-07-PLAN.md -- Navigation wiring (queue to consultation to detail), resume banner, finalized consultation detail with addendum, vaccination/deworming forms, human verification of 9 end-to-end flows
 
 ### Phase 5: Inventory Management
 **Goal**: A vet or inventory manager can track stock with barcode scanning, manage batches and expiry dates, and get automatic alerts when items run low -- even when offline
@@ -165,15 +169,15 @@ Plans:
 - [ ] 08-02: TBD
 
 ### Phase 9: Web Dashboard & Owner Portal
-**Goal**: An admin user can manage the clinic from a browser AND pet owners can access their pet's records and pay outstanding invoices via a tokenised web portal — no app install required
+**Goal**: An admin user can manage the clinic from a browser AND pet owners can access their pet's records and pay outstanding invoices via a tokenised web portal -- no app install required
 **Depends on**: Phase 8
 **Requirements**: PLT-01, PLT-02, OWN-01, OWN-02, OWN-03, OWN-04, OWN-05, OWN-06
 **Success Criteria** (what must be TRUE):
   1. Mobile app runs on Android 8+ and iOS 14+ via React Native/Expo with all clinical workflows functional
   2. Web dashboard is accessible via modern browsers (Chrome, Safari, Firefox) and provides admin-oriented views for queue, inventory, scheduling, billing, and user management
   3. Mobile and web share the same data and reflect changes in real time
-  4. Pet owner can open a magic link from WhatsApp and view their pet's EMR history (diagnosis + prescriptions only), past invoices, and pay any outstanding balance via UPI — without logging in or installing an app
-  5. Owner portal enforces strict data isolation — owner sees only their own pets and invoices, token mismatch returns 403 with no data exposed
+  4. Pet owner can open a magic link from WhatsApp and view their pet's EMR history (diagnosis + prescriptions only), past invoices, and pay any outstanding balance via UPI -- without logging in or installing an app
+  5. Owner portal enforces strict data isolation -- owner sees only their own pets and invoices, token mismatch returns 403 with no data exposed
 **Plans**: TBD
 **UI hint**: yes
 
@@ -205,7 +209,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9 -> 10
 | 1. Foundation & Authentication | 0/3 | Planned | - |
 | 2. UI/UX Design & Design System | 0/3 | Planned | - |
 | 3. Patient Registration & Walk-in Queue | 0/6 | Planned | - |
-| 4. EMR & Clinical Records | 0/3 | Not started | - |
+| 4. EMR & Clinical Records | 0/7 | Planned | - |
 | 5. Inventory Management | 0/3 | Not started | - |
 | 6. Invoicing & Payments | 0/3 | Not started | - |
 | 7. WhatsApp Communication | 0/2 | Not started | - |
