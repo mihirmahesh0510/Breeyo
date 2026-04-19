@@ -70,13 +70,16 @@ Plans:
   3. Walk-in queue displays in real time on all connected devices, showing position and estimated wait for each entry
   4. User can move patients through queue statuses (waiting, in-consult, done, no-show) and call next patient into consultation
   5. User can search patients by owner name, mobile number, or pet name and view a pet's complete visit history
-**Plans**: TBD
+**Plans:** 6 plans
 **UI hint**: yes
 
 Plans:
-- [ ] 03-01: TBD
-- [ ] 03-02: TBD
-- [ ] 03-03: TBD
+- [ ] 03-01-PLAN.md -- Shared types, zod schemas, constants (species/breeds, queue status state machine, socket events), Prisma schema (Owner/Pet/QueueEntry with RLS), Wave 0 test scaffolds
+- [ ] 03-02-PLAN.md -- Patient API: owner registration with per-clinic mobile uniqueness, pet registration, trigram-powered search, pet profile with visit history, mobile lookup for auto-fill
+- [ ] 03-03-PLAN.md -- Queue API: check-in with position/emergency, status transitions (state machine), call-next (emergency FIFO), queue board, Socket.IO real-time broadcasting, midnight archive
+- [ ] 03-04-PLAN.md -- Mobile patient screens: 2-step registration wizard, patient list with live search, pet profile with visit history, owner detail, species/breed picker
+- [ ] 03-05-PLAN.md -- Mobile queue screens: queue status board (3 sections), 2-tap check-in bottom sheet, queue cards with swipe/tap gestures, Socket.IO hooks, offline banner
+- [ ] 03-06-PLAN.md -- Cross-module navigation wiring, auto-check-in from registration, human verification of all 7 end-to-end flows
 
 ### Phase 4: EMR & Clinical Records
 **Goal**: A vet can conduct a full consultation -- recording SOAP notes, vitals, and prescriptions -- with voice-to-text assistance and a complete audit trail
@@ -201,7 +204,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9 -> 10
 |-------|----------------|--------|-----------|
 | 1. Foundation & Authentication | 0/3 | Planned | - |
 | 2. UI/UX Design & Design System | 0/3 | Planned | - |
-| 3. Patient Registration & Walk-in Queue | 0/3 | Not started | - |
+| 3. Patient Registration & Walk-in Queue | 0/6 | Planned | - |
 | 4. EMR & Clinical Records | 0/3 | Not started | - |
 | 5. Inventory Management | 0/3 | Not started | - |
 | 6. Invoicing & Payments | 0/3 | Not started | - |
