@@ -113,13 +113,17 @@ Plans:
   3. User can record batch/lot numbers and expiry dates for each stock receipt, and the system enforces FIFO dispensing
   4. User can set par-level thresholds per item and receives alerts when stock falls below the threshold
   5. System generates want-lists of all items below par level for easy reordering
-**Plans**: TBD
+**Plans:** 7 plans
 **UI hint**: yes
 
 Plans:
-- [ ] 05-01: TBD
-- [ ] 05-02: TBD
-- [ ] 05-03: TBD
+- [ ] 05-01-PLAN.md -- Shared types, zod validators, constants (categories, units, reasons, barcode formats), Prisma schema (InventoryItem, StockBatch, StockMovement, InventoryBarcode with RLS + pg_trgm), test scaffolds
+- [ ] 05-02-PLAN.md -- Item CRUD API: repository with trigram search, item service, stock receipt service (new batch per receipt), barcode lookup with catalog sync, inventory permissions middleware, Fastify routes
+- [ ] 05-03-PLAN.md -- FIFO dispense + adjustments API: FIFO dispense service (raw SQL FOR UPDATE), stock adjustment with required reasons, stock-take service, par-level alerts, want-list with WhatsApp text, return-to-stock
+- [ ] 05-04-PLAN.md -- Mobile inventory list screen (summary header, AttentionCard with tabs, search/filter/sort), item profile screen (tabbed: Batches/History/Details), item create/edit form, stock movement timeline with CSV export button
+- [ ] 05-05-PLAN.md -- Mobile barcode scanner (VisionCamera V5 + bottom sheet), offline barcode cache (expo-sqlite), pending operations queue with FIFO replay, scanner/offline Zustand stores, useOfflineSync hook
+- [ ] 05-06-PLAN.md -- Mobile stock receipt screen, dispense screen (FIFO batch display, quantity stepper, override, expired blocker), stock adjustment bottom sheet with reason picker, haptic + toast feedback
+- [ ] 05-07-PLAN.md -- Mobile stock-take screen (scan+count, 24h session persistence), want-list with WhatsApp share, CSV export (papaparse + UTF-8 BOM), InventoryNavigator wiring, cross-phase EMR dispense hook, human verification of 10 flows
 
 ### Phase 6: Invoicing & Payments
 **Goal**: A vet can generate an invoice from consultation services and dispensed items, accept real payments via UPI/card, and have payment status update automatically
@@ -210,7 +214,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9 -> 10
 | 2. UI/UX Design & Design System | 0/3 | Planned | - |
 | 3. Patient Registration & Walk-in Queue | 0/6 | Planned | - |
 | 4. EMR & Clinical Records | 0/7 | Planned | - |
-| 5. Inventory Management | 0/3 | Not started | - |
+| 5. Inventory Management | 0/7 | Planned | - |
 | 6. Invoicing & Payments | 0/3 | Not started | - |
 | 7. WhatsApp Communication | 0/2 | Not started | - |
 | 8. Scheduling & Calendar | 0/2 | Not started | - |
