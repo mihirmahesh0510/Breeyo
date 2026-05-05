@@ -1,7 +1,8 @@
 ---
 phase: 7
 slug: whatsapp-communication
-status: draft
+status: approved
+reviewed_at: 2026-05-06
 shadcn_initialized: false
 preset: none
 created: 2026-05-05
