@@ -132,7 +132,7 @@ Six Beta templates must exist with these staff-facing names:
 Destructive actions in this phase:
 - Cancel booking: bottom sheet confirmation; confirm button `Cancel Booking` in destructive red text, neutral button `Keep Booking`.
 - STOP/disable reminders from owner preference: confirmation copy `Stop reminders for this owner? Non-essential reminders will no longer be sent.` Confirm button `Stop Reminders`, cancel `Keep Reminders`.
-- Mark invalid number: confirmation copy `Mark this number invalid? Staff must correct it before WhatsApp retries.` Confirm button `Mark Invalid`, cancel `Cancel`.
+- Mark invalid number: confirmation copy `Mark this number invalid? Staff must correct it before WhatsApp retries.` Confirm button `Mark Invalid`, cancel `Keep Number`.
 
 ---
 
