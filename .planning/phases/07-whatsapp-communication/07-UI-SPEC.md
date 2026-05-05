@@ -5,6 +5,7 @@ status: draft
 shadcn_initialized: false
 preset: none
 created: 2026-05-05
+updated: 2026-05-06
 ---
 
 # Phase 7 — UI Design Contract
@@ -24,6 +25,8 @@ created: 2026-05-05
 | Font | Mobile system default: Roboto on Android, SF Pro on iOS |
 
 Phase 7 is **mobile app only**. Do not build a web dashboard surface in this phase. The central UI is a WhatsApp-style staff inbox and owner-thread view, not a developer console. Access is limited to Front Desk and Admin.
+
+Codebase scan on 2026-05-06 found **no** `components.json`, `tailwind.config.*`, `postcss.config.*`, `package.json`, or app source files under `src/`, `apps/mobile/src/`, or `apps/web/src/`. This contract therefore inherits the approved Phase 2 mobile design system rather than an implemented repo-local component setup. shadcn initialization gate is **not applicable** for this Phase 7 mobile-only React Native surface.
 
 Required screen surfaces:
 - `WhatsAppInboxScreen`: owner-thread list keyed by owner mobile number.
@@ -212,9 +215,9 @@ Every Phase 7 screen must implement loading, empty, populated, and error states.
 
 | Registry | Blocks Used | Safety Gate |
 |----------|-------------|-------------|
-| shadcn official | none | not applicable — React Native mobile phase |
-| third-party shadcn registries | none | no third-party registry declared |
-| React Native Paper (npm) | MD3 Button, Card, Chip, List, Surface, Badge, Snackbar, ActivityIndicator | standard dependency from Phase 2; no shadcn registry gate |
+| shadcn official | none | 2026-05-06 — not applicable; no shadcn setup and Phase 7 is React Native mobile only |
+| third-party shadcn registries | none | 2026-05-06 — no third-party registry declared; safety vetting gate not triggered |
+| React Native Paper (npm) | MD3 Button, Card, Chip, List, Surface, Badge, Snackbar, ActivityIndicator | 2026-05-06 — existing approved Phase 2 dependency; registry safety gate not applicable |
 
 No third-party shadcn registries or blocks are used. No new WhatsApp runtime SDK is required for Phase 7.
 
@@ -251,3 +254,4 @@ No third-party shadcn registries or blocks are used. No new WhatsApp runtime SDK
 ---
 
 *Generated: 2026-05-05 by gsd-ui-researcher*
+*Updated: 2026-05-06 by gsd-ui-researcher*
