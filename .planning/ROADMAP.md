@@ -238,11 +238,28 @@ Cross-cutting constraints:
   1. User can check in patients, scan barcodes, and take clinical notes while fully offline, with all data syncing automatically when connectivity returns
   2. Offline-to-online sync handles conflicts gracefully (no data loss, clear resolution)
   3. End-to-end workflow (walk-in check-in through invoice payment) completes without errors across mobile and web
-**Plans**: TBD
+**Plans**: 6 plans
 
 Plans:
-- [ ] 10-01: TBD
-- [ ] 10-02: TBD
+- **Wave 1**
+- [ ] 10-01-PLAN.md -- Shared offline-sync contracts, transactional local replay foundation, sync persistence schema, and blocking schema push
+
+- **Wave 2** *(blocked on Wave 1 completion)*
+- [ ] 10-02-PLAN.md -- Queue offline check-in/status replay, optimistic local queue truth, and queue-first reconnect preemption
+- [ ] 10-03-PLAN.md -- EMR offline note-taking, clinician-owned conflict resolution, and consultation replay safeguards
+- [ ] 10-04-PLAN.md -- Inventory offline barcode/stock actions, FIFO-safe reconciliation, and lighter operational conflict review
+
+- **Wave 3** *(blocked on Wave 2 completion)*
+- [ ] 10-05-PLAN.md -- Calm sync badge, actionable failure center, retry escalation, replay broadcasts, and browser stale-state prompts
+
+- **Wave 4** *(blocked on Wave 3 completion)*
+- [ ] 10-06-PLAN.md -- Automated integration proof harnesses, repeated disconnect drills, WhatsApp-triggered recovery proof, and final human verification
+
+Cross-cutting constraints:
+- Offline queue actions are operationally real and replay before all other backlog work (D-03, D-12 to D-14)
+- Clinical conflicts use structured compare-and-resolve flow with clinician ownership, and unresolved items stay visible until cleared (D-05 to D-11, D-24)
+- Offline storage stays limited to the same-day working set plus narrow read-only fallback, not a full clinic-history mirror (D-15 to D-17)
+- Sync state stays visible through a calm badge, actionable failure center, and subtle recovery cue during normal clinic use (D-18 to D-23)
 
 ## Progress
 
@@ -260,4 +277,4 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9 -> 10
 | 7. WhatsApp Communication | 0/10 | Not started | - |
 | 8. Scheduling & Calendar | 0/7 | Planned | - |
 | 9. Web Dashboard & Owner Portal | 0/6 | Planned | - |
-| 10. Offline Hardening & Integration Polish | 0/2 | Not started | - |
+| 10. Offline Hardening & Integration Polish | 0/6 | Planned | - |
