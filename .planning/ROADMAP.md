@@ -18,7 +18,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [ ] **Phase 4: EMR & Clinical Records** - SOAP notes, vitals, prescriptions, voice-to-text, medical history, audit trail
 - [ ] **Phase 5: Inventory Management** - Stock tracking, barcode scanning, batch/lot/expiry management, par-level alerts, offline scanning
 - [ ] **Phase 6: Invoicing & Payments** - Invoice builder with stock validation, GST calculation, Razorpay integration, payment recording
-- [ ] **Phase 7: WhatsApp Communication** - Simulator with abstraction layer, appointment reminders, invoice delivery, booking flow, message log
+- [ ] **Phase 7: WhatsApp Communication** - Simulator with abstraction layer, preventive-care reminders, invoice delivery, booking flow, mobile message log
 - [ ] **Phase 8: Scheduling & Calendar** - Future appointments merging into walk-in queue, calendar views, multi-device sync, push notifications
 - [ ] **Phase 9: Web Dashboard & Owner Portal** - Browser-based admin interface for analytics, inventory management, user/role management; pet owner portal via tokenised magic links for EMR access and invoice payment
 - [ ] **Phase 10: Offline Hardening & Integration Polish** - Full offline sync for core mobile flows, cross-module integration testing, performance optimization
@@ -133,29 +133,36 @@ Plans:
   1. User can generate an invoice that pulls consultation services and dispensed inventory items, with real-time stock validation before finalizing
   2. User can accept payment via Razorpay (UPI and card), and payment confirmation automatically updates invoice status via webhook
   3. User can mark invoices as paid or unpaid manually and can print or export invoices as PDF
-**Plans**: TBD
-**UI hint**: yes
+**Plans**: 3 plans
 
 Plans:
-- [ ] 06-01: TBD
-- [ ] 06-02: TBD
-- [ ] 06-03: TBD
+- [ ] 06-01-PLAN.md -- Shared types, zod schemas, constants, state machine (7 statuses, 4 payment methods), Prisma schema (8 billing models with RLS + indexes), test scaffolds
+- [ ] 06-02-PLAN.md -- Billing API: invoice CRUD with state machine, sequential numbering (advisory locks), payment recording with split support, Razorpay Payment Links, webhook handler (HMAC-SHA256 + raw body), PDF generation (@react-pdf/renderer), GST calculation, overdue cron, Quick Sale endpoint, billing routes with permissions
+- [ ] 06-03-PLAN.md -- Mobile screens: Billing Dashboard (summary cards + filterable list), InvoiceBuilder (service picker + live totals), InvoiceDetail (status-aware actions), PaymentScreen (QR + auto-polling), QuickSale (POS flow), RefundScreen, CreditNoteScreen, bottom tab update (Billing replaces More), pet profile Invoices tab, clinic billing settings
 
 ### Phase 7: WhatsApp Communication
 **Goal**: The clinic can communicate with pet owners via WhatsApp for reminders, invoice delivery, and appointment booking -- all through a simulator that can be swapped for the real API later
 **Depends on**: Phase 6
 **Requirements**: WHA-01, WHA-02, WHA-03, WHA-04, WHA-05
 **Success Criteria** (what must be TRUE):
-  1. System sends automated appointment reminders and delivers invoices to pet owners via WhatsApp (simulated)
+  1. System sends automated follow-up, vaccination-due, and deworming-due reminders and delivers invoices to pet owners via WhatsApp (simulated)
   2. Pet owners can book appointments via a WhatsApp conversation flow (simulated)
   3. WhatsApp integration uses a clean abstraction layer where the simulator can be swapped for the real Meta Business API via configuration
-  4. All WhatsApp message flows are logged and viewable in the dashboard
-**Plans**: TBD
+  4. All WhatsApp message flows are logged and viewable in the mobile inbox/log surface used by staff
+**Plans**: 10 plans
 **UI hint**: yes
 
 Plans:
-- [ ] 07-01: TBD
-- [ ] 07-02: TBD
+- [ ] 07-01-PLAN.md -- Shared WhatsApp contracts, schemas, booking state machine, and shared tests
+- [ ] 07-06-PLAN.md -- Prisma schema registration plus Wave 0 API test scaffolds
+- [ ] 07-02-PLAN.md -- Provider registry, simulator pipeline, persistence services, dispatch, consent, and template rendering
+- [ ] 07-07-PLAN.md -- Inbox/config/simulator/owner-preference controllers and authenticated route registration
+- [ ] 07-10-PLAN.md -- Delivery-status service, validated webhook pipeline, and outbound/simulator workers
+- [ ] 07-03-PLAN.md -- Booking conversation flow, booking records, provisional capture, and booking action endpoints
+- [ ] 07-09-PLAN.md -- Reminder scheduling, bounded retries, failure tasks, and reminder route wiring
+- [ ] 07-04-PLAN.md -- Mobile WhatsApp hooks, store, and reusable components
+- [ ] 07-08-PLAN.md -- Mobile inbox/thread/config/booking-detail screens and navigation gating
+- [ ] 07-05-PLAN.md -- Cross-module send integrations, owner preference UX, invalid-number correction flow, and human verification
 
 ### Phase 8: Scheduling & Calendar
 **Goal**: A vet can schedule future appointments that merge into the walk-in queue at their time slot, with calendar views syncing across mobile and web in real time
@@ -165,12 +172,32 @@ Plans:
   1. User can schedule a future appointment for a patient, and that appointment appears in the walk-in queue at its scheduled time
   2. User can view a calendar in day and week views, with real-time sync across mobile and web
   3. User receives push notifications for upcoming appointments and queue changes
-**Plans**: TBD
+**Plans**: 7 plans
 **UI hint**: yes
 
 Plans:
-- [ ] 08-01: TBD
-- [ ] 08-02: TBD
+- **Wave 1**
+- [ ] 08-01-PLAN.md -- Shared scheduling contracts, Wave 0 tests, Prisma appointment schema, and blocking schema push
+
+- **Wave 2** *(blocked on Wave 1 completion)*
+- [ ] 08-02-PLAN.md -- Availability engine, schedule templates/overrides, blocked periods, reason catalog, and settings API
+- [ ] 08-03-PLAN.md -- Appointment lifecycle, provisional booking, queue handoff, queue expected-arrival support, and audit-trail API
+
+- **Wave 3** *(blocked on Wave 2 completion)*
+- [ ] 08-04-PLAN.md -- Reminder producer, owner-action bridge, push/socket notifications, workers, and scheduling route registration
+
+- **Wave 4** *(blocked on Wave 3 completion)*
+- [ ] 08-05-PLAN.md -- Mobile day agenda, quick-action bottom sheet, queue scheduled badges, and WhatsApp-linked mobile state
+- [ ] 08-06-PLAN.md -- Web 7-day staff-first week grid, quick drawer, realtime hook, and browser-notification prompt
+
+- **Wave 5** *(blocked on Wave 4 completion)*
+- [ ] 08-07-PLAN.md -- Mobile/web shell wiring, dashboard/sidebar schedule entry points, and human end-to-end verification
+
+Cross-cutting constraints:
+- Queue remains the mobile home surface; Scheduling is linked but separate (D-09 + project walk-in-first rule)
+- Scheduled patients enter Queue as `EXPECTED` first, then become true waiting entries only after check-in (D-21, D-22)
+- Mobile defaults to day agenda; dense 7-day week planning belongs to larger screens (D-02, D-03)
+- Reminder timing is clinic-configurable, with shipped same-day-only defaults and `KEEP / MOVE / CANCEL` owner actions (D-25 to D-27)
 
 ### Phase 9: Web Dashboard & Owner Portal
 **Goal**: An admin user can manage the clinic from a browser AND pet owners can access their pet's records and pay outstanding invoices via a tokenised web portal -- no app install required
@@ -182,12 +209,26 @@ Plans:
   3. Mobile and web share the same data and reflect changes in real time
   4. Pet owner can open a magic link from WhatsApp and view their pet's EMR history (diagnosis + prescriptions only), past invoices, and pay any outstanding balance via UPI -- without logging in or installing an app
   5. Owner portal enforces strict data isolation -- owner sees only their own pets and invoices, token mismatch returns 403 with no data exposed
-**Plans**: TBD
+**Plans**: 6 plans
 **UI hint**: yes
 
 Plans:
-- [ ] 09-01: TBD
-- [ ] 09-02: TBD
+- **Wave 1** *(foundation for all web and portal work)*
+- [ ] 09-01-PLAN.md -- Shared dashboard/portal contracts, browser-access + magic-link schema, and blocking schema push
+
+- **Wave 2** *(blocked on Wave 1 completion)*
+- [ ] 09-02-PLAN.md -- Browser access policy, dashboard shell/home cockpit, user-management mini-panel, and shared high-risk web UX
+- [ ] 09-05-PLAN.md -- Owner-portal token validation, scoped EMR/invoice read models, combined checkout, and WhatsApp link reissue
+
+- **Wave 3** *(module surfaces after shared shell and portal APIs exist)*
+- [ ] 09-03-PLAN.md -- Inventory web workbench with stock/batch table, reordering workflow, analytics export, and mobile-first scanning boundary
+- [ ] 09-04-PLAN.md -- Queue board + billing web workbench with live sync, stale-state prompts, and admin-only risky actions
+- [ ] 09-06-PLAN.md -- Owner-portal web UI, deep links, payment return states, performance budget, and human verification
+
+Cross-cutting constraints:
+- Browser/mobile must share one live data model and surface stale/conflict prompts instead of silently overwriting edits.
+- Unauthorized browser modules/actions are hidden, not shown as locked placeholders.
+- Owner portal stays read-only for EMR, uses 7-day tokenised links, and never exposes pets/invoices outside the validated owner scope.
 
 ### Phase 10: Offline Hardening & Integration Polish
 **Goal**: Core mobile workflows (check-in, barcode scanning, note-taking) work reliably offline with automatic sync on reconnect, and the full system is integration-tested end to end
@@ -216,7 +257,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9 -> 10
 | 4. EMR & Clinical Records | 0/7 | Planned | - |
 | 5. Inventory Management | 0/7 | Planned | - |
 | 6. Invoicing & Payments | 0/3 | Not started | - |
-| 7. WhatsApp Communication | 0/2 | Not started | - |
-| 8. Scheduling & Calendar | 0/2 | Not started | - |
-| 9. Web Dashboard | 0/2 | Not started | - |
+| 7. WhatsApp Communication | 0/10 | Not started | - |
+| 8. Scheduling & Calendar | 0/7 | Planned | - |
+| 9. Web Dashboard & Owner Portal | 0/6 | Planned | - |
 | 10. Offline Hardening & Integration Polish | 0/2 | Not started | - |
