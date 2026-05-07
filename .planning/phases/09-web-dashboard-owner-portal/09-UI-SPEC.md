@@ -1,7 +1,8 @@
 ---
 phase: 9
 slug: web-dashboard-owner-portal
-status: draft
+status: approved
+reviewed_at: 2026-05-07
 shadcn_initialized: false
 preset: none
 created: 2026-05-07
