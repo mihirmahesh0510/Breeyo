@@ -222,7 +222,7 @@ Cross-cutting constraints:
   3. Mobile and web share the same data and reflect changes in real time
   4. Pet owner can open a magic link from WhatsApp and view their pet's EMR history (diagnosis + prescriptions only), upcoming vaccination/deworming due dates, next scheduled appointment, past invoices, and pay any outstanding balance via UPI -- without logging in or installing an app
   5. Owner portal enforces strict data isolation -- owner sees only their own pets and invoices, token mismatch returns 403 with no data exposed
-**Plans**: 6 plans
+**Plans**: 7 plans
 **UI hint**: yes
 
 Plans:
@@ -237,6 +237,9 @@ Plans:
 - [ ] 09-03-PLAN.md -- Inventory web workbench with stock/batch table, reordering workflow, analytics export, and mobile-first scanning boundary
 - [ ] 09-04-PLAN.md -- Queue board + billing web workbench with live sync, stale-state prompts, and admin-only risky actions
 - [ ] 09-06-PLAN.md -- Owner-portal web UI, deep links, payment return states, performance budget, and human verification
+
+- **Wave 4** *(blocked on Wave 3 portal UI completion)*
+- [ ] 09-07-PLAN.md -- Upcoming care dates API and portal UI: vaccination/deworming due dates + next appointment per pet (OWN-07)
 
 Cross-cutting constraints:
 - Browser/mobile must share one live data model and surface stale/conflict prompts instead of silently overwriting edits.
@@ -285,15 +288,15 @@ This table tracks planning-packet readiness by phase, not implementation progres
 
 | Phase | Plans Authored | Planning Packet | Audit Readiness |
 |-------|----------------|-----------------|-----------------|
-| 1. Foundation & Authentication | 3/3 | Context, research, discussion log, validation, plans present | **Needs plan update** — add PLT-06 (backup/DR) and NTF-01 (notification service) |
-| 2. UI/UX Design & Design System | 3/3 | Context, research, discussion log, UI spec, validation, plans present | **Needs plan update** — add NTF-02 (notification UI components) |
+| 1. Foundation & Authentication | 3/3 | Context, research, discussion log, validation, plans present | **Needs plan update** -- add PLT-06 (backup/DR) and NTF-01 (notification service) |
+| 2. UI/UX Design & Design System | 3/3 | Context, research, discussion log, UI spec, validation, plans present | **Needs plan update** -- add NTF-02 (notification UI components) |
 | 3. Patient Registration & Walk-in Queue | 8/8 | Context, research, research addendum, discussion log, UI spec, validation, plans present | Ready |
 | 4. EMR & Clinical Records | 8/8 | Context, research, research addendum, discussion log, UI spec, validation, plans present | Ready |
-| 5. Inventory Management | 7/7 | Context, research, discussion log, UI spec, validation, plans present | **Needs plan update** — add INV-09 (HSN/SAC codes on items) |
+| 5. Inventory Management | 7/7 | Context, research, discussion log, UI spec, validation, plans present | **Needs plan update** -- add INV-09 (HSN/SAC codes on items) |
 | 6. Invoicing & Payments | 4/4 | Context, research, discussion log, UI spec, validation, plans present | Ready |
 | 7. WhatsApp Communication | 10/10 | Context, research, discussion log, UI spec, validation, plans present | Ready |
 | 8. Scheduling & Calendar | 7/7 | Context, research, discussion log, UI spec, validation, and full plan set present | Ready |
-| 9. Web Dashboard & Owner Portal | 6/6 | Context, research, discussion log, UI spec, validation, plans present | **Needs plan update** — add OWN-07 (upcoming care dates on portal) |
-| 10. Offline Hardening & Integration Polish | 6/6 | Context, research, discussion log, validation, and full plan set present | **Needs plan update** — add PLT-07 (performance target verification) |
+| 9. Web Dashboard & Owner Portal | 7/7 | Context, research, discussion log, UI spec, validation, plans present | Ready |
+| 10. Offline Hardening & Integration Polish | 6/6 | Context, research, discussion log, validation, and full plan set present | **Needs plan update** -- add PLT-07 (performance target verification) |
 
-> **2026-07-30 gap review:** 7 of 10 phases need plan updates to incorporate new requirements. Phase 3 (PAT-06 + ONB-01 added), Phase 4 (ONB-02 service catalog added via 04-08-PLAN.md), Phase 6 (BIL-07 + RPT-01 added via 06-04-PLAN.md), Phase 7, and Phase 8 are complete. Plan updates should be done per-phase before execution begins (via `/gsd:plan-phase` or direct plan editing).
+> **2026-07-30 gap review:** 7 of 10 phases need plan updates to incorporate new requirements. Phase 3 (PAT-06 + ONB-01 added), Phase 4 (ONB-02 service catalog added via 04-08-PLAN.md), Phase 6 (BIL-07 + RPT-01 added via 06-04-PLAN.md), Phase 7, Phase 8, and Phase 9 (OWN-07 added via 09-07-PLAN.md) are complete. Plan updates should be done per-phase before execution begins (via `/gsd:plan-phase` or direct plan editing).
