@@ -26,15 +26,17 @@ Decimal phases appear between their surrounding integers in numeric order.
 ## Phase Details
 
 ### Phase 1: Foundation & Authentication
-**Goal**: A solo vet can create an account, log in on their phone, and have their clinic's data isolated from every other clinic in the system
+**Goal**: A solo vet can create an account, log in on their phone, and have their clinic's data isolated from every other clinic in the system — with infrastructure for notifications and disaster recovery from day one
 **Depends on**: Nothing (first phase)
-**Requirements**: AUTH-01, AUTH-02, AUTH-03, AUTH-04, AUTH-05, AUTH-06, PLT-04, PLT-05
+**Requirements**: AUTH-01, AUTH-02, AUTH-03, AUTH-04, AUTH-05, AUTH-06, PLT-04, PLT-05, PLT-06, NTF-01
 **Success Criteria** (what must be TRUE):
   1. User can sign up with email/password and log in via mobile OTP, with sessions persisting across app restarts
   2. User can log out from any screen in the app
   3. Admin can create users and assign roles (Admin, Clinician, Front Desk, Inventory Manager) with permissions enforced across all API endpoints
   4. Data created by Clinic A is completely invisible to Clinic B (multi-tenant isolation verified)
   5. All data is stored in the India region (AWS Mumbai)
+  6. Automated daily database backups are enabled with point-in-time recovery; recovery procedure is documented and tested
+  7. Notification service foundation exists: push token registration (Expo), notification preferences model, and a module-agnostic dispatch API that later phases can hook into
 **Plans:** 3 plans
 
 Plans:
@@ -45,13 +47,14 @@ Plans:
 ### Phase 2: UI/UX Design & Design System
 **Goal**: Every screen in the app draws from a single design system with consistent tokens and reusable components, so that all subsequent feature phases build UI from pre-validated patterns instead of ad-hoc designs
 **Depends on**: Phase 1
-**Requirements**: UX-01, UX-02, UX-03, UX-04, UX-05
+**Requirements**: UX-01, UX-02, UX-03, UX-04, UX-05, NTF-02
 **Success Criteria** (what must be TRUE):
   1. A design token file defines the complete color palette, typography scale (at least 5 levels), spacing scale, elevation/shadow system, and border radii -- and every token is consumable by React Native and web components
   2. A component library exists with at least: Button, TextInput, Card, ListItem, Modal, BottomSheet, NavigationBar, StatusBadge -- each rendered in a Storybook-style catalog with all variants visible
   3. Screen flow wireframes exist for every major module (auth, queue, EMR, inventory, billing, scheduling, WhatsApp, dashboard) showing navigation paths and key states (empty, loading, populated, error)
   4. All interactive elements meet mobile-first targets: minimum 44x44pt tap targets, one-handed reachability for primary actions, and iconography that communicates meaning without text labels
   5. Walk-in queue UX is designed end-to-end: the 2-tap check-in flow, real-time status board layout, consultation transition animation, and queue position display are all wireframed and component-mapped
+  6. Notification UI components exist: NotificationBadge (nav bar unread count), NotificationList (filterable by module), and notification toast pattern — all in the component library
 **Plans:** 3 plans
 **UI hint**: yes
 
@@ -61,16 +64,18 @@ Plans:
 - [ ] 02-03-PLAN.md -- Organism components (Card, Modal, BottomSheet, NavigationBar, BottomTabBar, QueueCard, WizardStepper), wireframe screens for all modules with 4 states, Storybook integration, human verification
 
 ### Phase 3: Patient Registration & Walk-in Queue
-**Goal**: A front desk user can register walk-in patients and manage the queue as the primary daily workflow, with real-time updates visible on all connected devices
+**Goal**: A front desk user can register walk-in patients and manage the queue as the primary daily workflow, with real-time updates visible on all connected devices — and existing practices can bulk-import their patient records
 **Depends on**: Phase 2
-**Requirements**: PAT-01, PAT-02, PAT-03, PAT-04, PAT-05, QUE-01, QUE-02, QUE-03, QUE-04, QUE-05, QUE-06
+**Requirements**: PAT-01, PAT-02, PAT-03, PAT-04, PAT-05, PAT-06, QUE-01, QUE-02, QUE-03, QUE-04, QUE-05, QUE-06, ONB-01
 **Success Criteria** (what must be TRUE):
   1. User can register a pet owner by mobile number and link multiple pets to that owner
   2. User can check in a walk-in patient in 2 taps or fewer, with returning patients auto-filling from existing records
   3. Walk-in queue displays in real time on all connected devices, showing position and estimated wait for each entry
   4. User can move patients through queue statuses (waiting, in-consult, done, no-show) and call next patient into consultation
   5. User can search patients by owner name, mobile number, or pet name and view a pet's complete visit history
-**Plans:** 6 plans
+  6. User can bulk-import owners and pets from a CSV file (name, mobile, pet name, species, breed) with validation errors surfaced per row
+  7. New clinic sees a guided first-use prompt after setup wizard: register first patient, check in, and proceed to consultation — with skip option (full onboarding path completes when Phase 6 adds invoicing)
+**Plans:** 8 plans
 **UI hint**: yes
 
 Plans:
@@ -80,18 +85,21 @@ Plans:
 - [ ] 03-04-PLAN.md -- Mobile patient screens: 2-step registration wizard, patient list with live search, pet profile with visit history, owner detail, species/breed picker
 - [ ] 03-05-PLAN.md -- Mobile queue screens: queue status board (3 sections), 2-tap check-in bottom sheet, queue cards with swipe/tap gestures, Socket.IO hooks, offline banner
 - [ ] 03-06-PLAN.md -- Cross-module navigation wiring, auto-check-in from registration, human verification of all 7 end-to-end flows
+- [ ] 03-07-PLAN.md -- CSV bulk import: shared import types, server-side CSV parsing (papaparse) with per-row zod validation, multipart upload route, mobile file picker and import result screen
+- [ ] 03-08-PLAN.md -- Guided first-use onboarding: onboarding state model (JSONB on Clinic), OnboardingService with auto-completion hooks in PatientService and QueueService, OnboardingCard on QueueScreen
 
 ### Phase 4: EMR & Clinical Records
-**Goal**: A vet can conduct a full consultation -- recording SOAP notes, vitals, and prescriptions -- with voice-to-text assistance and a complete audit trail
+**Goal**: A vet can conduct a full consultation -- recording SOAP notes, vitals, and prescriptions -- with voice-to-text assistance, a complete audit trail, and pre-loaded drug/breed seed data
 **Depends on**: Phase 3
-**Requirements**: EMR-01, EMR-02, EMR-03, EMR-04, EMR-05, EMR-06, EMR-07
+**Requirements**: EMR-01, EMR-02, EMR-03, EMR-04, EMR-05, EMR-06, EMR-07, ONB-02
 **Success Criteria** (what must be TRUE):
   1. User can create SOAP notes (Subjective, Objective, Assessment, Plan) and record vitals (weight, temperature, heart rate, respiratory rate) during a consultation
   2. User can write prescriptions with drug name, dosage, frequency, and duration
   3. User can use voice-to-text to transcribe clinical notes into a text field on their phone
   4. User can view a complete medical history timeline for any pet, including attached lab/imaging files
   5. All EMR changes are audit-trailed with who changed what and when
-**Plans:** 7 plans
+  6. System ships with seed data: drug database (200-300 common vet drugs), breed lists per species, and default service catalog presets (consultation, vaccination, surgery, grooming)
+**Plans:** 8 plans
 **UI hint**: yes
 
 Plans:
@@ -102,17 +110,19 @@ Plans:
 - [ ] 04-05-PLAN.md -- Mobile prescriptions: drug search (client-side cached), medication form, dosage warnings, owner-friendly instructions, Repeat Rx, prescription list management
 - [ ] 04-06-PLAN.md -- Mobile voice-to-text (expo-speech-recognition), file attachments (S3 presigned URLs), medical history timeline, preventive care cards, weight trend chart, PDF generation (4 templates), share options
 - [ ] 04-07-PLAN.md -- Navigation wiring (queue to consultation to detail), resume banner, finalized consultation detail with addendum, vaccination/deworming forms, human verification of 9 end-to-end flows
+- [ ] 04-08-PLAN.md -- Service catalog: ServiceCatalog Prisma model, shared billing types/schema, 20 default service presets with GST/SAC codes, per-clinic seed function (ONB-02)
 
 ### Phase 5: Inventory Management
-**Goal**: A vet or inventory manager can track stock with barcode scanning, manage batches and expiry dates, and get automatic alerts when items run low -- even when offline
+**Goal**: A vet or inventory manager can track stock with barcode scanning, manage batches and expiry dates, get automatic alerts when items run low, and maintain HSN/SAC codes for GST-compliant invoicing -- even when offline
 **Depends on**: Phase 4
-**Requirements**: INV-01, INV-02, INV-03, INV-04, INV-05, INV-06, INV-07, INV-08
+**Requirements**: INV-01, INV-02, INV-03, INV-04, INV-05, INV-06, INV-07, INV-08, INV-09
 **Success Criteria** (what must be TRUE):
   1. User can add inventory items and update stock quantities manually (add/remove)
   2. User can scan barcodes with their phone camera to identify and update stock items, including while offline
   3. User can record batch/lot numbers and expiry dates for each stock receipt, and the system enforces FIFO dispensing
   4. User can set par-level thresholds per item and receives alerts when stock falls below the threshold
   5. System generates want-lists of all items below par level for easy reordering
+  6. Inventory items carry HSN/SAC codes that flow through to invoice line items for GST compliance
 **Plans:** 7 plans
 **UI hint**: yes
 
@@ -126,19 +136,22 @@ Plans:
 - [ ] 05-07-PLAN.md -- Mobile stock-take screen (scan+count, 24h session persistence), want-list with WhatsApp share, CSV export (papaparse + UTF-8 BOM), InventoryNavigator wiring, cross-phase EMR dispense hook, human verification of 10 flows
 
 ### Phase 6: Invoicing & Payments
-**Goal**: A vet can generate an invoice from consultation services and dispensed items, accept real payments via UPI/card, and have payment status update automatically
+**Goal**: A vet can generate a GST filing-ready invoice from consultation services and dispensed items, accept real payments via UPI/card, have payment status update automatically, and see a daily business summary
 **Depends on**: Phase 5
-**Requirements**: BIL-01, BIL-02, BIL-03, BIL-04, BIL-05, BIL-06
+**Requirements**: BIL-01, BIL-02, BIL-03, BIL-04, BIL-05, BIL-06, BIL-07, RPT-01
 **Success Criteria** (what must be TRUE):
   1. User can generate an invoice that pulls consultation services and dispensed inventory items, with real-time stock validation before finalizing
   2. User can accept payment via Razorpay (UPI and card), and payment confirmation automatically updates invoice status via webhook
   3. User can mark invoices as paid or unpaid manually and can print or export invoices as PDF
-**Plans**: 3 plans
+  4. Invoices include full GST breakdown: CGST/SGST for intra-state transactions, IGST for inter-state, with HSN/SAC codes per line item pulled from inventory/service catalog
+  5. Billing dashboard shows a daily summary card: patients seen today, revenue collected today, total outstanding balance
+**Plans**: 4 plans
 
 Plans:
 - [ ] 06-01-PLAN.md -- Shared types, zod schemas, constants, state machine (7 statuses, 4 payment methods), Prisma schema (8 billing models with RLS + indexes), test scaffolds
 - [ ] 06-02-PLAN.md -- Billing API: invoice CRUD with state machine, sequential numbering (advisory locks), payment recording with split support, Razorpay Payment Links, webhook handler (HMAC-SHA256 + raw body), PDF generation (@react-pdf/renderer), GST calculation, overdue cron, Quick Sale endpoint, billing routes with permissions
 - [ ] 06-03-PLAN.md -- Mobile screens: Billing Dashboard (summary cards + filterable list), InvoiceBuilder (service picker + live totals), InvoiceDetail (status-aware actions), PaymentScreen (QR + auto-polling), QuickSale (POS flow), RefundScreen, CreditNoteScreen, bottom tab update (Billing replaces More), pet profile Invoices tab, clinic billing settings
+- [ ] 06-04-PLAN.md -- GST compliance upgrade (BIL-07): per-line-item CGST/SGST/IGST with HSN/SAC codes, clinic state code for intra/inter-state determination, GST-compliant PDF template, plus patients-seen-today dashboard metric (RPT-01)
 
 ### Phase 7: WhatsApp Communication
 **Goal**: The clinic can communicate with pet owners via WhatsApp for reminders, invoice delivery, and appointment booking -- all through a simulator that can be swapped for the real API later
@@ -200,14 +213,14 @@ Cross-cutting constraints:
 - Reminder timing is clinic-configurable, with shipped same-day-only defaults and `KEEP / MOVE / CANCEL` owner actions (D-25 to D-27)
 
 ### Phase 9: Web Dashboard & Owner Portal
-**Goal**: An admin user can manage the clinic from a browser AND pet owners can access their pet's records and pay outstanding invoices via a tokenised web portal -- no app install required
+**Goal**: An admin user can manage the clinic from a browser AND pet owners can access their pet's records, see upcoming care dates, and pay outstanding invoices via a tokenised web portal -- no app install required
 **Depends on**: Phase 8
-**Requirements**: PLT-01, PLT-02, OWN-01, OWN-02, OWN-03, OWN-04, OWN-05, OWN-06
+**Requirements**: PLT-01, PLT-02, OWN-01, OWN-02, OWN-03, OWN-04, OWN-05, OWN-06, OWN-07
 **Success Criteria** (what must be TRUE):
   1. Mobile app runs on Android 8+ and iOS 14+ via React Native/Expo with all clinical workflows functional
   2. Web dashboard is accessible via modern browsers (Chrome, Safari, Firefox) and provides admin-oriented views for queue, inventory, scheduling, billing, and user management
   3. Mobile and web share the same data and reflect changes in real time
-  4. Pet owner can open a magic link from WhatsApp and view their pet's EMR history (diagnosis + prescriptions only), past invoices, and pay any outstanding balance via UPI -- without logging in or installing an app
+  4. Pet owner can open a magic link from WhatsApp and view their pet's EMR history (diagnosis + prescriptions only), upcoming vaccination/deworming due dates, next scheduled appointment, past invoices, and pay any outstanding balance via UPI -- without logging in or installing an app
   5. Owner portal enforces strict data isolation -- owner sees only their own pets and invoices, token mismatch returns 403 with no data exposed
 **Plans**: 6 plans
 **UI hint**: yes
@@ -231,13 +244,14 @@ Cross-cutting constraints:
 - Owner portal stays read-only for EMR, uses 7-day tokenised links, and never exposes pets/invoices outside the validated owner scope.
 
 ### Phase 10: Offline Hardening & Integration Polish
-**Goal**: Core mobile workflows (check-in, barcode scanning, note-taking) work reliably offline with automatic sync on reconnect, and the full system is integration-tested end to end
+**Goal**: Core mobile workflows (check-in, barcode scanning, note-taking) work reliably offline with automatic sync on reconnect, performance targets are verified on real hardware, and the full system is integration-tested end to end
 **Depends on**: Phase 9
-**Requirements**: PLT-03
+**Requirements**: PLT-03, PLT-07
 **Success Criteria** (what must be TRUE):
   1. User can check in patients, scan barcodes, and take clinical notes while fully offline, with all data syncing automatically when connectivity returns
   2. Offline-to-online sync handles conflicts gracefully (no data loss, clear resolution)
   3. End-to-end workflow (walk-in check-in through invoice payment) completes without errors across mobile and web
+  4. Performance targets verified on mid-range Android: app cold start < 3s, API p95 < 500ms, queue real-time update < 2s (measured since Phase 3, final verification here)
 **Plans**: 6 plans
 
 Plans:
@@ -266,15 +280,20 @@ Cross-cutting constraints:
 **Execution Order:**
 Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9 -> 10
 
-| Phase | Plans Complete | Status | Completed |
-|-------|----------------|--------|-----------|
-| 1. Foundation & Authentication | 0/3 | Planned | - |
-| 2. UI/UX Design & Design System | 0/3 | Planned | - |
-| 3. Patient Registration & Walk-in Queue | 0/6 | Planned | - |
-| 4. EMR & Clinical Records | 0/7 | Planned | - |
-| 5. Inventory Management | 0/7 | Planned | - |
-| 6. Invoicing & Payments | 0/3 | Not started | - |
-| 7. WhatsApp Communication | 0/10 | Not started | - |
-| 8. Scheduling & Calendar | 0/7 | Planned | - |
-| 9. Web Dashboard & Owner Portal | 0/6 | Planned | - |
-| 10. Offline Hardening & Integration Polish | 0/6 | Planned | - |
+**Planning Audit View:**
+This table tracks planning-packet readiness by phase, not implementation progress. Phase checkboxes above stay unchecked until delivery is implemented and verified.
+
+| Phase | Plans Authored | Planning Packet | Audit Readiness |
+|-------|----------------|-----------------|-----------------|
+| 1. Foundation & Authentication | 3/3 | Context, research, discussion log, validation, plans present | **Needs plan update** — add PLT-06 (backup/DR) and NTF-01 (notification service) |
+| 2. UI/UX Design & Design System | 3/3 | Context, research, discussion log, UI spec, validation, plans present | **Needs plan update** — add NTF-02 (notification UI components) |
+| 3. Patient Registration & Walk-in Queue | 8/8 | Context, research, research addendum, discussion log, UI spec, validation, plans present | Ready |
+| 4. EMR & Clinical Records | 8/8 | Context, research, research addendum, discussion log, UI spec, validation, plans present | Ready |
+| 5. Inventory Management | 7/7 | Context, research, discussion log, UI spec, validation, plans present | **Needs plan update** — add INV-09 (HSN/SAC codes on items) |
+| 6. Invoicing & Payments | 4/4 | Context, research, discussion log, UI spec, validation, plans present | Ready |
+| 7. WhatsApp Communication | 10/10 | Context, research, discussion log, UI spec, validation, plans present | Ready |
+| 8. Scheduling & Calendar | 7/7 | Context, research, discussion log, UI spec, validation, and full plan set present | Ready |
+| 9. Web Dashboard & Owner Portal | 6/6 | Context, research, discussion log, UI spec, validation, plans present | **Needs plan update** — add OWN-07 (upcoming care dates on portal) |
+| 10. Offline Hardening & Integration Polish | 6/6 | Context, research, discussion log, validation, and full plan set present | **Needs plan update** — add PLT-07 (performance target verification) |
+
+> **2026-07-30 gap review:** 7 of 10 phases need plan updates to incorporate new requirements. Phase 3 (PAT-06 + ONB-01 added), Phase 4 (ONB-02 service catalog added via 04-08-PLAN.md), Phase 6 (BIL-07 + RPT-01 added via 06-04-PLAN.md), Phase 7, and Phase 8 are complete. Plan updates should be done per-phase before execution begins (via `/gsd:plan-phase` or direct plan editing).
