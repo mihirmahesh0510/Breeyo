@@ -24,3 +24,6 @@ export type { BreeyoDividerProps } from './Divider/Divider';
 
 export { ProgressIndicator } from './ProgressIndicator/ProgressIndicator';
 export type { ProgressIndicatorProps, ProgressIndicatorType } from './ProgressIndicator/ProgressIndicator';
+
+export { NotificationBadge, NOTIFICATION_BADGE_CONFIG, formatBadgeCount, getAccessibilityLabel } from './NotificationBadge/NotificationBadge';
+export type { NotificationBadgeProps } from './NotificationBadge/NotificationBadge';

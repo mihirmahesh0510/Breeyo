@@ -18,3 +18,6 @@ export type { AccordionItemProps } from './AccordionItem/AccordionItem';
 
 export { SkeletonLoader, SKELETON_DIMENSIONS } from './SkeletonLoader/SkeletonLoader';
 export type { SkeletonLoaderProps, SkeletonType } from './SkeletonLoader/SkeletonLoader';
+
+export { NotificationItem, MODULE_ICON_MAP, MODULE_COLOR_MAP } from './NotificationItem/NotificationItem';
+export type { NotificationItemProps, NotificationModule } from './NotificationItem/NotificationItem';

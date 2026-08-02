@@ -18,3 +18,6 @@ export type { QueueCardProps, QueuePatient, AccessibilityLabelInput } from './Qu
 
 export { WizardStepper, WIZARD_DEFAULTS } from './WizardStepper/WizardStepper';
 export type { WizardStepperProps, WizardStep } from './WizardStepper/WizardStepper';
+
+export { NotificationList, FILTER_CHIPS, filterNotifications, countUnread } from './NotificationList/NotificationList';
+export type { NotificationListProps, NotificationItemData, NotificationFilterKey } from './NotificationList/NotificationList';
