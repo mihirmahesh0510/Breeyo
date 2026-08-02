@@ -9,6 +9,7 @@ prisma/*.db
 postgres_data
 *.tsbuildinfo
 .DS_Store
+.venv/
 
 # Planning & tooling (local only)
 .planning/
@@ -22,3 +23,4 @@ STATE.md
 intel/
 phases/
 research/
+ERD/
