@@ -11,16 +11,7 @@ postgres_data
 .DS_Store
 .venv/
 
-# Planning & tooling (local only)
-.planning/
-.claude/
+# Ephemeral tooling state (local only)
 .claude-flow/
-CLAUDE.md
-PROJECT.md
-REQUIREMENTS.md
-ROADMAP.md
+.planning/
 STATE.md
-intel/
-phases/
-research/
-ERD/
