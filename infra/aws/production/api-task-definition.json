@@ -1,0 +1,73 @@
+{
+  "family": "breeyo-api-production",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "512",
+  "memory": "1024",
+  "executionRoleArn": "${EXECUTION_ROLE_ARN}",
+  "taskRoleArn": "${TASK_ROLE_ARN}",
+  "containerDefinitions": [
+    {
+      "name": "breeyo-api",
+      "image": "PLACEHOLDER",
+      "essential": true,
+      "portMappings": [
+        {
+          "containerPort": 3000,
+          "protocol": "tcp"
+        }
+      ],
+      "healthCheck": {
+        "command": ["CMD-SHELL", "curl -f http://localhost:3000/health || exit 1"],
+        "interval": 30,
+        "timeout": 5,
+        "retries": 3,
+        "startPeriod": 60
+      },
+      "environment": [
+        {
+          "name": "NODE_ENV",
+          "value": "production"
+        },
+        {
+          "name": "AWS_REGION",
+          "value": "ap-south-1"
+        },
+        {
+          "name": "PORT",
+          "value": "3000"
+        }
+      ],
+      "secrets": [
+        {
+          "name": "DATABASE_URL",
+          "valueFrom": "/breeyo/production/DATABASE_URL"
+        },
+        {
+          "name": "DATABASE_URL_APP",
+          "valueFrom": "/breeyo/production/DATABASE_URL_APP"
+        },
+        {
+          "name": "REDIS_URL",
+          "valueFrom": "/breeyo/production/REDIS_URL"
+        },
+        {
+          "name": "JWT_SECRET",
+          "valueFrom": "/breeyo/production/JWT_SECRET"
+        },
+        {
+          "name": "COOKIE_SECRET",
+          "valueFrom": "/breeyo/production/COOKIE_SECRET"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/breeyo-api-production",
+          "awslogs-region": "ap-south-1",
+          "awslogs-stream-prefix": "ecs"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,213 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                      String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email                   String    @unique
+  phone                   String    @unique
+  fullName                String    @map("full_name")
+  passwordHash            String    @map("password_hash")
+  licenseNumber           String?   @map("license_number")
+  specialization          String?
+  isEmailVerified         Boolean   @default(false) @map("is_email_verified")
+  isPhoneVerified         Boolean   @default(false) @map("is_phone_verified")
+  isActive                Boolean   @default(true) @map("is_active")
+  emailVerificationToken  String?   @map("email_verification_token")
+  emailVerificationExpiry DateTime? @map("email_verification_expiry")
+  passwordResetToken      String?   @map("password_reset_token")
+  passwordResetExpiry     DateTime? @map("password_reset_expiry")
+  createdAt               DateTime  @default(now()) @map("created_at")
+  updatedAt               DateTime  @updatedAt @map("updated_at")
+
+  clinicMemberships ClinicMember[]
+  ownedClinics      Clinic[]
+  refreshTokens     RefreshToken[]
+  deviceTokens      DeviceToken[]
+
+  @@map("users")
+}
+
+model Clinic {
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name             String
+  address          String
+  contactPhone     String    @map("contact_phone")
+  city             String?
+  gstin            String?
+  logoUrl          String?   @map("logo_url")
+  workingHours     Json?     @map("working_hours")
+  wizardCompletedAt DateTime? @map("wizard_completed_at")
+  ownerId          String    @map("owner_id") @db.Uuid
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  owner   User           @relation(fields: [ownerId], references: [id])
+  members ClinicMember[]
+
+  @@map("clinics")
+}
+
+model ClinicMember {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  clinicId  String   @map("clinic_id") @db.Uuid
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user                User                      @relation(fields: [userId], references: [id])
+  clinic              Clinic                    @relation(fields: [clinicId], references: [id])
+  roles               ClinicMemberRole[]
+  permissionOverrides UserPermissionOverride[]
+
+  @@unique([userId, clinicId])
+  @@map("clinic_members")
+}
+
+model Role {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name        String   @unique
+  description String
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  rolePermissions RolePermission[]
+  memberRoles     ClinicMemberRole[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id          String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code        String @unique
+  description String
+  module      String
+
+  rolePermissions     RolePermission[]
+  permissionOverrides UserPermissionOverride[]
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  id           String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  roleId       String @map("role_id") @db.Uuid
+  permissionId String @map("permission_id") @db.Uuid
+
+  role       Role       @relation(fields: [roleId], references: [id])
+  permission Permission @relation(fields: [permissionId], references: [id])
+
+  @@unique([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+model ClinicMemberRole {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clinicMemberId String   @map("clinic_member_id") @db.Uuid
+  roleId         String   @map("role_id") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  clinicMember ClinicMember @relation(fields: [clinicMemberId], references: [id])
+  role         Role         @relation(fields: [roleId], references: [id])
+
+  @@unique([clinicMemberId, roleId])
+  @@map("clinic_member_roles")
+}
+
+model UserPermissionOverride {
+  id             String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clinicMemberId String  @map("clinic_member_id") @db.Uuid
+  permissionId   String  @map("permission_id") @db.Uuid
+  granted        Boolean
+
+  clinicMember ClinicMember @relation(fields: [clinicMemberId], references: [id])
+  permission   Permission   @relation(fields: [permissionId], references: [id])
+
+  @@unique([clinicMemberId, permissionId])
+  @@map("user_permission_overrides")
+}
+
+model RefreshToken {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  tokenHash String   @unique @map("token_hash")
+  familyId  String   @map("family_id") @db.Uuid
+  clinicId  String   @map("clinic_id") @db.Uuid
+  expiresAt DateTime @map("expires_at")
+  revokedAt DateTime? @map("revoked_at")
+  ipAddress String?  @map("ip_address")
+  userAgent String?  @map("user_agent")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([familyId])
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+model AuthAuditLog {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String?  @map("user_id") @db.Uuid
+  clinicId  String?  @map("clinic_id") @db.Uuid
+  event     String
+  ipAddress String?  @map("ip_address")
+  userAgent String?  @map("user_agent")
+  metadata  Json?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@index([clinicId])
+  @@index([event])
+  @@map("auth_audit_log")
+}
+
+model Notification {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  recipientUserId String   @map("recipient_user_id") @db.Uuid
+  clinicId        String   @map("clinic_id") @db.Uuid
+  type            String
+  module          String
+  title           String
+  body            String
+  data            Json     @default("{}")
+  isRead          Boolean  @default(false) @map("is_read")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@index([recipientUserId, clinicId, isRead])
+  @@index([recipientUserId, clinicId, createdAt])
+  @@map("notifications")
+}
+
+model DeviceToken {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  token     String
+  platform  String
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([userId, token])
+  @@map("device_tokens")
+}
+
+model ConsentRecord {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  ownerId     String?   @map("owner_id") @db.Uuid
+  consentType String    @map("consent_type")
+  purposeText String    @map("purpose_text")
+  grantedAt   DateTime  @default(now()) @map("granted_at")
+  withdrawnAt DateTime? @map("withdrawn_at")
+  ipAddress   String?   @map("ip_address")
+  actorId     String?   @map("actor_id") @db.Uuid
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  @@index([ownerId])
+  @@map("consent_records")
+}
