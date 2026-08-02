@@ -1,5 +1,16 @@
 {
   "extends": "../../packages/config/tsconfig/nextjs.json",
-  "include": ["app", "src"],
-  "exclude": ["node_modules"]
+  "include": [
+    "app",
+    "src",
+    ".next/types/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules"
+  ],
+  "compilerOptions": {
+    "allowJs": true,
+    "noEmit": true,
+    "incremental": true
+  }
 }
