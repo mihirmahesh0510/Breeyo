@@ -1,12 +1,41 @@
 import { vi } from 'vitest';
 
+vi.mock('react', () => ({
+  createElement: vi.fn(),
+  forwardRef: vi.fn((fn: any) => fn),
+  memo: vi.fn((fn: any) => fn),
+  useState: vi.fn((init: any) => [init, vi.fn()]),
+  useCallback: vi.fn((fn: any) => fn),
+  useMemo: vi.fn((fn: any) => fn()),
+  useRef: vi.fn((init: any) => ({ current: init })),
+  useEffect: vi.fn(),
+}));
+
 vi.mock('react-native', () => ({
   Platform: { OS: 'android', select: vi.fn((obj: any) => obj.android) },
   StyleSheet: { create: (styles: any) => styles },
   Dimensions: {
     get: () => ({ width: 375, height: 812, scale: 2, fontScale: 1 }),
   },
+  View: 'View',
+  Text: 'Text',
+  Image: 'Image',
+  TouchableOpacity: 'TouchableOpacity',
+  Animated: {
+    View: 'Animated.View',
+    Text: 'Animated.Text',
+    Value: vi.fn(() => ({
+      interpolate: vi.fn(),
+      setValue: vi.fn(),
+    })),
+    timing: vi.fn(() => ({ start: vi.fn() })),
+    spring: vi.fn(() => ({ start: vi.fn() })),
+  },
+  Pressable: 'Pressable',
+  TextInput: 'TextInput',
 }));
+
+const mockComponent = vi.fn(() => null);
 
 vi.mock('react-native-paper', () => ({
   MD3LightTheme: {
@@ -166,4 +195,29 @@ vi.mock('react-native-paper', () => ({
     animation: { scale: 1, defaultAnimationDuration: 200 },
   },
   useTheme: vi.fn(),
+  // Component mocks
+  Text: mockComponent,
+  Button: mockComponent,
+  TextInput: Object.assign(mockComponent, {
+    Icon: mockComponent,
+    Affix: mockComponent,
+  }),
+  HelperText: mockComponent,
+  Chip: mockComponent,
+  IconButton: mockComponent,
+  Divider: mockComponent,
+  ProgressBar: mockComponent,
+  ActivityIndicator: mockComponent,
+  Searchbar: mockComponent,
+  Snackbar: mockComponent,
+  Avatar: {
+    Image: mockComponent,
+    Text: mockComponent,
+    Icon: mockComponent,
+  },
+  List: {
+    Item: mockComponent,
+    Icon: mockComponent,
+    Accordion: mockComponent,
+  },
 }));
