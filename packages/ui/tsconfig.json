@@ -1,0 +1,7 @@
+{
+  "extends": "../../packages/config/tsconfig/react-native.json",
+  "compilerOptions": {
+    "moduleResolution": "bundler"
+  },
+  "include": ["src/**/*", "tests/**/*", "scripts/**/*"]
+}
