@@ -1,12 +1,10 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { AUTH_ERRORS } from '@breeyo/types';
 
-declare module 'fastify' {
-  interface FastifyRequest {
-    user: {
-      id: string;
-      activeClinicId: string;
-    };
+declare module '@fastify/jwt' {
+  interface FastifyJWT {
+    payload: { sub: string; clinicId: string; type: string };
+    user: { id: string; activeClinicId: string };
   }
 }
 

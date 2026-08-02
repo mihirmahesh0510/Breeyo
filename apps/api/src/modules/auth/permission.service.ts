@@ -1,5 +1,5 @@
 import type { PrismaClient } from '@prisma/client';
-import type Redis from 'ioredis';
+import type { Redis } from 'ioredis';
 
 const CACHE_TTL_SECONDS = 300; // 5 minutes
 

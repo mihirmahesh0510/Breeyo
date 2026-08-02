@@ -1,4 +1,4 @@
-import type Redis from 'ioredis';
+import type { Redis } from 'ioredis';
 import { AUTH_ERRORS } from '@breeyo/types';
 
 function throwError(statusCode: number, code: string, message: string): never {

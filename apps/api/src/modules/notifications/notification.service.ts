@@ -1,4 +1,4 @@
-import type { PrismaClient, Notification, DeviceToken } from '@prisma/client';
+import type { PrismaClient, Notification, DeviceToken, Prisma } from '@prisma/client';
 
 export interface ListOptions {
   page: number;
@@ -155,7 +155,7 @@ export class NotificationService {
         module: data.module,
         title: data.title,
         body: data.body,
-        data: data.data ?? {},
+        data: (data.data ?? {}) as Prisma.InputJsonValue,
       },
     });
   }

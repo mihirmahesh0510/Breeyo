@@ -1,6 +1,6 @@
 import { Worker, type Job } from 'bullmq';
 import type { Redis } from 'ioredis';
-import type { PrismaClient } from '@prisma/client';
+import type { PrismaClient, Prisma } from '@prisma/client';
 import type { NotificationEvent } from '@breeyo/types';
 import { PushService } from './push.service.js';
 
@@ -26,7 +26,7 @@ export function createNotificationWorker(
             module: event.module,
             title: event.title,
             body: event.body,
-            data: event.data ?? {},
+            data: (event.data ?? {}) as Prisma.InputJsonValue,
           },
         });
 

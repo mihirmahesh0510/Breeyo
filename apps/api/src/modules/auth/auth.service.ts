@@ -1,5 +1,5 @@
 import type { PrismaClient } from '@prisma/client';
-import type Redis from 'ioredis';
+import type { Redis } from 'ioredis';
 import * as argon2 from 'argon2';
 import crypto from 'node:crypto';
 import type { SignupInput } from '@breeyo/validators';

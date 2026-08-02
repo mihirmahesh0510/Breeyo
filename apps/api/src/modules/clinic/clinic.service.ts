@@ -1,4 +1,4 @@
-import type { PrismaClient } from '@prisma/client';
+import type { PrismaClient, Prisma } from '@prisma/client';
 
 export class ClinicService {
   constructor(private readonly prisma: PrismaClient) {}
@@ -26,7 +26,7 @@ export class ClinicService {
   async updateWorkingHours(clinicId: string, hours: Record<string, unknown>) {
     return this.prisma.clinic.update({
       where: { id: clinicId },
-      data: { workingHours: hours },
+      data: { workingHours: hours as Prisma.InputJsonValue },
     });
   }
 
