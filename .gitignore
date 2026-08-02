@@ -13,5 +13,3 @@ postgres_data
 
 # Ephemeral tooling state (local only)
 .claude-flow/
-.planning/
-STATE.md

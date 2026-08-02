@@ -1,130 +1,80 @@
 # Breeyo Build Skill
 
-## Description
+Project-specific phase workflow for the Breeyo veterinary clinic management platform.
+Three modes: review phase plans, build phase code, verify phase implementation.
 
-Project-specific build conventions, phase workflow, and coding standards for the Breeyo veterinary clinic management platform.
+## Workflow Detail
 
-## When to Use
+### Mode 1: `breeyo-build --review`
 
-Use this skill when working on any Breeyo feature development, bug fixes, or phase implementation. It encodes the project's architectural patterns and conventions.
+**Step 1:** Load all phase docs
 
-## Project Structure
+**Step 2:** Superpowers reviews the plan for:
+- Product gaps (user flows that aren't specified)
+- Edge cases (what happens when X fails?)
+- Missing acceptance criteria
+- Contradictions between decisions
+- Requirements that have no corresponding plan task
 
-```
-breeyo/
-  apps/
-    api/          @breeyo/api    - Fastify 5 + Prisma + PostgreSQL (RLS)
-    mobile/       @breeyo/mobile - Expo SDK 52 + Expo Router
-    web/          @breeyo/web    - Next.js (Phase 9)
-  packages/
-    ui/           @breeyo/ui     - Design system (26 components, atomic design)
-    validators/   @breeyo/validators - Shared Zod schemas
-    types/        @breeyo/types  - Shared TypeScript types
-    config/       @breeyo/config - Shared tsconfig bases
-```
+**Step 3:** For each gap found, ask the USER a PRODUCT question:
+- "When a walk-in arrives but the queue is full, what should the vet see?"
+- "If an owner declines data consent, should they still get invoice PDFs?"
+- NOT: "Should we use WebSocket or SSE for real-time updates?"
 
-## Phase Workflow
+**Step 4:** Record answers as new D-XX decisions in CONTEXT.md
 
-Breeyo is built in sequential phases. Each phase:
+**Step 5:** Report: "Phase N plan review complete. N gaps found, N resolved."
 
-1. Has a dedicated branch: `breeyo/phase-NN-description`
-2. Stacks on the previous phase branch
-3. Uses commit prefix: `feat|fix|chore|docs(phase-NN): message`
-4. Gets merged to `main` via PR after completion
+### Mode 2: `breeyo-build --build`
 
-### Current: Phase 03 - Patient Registration & Walk-in Queue
+**Step 1:** Load phase docs (CONTEXT.md, RESEARCH.md, UI-SPEC.md, VALIDATION.md, PLAN.md files)
 
-## API Conventions
+**Step 2:** Extract REQ-IDs mapped to this phase from REQUIREMENTS.md traceability
 
-### Module Structure
-```
-apps/api/src/modules/<name>/
-  <name>.controller.ts   -- Request handlers
-  <name>.service.ts      -- Business logic
-  <name>.routes.ts       -- Route registration
-  <name>.schema.ts       -- Zod request/response schemas
-```
+**Step 3:** Create git worktree (superpowers:using-git-worktrees)
+- Branch: `breeyo/phase-NN-brief-name`
 
-### Route Registration
-```typescript
-// In app.ts
-await app.register(import('./modules/<name>/<name>.routes.js'), { prefix: '/api/v1' });
-```
+**Step 4:** Synthesize design document from phase docs → `.superpowers/designs/phase-NN.md`
+- This is the "approved design" that superpowers expects after brainstorming
 
-### Auth Middleware Stack
-```typescript
-// In route handler
-{ preHandler: [app.authenticate, app.authorize('permission:code')] }
-```
+**Step 5:** Invoke superpowers:writing-plans
+- Plans MUST:
+  - Start each task with a failing test (RED)
+  - Reference the D-XX decision being implemented
+  - Reference the REQ-ID being satisfied
+  - Use exact file paths in the monorepo
+  - Be 2-5 minute tasks maximum
 
-### Database Patterns
-- RLS multi-tenancy: always set tenant context via `prisma-rls.ts`
-- Two DB roles: `breeyo_admin` (migrations), `breeyo_app` (app queries)
-- Prisma columns: `snake_case` with `@map()`, TypeScript: `camelCase`
-- All IDs: UUID via `gen_random_uuid()`
-- Table names: plural `snake_case` via `@@map()`
+**Step 6:** Invoke superpowers:subagent-driven-development
+- Each subagent:
+  - Gets task brief + relevant D-XX decisions + REQ-IDs
+  - MUST follow TDD iron law (superpowers:test-driven-development)
+  - Writes failing test FIRST, then minimal implementation to pass
+  - If code is written before a test: DELETE IT and restart
 
-### Error Handling
-- Throw Fastify errors with appropriate HTTP status codes
-- Centralized error handler in `middleware/error-handler.ts`
-- Audit log security-relevant events via `lib/audit-log.ts`
+**Step 7:** After each task, invoke superpowers:requesting-code-review
+- Review checks:
+  - D-XX decision compliance (does code match the locked decision?)
+  - REQ-ID satisfaction (does this requirement now pass?)
+  - TDD compliance (was test written first? is coverage adequate?)
+  - Security (SEC-* requirements applicable to this phase)
+  - No scope creep (no features beyond phase boundary)
 
-## UI Conventions
+**Step 8:** After all tasks, invoke superpowers:verification-before-completion
+- Verify against VALIDATION.md acceptance criteria
+- Verify every REQ-ID for this phase has passing tests
 
-### Atomic Design Hierarchy
-```
-atoms/       -- Button, Typography, TextInput, StatusBadge, Avatar, etc.
-molecules/   -- SearchBar, ListItem, FormField, EmptyState, Toast, etc.
-organisms/   -- Card, Modal, BottomSheet, NavigationBar, QueueCard, etc.
-wireframes/  -- Module-specific screen compositions with story states
-```
+**Step 9:** Invoke superpowers:finishing-a-development-branch
+- Present merge/PR options
 
-### Design Tokens
-- Primary: `#2E7D32` (green)
-- Secondary: `#5D4037` (brown)
-- Tertiary: `#E65100` (orange)
-- Background: `#FFFBF5` (warm white)
-- All tokens in `packages/ui/src/theme/`
+### Mode 3: `breeyo-build --verify`
 
-### Wireframe Stories
-Each wireframe must have 4 states:
-1. **Empty** -- No data, show EmptyState component
-2. **Loading** -- Skeleton loaders
-3. **Populated** -- Normal state with data
-4. **Error** -- Error message with retry
+**Step 1:** Load phase docs
 
-## Testing
+**Step 2:** Read implemented code for the phase's scope
 
-- **Framework:** Vitest across all packages
-- **API tests:** `supertest` with `buildApp({ logger: false })`
-- **Test data:** `@faker-js/faker`
-- **UI tests:** Accessibility checks included
-- **CI:** GitHub Actions with real PostgreSQL 16 + Redis 7
+**Step 3:** Run superpowers:requesting-code-review against CONTEXT.md
 
-## Key Files to Know
+**Step 4:** Run superpowers:verification-before-completion against VALIDATION.md
 
-| File | Purpose |
-|------|---------|
-| `apps/api/src/app.ts` | App factory, plugin/route registration |
-| `apps/api/src/server.ts` | Server entry point |
-| `apps/api/prisma/schema.prisma` | Database schema |
-| `apps/api/prisma/init-rls-roles.sql` | RLS role setup |
-| `apps/api/prisma/post-migrate.sql` | Post-migration RLS policies |
-| `packages/ui/src/theme/colors.ts` | Color tokens |
-| `packages/ui/src/theme/theme.ts` | MD3 theme composition |
-| `turbo.json` | Turborepo task config |
-| `ERD/schema.md` | Entity relationship documentation |
-
-## Build & Run
-
-```bash
-pnpm install                          # Install dependencies
-docker compose up -d                  # Start PostgreSQL + Redis
-pnpm db:generate                      # Generate Prisma client
-pnpm db:migrate                       # Run migrations
-pnpm db:seed                          # Seed test data
-pnpm dev                              # Start all apps
-pnpm test                             # Run all tests
-pnpm --filter @breeyo/api test        # API tests only
-pnpm --filter @breeyo/ui test         # UI tests only
-```
+**Step 5:** Report findings without modifying code
