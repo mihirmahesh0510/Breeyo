@@ -1,32 +1,204 @@
-# Breeyo ERD: Phase 3 — Patient Registration & Walk-in Queue
+# Breeyo Phase 3: Patient Registration & Walk-in Queue
 
-## Phase 3: Patient Registration & Walk-in Queue
+---
 
-### Phase 3 Product Features
+## For Product — What This Phase Does
 
-Phase 3 is the **first feature phase** — it builds the core daily workflow for veterinary clinics:
+Phase 3 is the **first feature phase** — it builds the core daily workflow that veterinary clinics use from opening to closing. This is what vets interact with every single day.
 
-1. **Pet Owner Registration** — Register pet owners by mobile number (unique key per clinic). Auto-detect returning owners by mobile. Minimal required fields: mobile + name.
+### Features Delivered
 
-2. **Pet Registration** — Register pets linked to owners. Required: pet name + species. Optional: breed, age, weight, color, microchip ID, photo, notes. Two-step wizard: Step 1 (owner) → Step 2 (pet).
+1. **Pet Owner Registration** — Register pet owners by mobile number (unique key per clinic). Auto-detect returning owners by mobile lookup. Minimal required fields: mobile + name. Optional: email, address, alternate phone.
 
-3. **Walk-in Queue (Home Screen)** — Real-time queue board showing three sections: In Consult (top), Waiting (middle), Done (bottom). This is the screen vets see immediately after login.
+2. **Pet Registration** — Register pets linked to owners. Required: pet name + species (7 types). Optional: breed, age, weight, color, microchip ID, photo, notes. Two-step wizard: Step 1 (owner) → Step 2 (pet).
 
-4. **2-Tap Check-in** — FAB opens check-in bottom sheet → enter mobile → auto-shows owner + pets → tap pet to check in. Optional visit reason and emergency toggle.
+3. **Walk-in Queue (Home Screen)** — Real-time queue board showing three sections: In Consult (top), Waiting (middle), Done (bottom). This is the screen vets see immediately after login. It IS the app.
 
-5. **Queue Status Management** — State machine: WAITING → IN_CONSULT → DONE. Alternative: WAITING → NO_SHOW, IN_CONSULT → NO_SHOW. "Call Next" button auto-selects the next waiting patient (emergencies first).
+4. **2-Tap Check-in** — FAB opens check-in bottom sheet → enter mobile → auto-shows owner + pets → tap pet to check in. Optional visit reason and emergency toggle. New patient? Inline registration without leaving the flow.
 
-6. **Patient Search** — Live fuzzy search across owner name, mobile number, and pet name using PostgreSQL `pg_trgm` trigram matching.
+5. **Queue Status Management** — State machine: WAITING → IN_CONSULT → DONE. Alternatives: WAITING → NO_SHOW, IN_CONSULT → NO_SHOW. "Call Next" button auto-selects the next waiting patient (emergencies first, then FIFO).
 
-7. **Pet Profiles** — Pet detail page with owner info, visit history timeline, and edit mode for updating optional fields.
+6. **Patient Search** — Live fuzzy search across owner name, mobile number, and pet name using PostgreSQL `pg_trgm` trigram matching. Results sorted by relevance.
+
+7. **Pet Profiles** — Pet detail page with owner info, visit history timeline (completed visits only), and edit mode for updating optional fields.
 
 8. **Real-time Sync** — WebSocket (Socket.IO) broadcasts check-ins and status changes to all connected devices within a clinic. Offline banner when disconnected.
 
-9. **Wait Time Estimation** — Average consultation time calculated from last 7 days of data. Defaults to 15 minutes when insufficient data (<5 data points).
+9. **Wait Time Estimation** — Average consultation time calculated from last 7 days of data. Defaults to 15 minutes when insufficient data (<5 data points). Shows per-patient estimated wait.
 
-10. **Same-day Re-check-in** — If a pet was already seen today, system prompts confirmation before allowing a second check-in (D-40).
+10. **Same-day Re-check-in** — If a pet was already seen today (DONE status), system prompts confirmation before allowing a second check-in (D-40).
 
-### Phase 3 Entity Relationship Diagram
+### User Flows
+
+**2-Tap Check-in (Returning Patient):**
+```
+1. Tap FAB → Check-in bottom sheet opens
+2. Enter mobile "9876543210"
+3. Auto-lookup finds owner "Priya Sharma" with pets [Buddy, Luna]
+4. Tap "Buddy" → visit reason picker (optional) → emergency toggle (optional)
+5. Tap "Check In" → pet appears in Waiting section → all devices update
+```
+
+**New Walk-in (Mobile Not Found):**
+```
+1. Tap FAB → enter mobile → "No owner found"
+2. Quick inline registration: enter name + pet name + species
+3. Owner + Pet created → auto check-in → appears in queue
+```
+
+**Call Next Patient:**
+```
+1. Vet taps "Call Next" button
+2. System selects: emergency patients first, then oldest WAITING
+3. Entry moves from Waiting → In Consult
+4. treatingVetId + calledAt timestamp set
+5. All devices see the update instantly
+```
+
+---
+
+## For Business — Rules, Compliance & Impact
+
+### Business Rules
+
+| Rule | Implementation | Rationale |
+|------|---------------|-----------|
+| One owner per mobile per clinic | Composite unique `(clinicId, mobile)` | Prevents duplicates; same person can be at different clinics |
+| Mobile is the lookup key | `indianMobileSchema`: 10 digits starting with 6-9 | India-specific; no country code stored (implicit +91) |
+| Owner upsert (not insert) | `createOrConnect` on `(clinicId, mobile)` | Returning owner auto-detected; no duplicate entry risk |
+| Minimal pet registration | Only name + species required | Fill rest during consultation (D-04); reduces check-in friction |
+| Emergency patients jump queue | `isEmergency DESC, checkedInAt ASC` sort | Clinical priority: bleeding dog > scheduled vaccination |
+| Same-day re-check-in guard | `SAME_DAY_RECHECK` prompt (D-40) | Prevents accidental double check-ins; allows intentional re-visits |
+| No skip from WAITING to DONE | State machine validation | Must go through IN_CONSULT — ensures vet assignment + timestamps |
+| Midnight auto-archive | Cron sets `archivedAt` on WAITING + DONE entries | Fresh queue each morning; IN_CONSULT entries carry over (D-39) |
+| Visit history = DONE + NO_SHOW only | Pet profile filters on terminal states | Active entries aren't "history" yet |
+
+### India-Specific Design Decisions
+
+| Decision | Context |
+|----------|---------|
+| Indian mobile format (`^[6-9]\d{9}$`) | All Indian mobile numbers start with 6, 7, 8, or 9 |
+| No country code field | Breeyo targets India only in v1 |
+| Species list includes Indian breeds | Indie (Indian Pariah), Rajapalayam, Mudhol Hound, Chippiparai, etc. |
+| IST timezone for "today" | Queue dates computed from Asia/Kolkata midnight, not UTC |
+| Hindi UI support | Phase 2 i18n consumed by Phase 3 screens |
+
+### Visit Reasons
+
+Pre-defined quick-select options (tap to select, not type):
+
+| Value | Label |
+|-------|-------|
+| `vaccination` | Vaccination |
+| `sick_visit` | Sick Visit |
+| `follow_up` | Follow-up |
+| `deworming` | Deworming |
+| `grooming` | Grooming |
+| `other` | Other |
+
+---
+
+## For Design — Screens, Components & Interactions
+
+### Screen Inventory
+
+| Screen | File | Description |
+|--------|------|-------------|
+| **Queue (Home)** | `QueueScreen.tsx` | Three-section queue board. FAB for check-in. "Call Next" button. This IS the landing screen. |
+| **Patient List** | `PatientListScreen.tsx` | Search bar + recent patients list (default). Fuzzy search results when typing. |
+| **Patient Detail** | `PatientDetailScreen.tsx` | Pet profile card + owner info + visit history timeline |
+| **Register Patient** | `RegisterPatientScreen.tsx` | Two-step wizard: Step 1 (owner) → Step 2 (pet) |
+| **Owner Detail** | `OwnerDetailScreen.tsx` | Owner info + all pets list |
+| **Edit Pet** | `EditPetForm.tsx` | Edit mode for pet optional fields |
+
+### Component Breakdown (Phase 2 → Phase 3)
+
+**Queue Screen uses:**
+- `NavigationBar` (organism) — title "Queue"
+- `QueueBoard` (feature) — custom, uses QueueCard + QueueSectionHeader
+- `QueueCard` (organism) — pet name, owner, species, status badge, wait time
+- `StatusBadge` (atom) — WAITING (orange), IN_CONSULT (green), DONE (grey), NO_SHOW (red)
+- `EmptyState` (molecule) — "No patients in queue"
+- `BottomSheet` (organism) — check-in flow container
+- `BottomTabBar` (organism) — bottom navigation
+- `Toast` (molecule) — check-in success/error feedback
+- `OfflineBanner` (feature) — "Offline — data may be outdated"
+
+**Check-in Sheet uses:**
+- `SearchBar` (molecule) — mobile number input
+- `Button` (atom) — "Check In" CTA
+- `Chip` (atom) — visit reason quick-select
+- `ExistingOwnerCard` (feature) — shows found owner + pets
+
+**Registration Wizard uses:**
+- `WizardStepper` (organism) — two-step flow
+- `FormField` (molecule) — labeled inputs with validation errors
+- `TextInput` (atom) — form fields
+- `SpeciesBreedPicker` (feature) — species dropdown → filtered breed dropdown
+
+**Patient List uses:**
+- `SearchBar` (molecule) — debounced fuzzy search
+- `ListItem` (molecule) — patient row in results
+- `SkeletonLoader` (molecule) — loading state
+- `EmptyState` (molecule) — no results
+
+### Mobile Feature Architecture
+
+```
+apps/mobile/src/features/
+├── patient/
+│   ├── hooks/
+│   │   ├── usePatientRegister.ts    # Registration form state + API calls
+│   │   ├── usePatientSearch.ts      # Debounced search with React Query
+│   │   └── usePatientProfile.ts     # Pet profile data fetching
+│   ├── components/
+│   │   ├── SpeciesBreedPicker.tsx    # Species dropdown → breed dropdown (filtered)
+│   │   ├── PetPhotoPicker.tsx        # Camera/gallery photo selection
+│   │   ├── PatientListItem.tsx       # Patient row in search results
+│   │   ├── ExistingOwnerCard.tsx     # Shows existing owner when mobile matches
+│   │   ├── PatientSearchResults.tsx  # Search results list
+│   │   ├── RecentPatientsList.tsx    # Default Patients tab view
+│   │   ├── PetProfileCard.tsx        # Pet detail card with owner info
+│   │   └── VisitTimeline.tsx         # Chronological visit history
+│   └── screens/
+│       ├── PatientListScreen.tsx     # Patients tab with search + recent list
+│       ├── PatientDetailScreen.tsx   # Pet profile page
+│       ├── RegisterPatientScreen.tsx # Two-step registration wizard
+│       ├── OwnerDetailScreen.tsx     # Owner detail + pet list
+│       └── EditPetForm.tsx           # Edit mode for pet optional fields
+│
+└── queue/
+    ├── store/
+    │   └── queueUIStore.ts           # Zustand store for queue UI state
+    ├── hooks/
+    │   ├── useQueue.ts               # Queue board data fetching (React Query)
+    │   ├── useQueueSocket.ts         # Socket.IO connection + event handlers
+    │   ├── useCheckIn.ts             # Check-in mutation + validation
+    │   └── useQueueActions.ts        # Status update + call next mutations
+    ├── components/
+    │   ├── QueueBoard.tsx            # Three-section queue layout
+    │   ├── QueueCardItem.tsx         # Individual queue entry card
+    │   ├── QueueSectionHeader.tsx    # "In Consult", "Waiting", "Done" headers
+    │   ├── CheckInSheet.tsx          # Bottom sheet for check-in flow
+    │   ├── CallNextButton.tsx        # "Call Next" action button
+    │   ├── VisitReasonPicker.tsx     # Quick-select visit reason chips
+    │   └── OfflineBanner.tsx         # "Offline — data may be outdated" banner
+    └── screens/
+        └── QueueScreen.tsx           # Home screen — the queue status board
+```
+
+**Key Mobile Patterns:**
+- **React Query** for server state (caching, refetching, optimistic updates)
+- **Zustand** for local UI state (queue filters, bottom sheet visibility)
+- **Socket.IO** for real-time updates (invalidates React Query cache on events)
+- **Expo Router** for file-based navigation
+- **@breeyo/validators** shared with API — same Zod schemas validate on both sides
+
+---
+
+## For Engineering — Architecture & Implementation
+
+### Entity Relationship Diagram
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -96,7 +268,7 @@ User (1) ────── owns ────> (N) Clinic       [ownerId FK]
 User (1) ────── member ──> (N) ClinicMember [userId FK]
 ```
 
-### Phase 3 Database Models
+### Database Models
 
 #### PetOwner
 
@@ -153,7 +325,7 @@ A patient animal linked to an owner and scoped to a clinic.
 | RABBIT | Rabbit | `rabbit` | 8 breeds |
 | FISH | Fish | `fish` | 8 breeds |
 | REPTILE | Reptile | `turtle` | 7 breeds |
-| OTHER | Other | `paw` | — |
+| OTHER | Other | `paw` | -- |
 
 #### QueueEntry
 
@@ -203,12 +375,12 @@ A single check-in event for a pet on a given day. The core of the walk-in queue 
 
 **Valid transitions:**
 
-| From | To | Trigger |
-|------|----|---------|
-| WAITING | IN_CONSULT | "Call Next" button or tap specific patient |
-| WAITING | NO_SHOW | Long-press status badge → "Mark No-show" |
-| IN_CONSULT | DONE | Tap status badge to cycle, or consultation ends |
-| IN_CONSULT | NO_SHOW | Long-press status badge |
+| From | To | Trigger | Side Effects |
+|------|----|---------|-------------|
+| WAITING | IN_CONSULT | "Call Next" or tap specific patient | Sets `treatingVetId`, `calledAt` |
+| WAITING | NO_SHOW | Long-press status badge → "Mark No-show" | Sets `completedAt` |
+| IN_CONSULT | DONE | Tap status badge to cycle | Sets `completedAt` |
+| IN_CONSULT | NO_SHOW | Long-press status badge | Sets `completedAt` |
 
 **Terminal states:** DONE, NO_SHOW — no further transitions allowed.
 
@@ -216,20 +388,7 @@ A single check-in event for a pet on a given day. The core of the walk-in queue 
 - WAITING and DONE entries → `archivedAt` set at midnight IST
 - IN_CONSULT entries persist past midnight (D-39) — carry over to next day
 
-#### Visit Reasons
-
-Pre-defined visit reason quick-select options:
-
-| Value | Label |
-|-------|-------|
-| `vaccination` | Vaccination |
-| `sick_visit` | Sick Visit |
-| `follow_up` | Follow-up |
-| `deworming` | Deworming |
-| `grooming` | Grooming |
-| `other` | Other |
-
-### Phase 3 API Modules
+### API Modules
 
 #### Patient Module (`apps/api/src/modules/patient/`)
 
@@ -305,67 +464,13 @@ Pre-defined visit reason quick-select options:
 |-------|---------|---------|
 | `patient:checked-in` | `{ entry, timestamp }` | New check-in |
 | `queue:updated` | `{ entry, updatedBy, timestamp }` | Status change |
-| `queue:archived` | — | Midnight archive |
-| `patient:registered` | — | New patient registered |
-| `patient:updated` | — | Pet profile updated |
+| `queue:archived` | -- | Midnight archive |
+| `patient:registered` | -- | New patient registered |
+| `patient:updated` | -- | Pet profile updated |
 
 **Room scoping:** Events broadcast to `clinic:{clinicId}` room — only devices connected to the same clinic receive updates.
 
-### Phase 3 Mobile App Code
-
-```
-apps/mobile/src/
-├── features/
-│   ├── patient/
-│   │   ├── hooks/
-│   │   │   ├── usePatientRegister.ts    # Registration form state + API calls
-│   │   │   ├── usePatientSearch.ts      # Debounced search with React Query
-│   │   │   └── usePatientProfile.ts     # Pet profile data fetching
-│   │   ├── components/
-│   │   │   ├── SpeciesBreedPicker.tsx    # Species dropdown → breed dropdown (filtered)
-│   │   │   ├── PetPhotoPicker.tsx        # Camera/gallery photo selection
-│   │   │   ├── PatientListItem.tsx       # Patient row in search results
-│   │   │   ├── ExistingOwnerCard.tsx     # Shows existing owner when mobile matches
-│   │   │   ├── PatientSearchResults.tsx  # Search results list
-│   │   │   ├── RecentPatientsList.tsx    # Default Patients tab view
-│   │   │   ├── PetProfileCard.tsx        # Pet detail card with owner info
-│   │   │   └── VisitTimeline.tsx         # Chronological visit history
-│   │   ├── screens/
-│   │   │   ├── PatientListScreen.tsx     # Patients tab with search + recent list
-│   │   │   ├── PatientDetailScreen.tsx   # Pet profile page
-│   │   │   ├── RegisterPatientScreen.tsx # Two-step registration wizard
-│   │   │   ├── OwnerDetailScreen.tsx     # Owner detail + pet list
-│   │   │   └── EditPetForm.tsx           # Edit mode for pet optional fields
-│   │   └── index.ts
-│   │
-│   └── queue/
-│       ├── store/
-│       │   └── queueUIStore.ts           # Zustand store for queue UI state
-│       ├── hooks/
-│       │   ├── useQueue.ts               # Queue board data fetching (React Query)
-│       │   ├── useQueueSocket.ts         # Socket.IO connection + event handlers
-│       │   ├── useCheckIn.ts             # Check-in mutation + validation
-│       │   └── useQueueActions.ts        # Status update + call next mutations
-│       ├── components/
-│       │   ├── QueueBoard.tsx            # Three-section queue layout
-│       │   ├── QueueCardItem.tsx         # Individual queue entry card
-│       │   ├── QueueSectionHeader.tsx    # "In Consult", "Waiting", "Done" headers
-│       │   ├── CheckInSheet.tsx          # Bottom sheet for check-in flow
-│       │   ├── CallNextButton.tsx        # "Call Next" action button
-│       │   ├── VisitReasonPicker.tsx     # Quick-select visit reason chips
-│       │   └── OfflineBanner.tsx         # "Offline — data may be outdated" banner
-│       └── screens/
-│           └── QueueScreen.tsx           # Home screen — the queue status board
-```
-
-**Key Mobile Patterns:**
-- **React Query** for server state (caching, refetching, optimistic updates)
-- **Zustand** for local UI state (queue UI store)
-- **Socket.IO** for real-time updates (invalidates React Query cache on events)
-- **Expo Router** for file-based navigation
-- **@breeyo/validators** shared with API — same Zod schemas validate on both sides
-
-### Phase 3 Shared Packages
+### Shared Packages
 
 #### `@breeyo/types` — Type Definitions
 
@@ -378,14 +483,18 @@ apps/mobile/src/
 | `constants/socket-events.ts` | `SOCKET_EVENTS` — event name constants |
 | `constants/visit-reasons.ts` | `VISIT_REASONS` array, `VisitReason` type |
 
+**Queue State Machine (`constants/queue-status.ts`):**
+
+```typescript
+export const QUEUE_TRANSITIONS: Record<QueueStatus, QueueStatus[]> = {
+  [QueueStatus.WAITING]: [QueueStatus.IN_CONSULT, QueueStatus.NO_SHOW],
+  [QueueStatus.IN_CONSULT]: [QueueStatus.DONE, QueueStatus.NO_SHOW],
+  [QueueStatus.DONE]: [],
+  [QueueStatus.NO_SHOW]: [],
+};
+```
+
 #### `@breeyo/validators` — Zod Schemas
-
-| File | Exports |
-|------|---------|
-| `patient.ts` | `indianMobileSchema` (strips spaces, validates `^[6-9]\d{9}$`), `ownerRegistrationSchema`, `petRegistrationSchema`, `patientSearchSchema` |
-| `queue.ts` | `checkInSchema`, `queueStatusUpdateSchema` |
-
-**Validation Rules:**
 
 | Schema | Field | Rule |
 |--------|-------|------|
@@ -412,9 +521,21 @@ apps/mobile/src/
 | | isEmergency | Boolean, default false |
 | `queueStatusUpdateSchema` | status | One of: WAITING, IN_CONSULT, DONE, NO_SHOW |
 
-### Phase 3 Tests
+### Error Codes
 
-#### Patient Repository Tests (`patient.repository.test.ts`)
+| Code | Status | Trigger |
+|------|--------|---------|
+| `OWNER_NOT_FOUND` | 404 | Registering pet for non-existent owner |
+| `PET_NOT_FOUND` | 404 | Updating non-existent pet |
+| `ALREADY_IN_QUEUE` | 409 | Pet already WAITING or IN_CONSULT today |
+| `SAME_DAY_RECHECK` | 409 | Pet already DONE today, reCheckIn flag not set |
+| `ENTRY_NOT_FOUND` | 404 | Updating status of non-existent queue entry |
+| `INVALID_TRANSITION` | 400 | Invalid state machine transition (e.g., WAITING → DONE) |
+| `NO_PATIENTS_WAITING` | 404 | "Call Next" with empty queue |
+
+### Tests (3 files, 64 test cases)
+
+#### Patient Repository Tests (`patient.repository.test.ts`) — 17 tests
 
 | Test | What It Verifies |
 |------|-----------------|
@@ -436,9 +557,7 @@ apps/mobile/src/
 | `searchPatients` — respects limit parameter | Limit passed to raw query |
 | `getRecentPatients` — executes raw SQL for recent patients | Raw query with pet-owner-queue join |
 
-**Total: 17 tests**
-
-#### Patient Service Tests (`patient.service.test.ts`)
+#### Patient Service Tests (`patient.service.test.ts`) — 23 tests
 
 | Test | What It Verifies |
 |------|-----------------|
@@ -466,9 +585,7 @@ apps/mobile/src/
 | `getRecentPatients` — calls with clinicId and limit | Correct delegation |
 | `getRecentPatients` — defaults limit to 20 | Default value |
 
-**Total: 23 tests**
-
-#### Queue Service Tests (`queue.service.test.ts`)
+#### Queue Service Tests (`queue.service.test.ts`) — 24 tests
 
 | Test | What It Verifies |
 |------|-----------------|
@@ -496,8 +613,6 @@ apps/mobile/src/
 | `getQueueBoard` — computes dynamic positions | Position 1, 2, 3... |
 | `getQueueBoard` — computes estimated wait from avg consult time | position * avgDuration |
 | `getQueueBoard` — defaults to 15 min when insufficient data | 900 seconds fallback |
-
-**Total: 24 tests**
 
 **Grand Total Phase 3 Tests: 64 tests** (17 repository + 23 service + 24 queue service)
 
@@ -588,39 +703,10 @@ apps/mobile/src/
               ┌──────────┐ ┌──────────┐    ┌──────────┐
               │ Device A │ │ Device B │    │ Device C │
               │ (vet)    │ │ (front   │    │ (tablet) │
-              │          │ │  desk)   │    │          │
-              │ React    │ │ React    │    │ React    │
-              │ Query    │ │ Query    │    │ Query    │
-              │ cache    │ │ cache    │    │ cache    │
-              │ invalidat│ │ invalidat│    │ invalidat│
-              └──────────┘ └──────────┘    └──────────┘
-```
-
-### Data Flow: New Patient Registration + Check-in
-
-```
-1. NEW WALK-IN (mobile not found)
-   ┌──────────────────┐
-   │ GET /owners/     │──> Returns null
-   │ lookup?mobile=   │
-   └──────────────────┘
-           │
-           ▼ Quick inline registration
-   ┌──────────────────┐    ┌───────────────┐
-   │ POST /patients/  │───>│ PatientService│
-   │ register         │    │ registerPatient│
-   │ {owner: {mobile, │    │               │
-   │  name},          │    │ 1. registerOwner (upsert)
-   │  pet: {name,     │    │ 2. registerPet (create)
-   │  species}}       │    │               │
-   └──────────────────┘    └───────────────┘
-           │
-           ▼ Then check in
-   ┌──────────────────┐
-   │ POST /queue/     │
-   │ check-in         │
-   │ {petId: <new>}   │
-   └──────────────────┘
+              │ cache    │ │  desk)   │    │ cache    │
+              │ invalidat│ │ cache    │    │ invalidat│
+              └──────────┘ │ invalidat│    └──────────┘
+                           └──────────┘
 ```
 
 ### Cross-Phase Dependencies
@@ -637,8 +723,6 @@ apps/mobile/src/
 │ ├── Audit logging (AuthAuditLog + writeAuditLog)               │
 │ ├── Token rotation (RefreshToken + family-based detection)     │
 │ └── API conventions (error format, rate limiting, versioning)  │
-│                                                                 │
-│ CONSUMED BY: Phase 2, Phase 3, and all subsequent phases       │
 └─────────────────────────────────────────────────────────────────┘
           │
           ▼
@@ -657,8 +741,6 @@ apps/mobile/src/
 │ ├── Toast (success/error feedback)                             │
 │ ├── BottomTabBar (Queue, Patients, Inventory, More)            │
 │ └── Wireframes with all 4 states (empty/loading/populated/err) │
-│                                                                 │
-│ CONSUMED BY: Phase 3 and all subsequent phases                 │
 └─────────────────────────────────────────────────────────────────┘
           │
           ▼
@@ -746,35 +828,3 @@ JWT Token contains: { sub: userId, clinicId: "clinic-uuid" }
 
 Clinic A's data is NEVER visible to Clinic B's users.
 ```
-
-### Error Handling Pattern
-
-All Phase 3 services follow the same error pattern established in Phase 1:
-
-```typescript
-// Thrown as:
-const error = new Error('message') as Error & { statusCode: number; code: string };
-error.statusCode = 409;   // HTTP status
-error.code = 'ERROR_CODE'; // Machine-readable code
-throw error;
-
-// Caught by centralized error-handler.ts and formatted as:
-{
-  "error": {
-    "code": "ALREADY_IN_QUEUE",
-    "message": "Pet is already in today's queue"
-  }
-}
-```
-
-**Phase 3 Error Codes:**
-
-| Code | Status | Trigger |
-|------|--------|---------|
-| `OWNER_NOT_FOUND` | 404 | Registering pet for non-existent owner |
-| `PET_NOT_FOUND` | 404 | Updating non-existent pet |
-| `ALREADY_IN_QUEUE` | 409 | Pet already WAITING or IN_CONSULT today |
-| `SAME_DAY_RECHECK` | 409 | Pet already DONE today, reCheckIn flag not set |
-| `ENTRY_NOT_FOUND` | 404 | Updating status of non-existent queue entry |
-| `INVALID_TRANSITION` | 400 | Invalid state machine transition (e.g., WAITING → DONE) |
-| `NO_PATIENTS_WAITING` | 404 | "Call Next" with empty queue |
