@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { View, StyleSheet, Animated } from 'react-native';
 import { Text } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -6,16 +6,57 @@ import { useQueueUIStore } from '../store/queueUIStore';
 
 export function OfflineBanner() {
   const isOffline = useQueueUIStore((s) => s.isOffline);
+  const slideAnim = useRef(new Animated.Value(-50)).current;
+  const opacityAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (isOffline) {
+      Animated.parallel([
+        Animated.timing(slideAnim, {
+          toValue: 0,
+          duration: 200,
+          useNativeDriver: true,
+        }),
+        Animated.timing(opacityAnim, {
+          toValue: 1,
+          duration: 200,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    } else {
+      Animated.parallel([
+        Animated.timing(slideAnim, {
+          toValue: -50,
+          duration: 200,
+          useNativeDriver: true,
+        }),
+        Animated.timing(opacityAnim, {
+          toValue: 0,
+          duration: 200,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    }
+  }, [isOffline, slideAnim, opacityAnim]);
 
   if (!isOffline) return null;
 
   return (
-    <View style={styles.banner} accessibilityRole="alert">
+    <Animated.View
+      style={[
+        styles.banner,
+        {
+          transform: [{ translateY: slideAnim }],
+          opacity: opacityAnim,
+        },
+      ]}
+      accessibilityRole="alert"
+    >
       <MaterialCommunityIcons name="wifi-off" size={16} color="#BF360C" />
       <Text variant="bodySmall" style={styles.text}>
         You are offline. Queue may be outdated.
       </Text>
-    </View>
+    </Animated.View>
   );
 }
 

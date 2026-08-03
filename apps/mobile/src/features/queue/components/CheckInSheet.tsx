@@ -121,7 +121,7 @@ export function CheckInSheet({
     onDismiss();
     router.push({
       pathname: '/patient/register',
-      params: { initialMobile: mobile },
+      params: { initialMobile: mobile, fromCheckIn: '1' },
     });
   }, [onDismiss, router, mobile]);
 

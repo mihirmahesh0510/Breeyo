@@ -14,6 +14,7 @@ import type { Species, OwnerWithPets, RegisterOwnerInput, RegisterPetInput } fro
 import { showToast } from '@breeyo/ui';
 
 import { useRegisterPatient, useLookupOwner, useAddPet } from '../hooks/usePatientRegister';
+import { useCheckIn } from '../../queue/hooks/useCheckIn';
 import { SpeciesBreedPicker } from '../components/SpeciesBreedPicker';
 import { PetPhotoPicker } from '../components/PetPhotoPicker';
 import { ExistingOwnerCard } from '../components/ExistingOwnerCard';
@@ -105,6 +106,7 @@ export function RegisterPatientScreen() {
   const params = useLocalSearchParams<{
     initialMobile?: string;
     ownerId?: string;
+    fromCheckIn?: string;
   }>();
 
   // --- State ---
@@ -127,6 +129,7 @@ export function RegisterPatientScreen() {
 
   const registerMutation = useRegisterPatient();
   const addPetMutation = useAddPet(existingOwner?.id ?? params.ownerId ?? '');
+  const checkInMutation = useCheckIn();
 
   // --- Derived ---
   const isStep1Valid = useMemo(() => {
@@ -137,7 +140,7 @@ export function RegisterPatientScreen() {
     return petForm.name.trim().length > 0 && petForm.species !== null;
   }, [petForm.name, petForm.species]);
 
-  const isSubmitting = registerMutation.isPending || addPetMutation.isPending;
+  const isSubmitting = registerMutation.isPending || addPetMutation.isPending || checkInMutation.isPending;
 
   // --- Effects ---
 
@@ -288,9 +291,12 @@ export function RegisterPatientScreen() {
     if (petForm.photoUri) petInput.photoUrl = petForm.photoUri;
 
     try {
+      let newPetId: string | undefined;
+
       if (existingOwner || params.ownerId) {
         // Add pet to existing owner
-        await addPetMutation.mutateAsync(petInput);
+        const addedPet = await addPetMutation.mutateAsync(petInput);
+        newPetId = addedPet.id;
         showToast('success', `${petInput.name} added to ${existingOwner?.name ?? 'owner'}`);
       } else {
         // Register new owner + pet
@@ -302,11 +308,25 @@ export function RegisterPatientScreen() {
         if (ownerForm.address.trim()) ownerInput.address = ownerForm.address.trim();
         if (ownerForm.altPhone.trim()) ownerInput.altPhone = cleanMobile(ownerForm.altPhone);
 
-        await registerMutation.mutateAsync({
+        const result = await registerMutation.mutateAsync({
           owner: ownerInput,
           pet: petInput,
         });
+        newPetId = result.pet.id;
         showToast('success', `${petInput.name} registered successfully`);
+      }
+
+      // Auto-check-in when coming from the check-in flow (D-12)
+      if (params.fromCheckIn === '1' && newPetId) {
+        try {
+          await checkInMutation.mutateAsync({ petId: newPetId });
+          showToast('success', `${petInput.name} checked in to queue`);
+          router.back();
+          return;
+        } catch {
+          // Check-in failed but registration succeeded — still show success
+          showToast('error', 'Registered but could not auto-check-in. Please check in manually.');
+        }
       }
 
       setRegistrationComplete(true);
@@ -320,8 +340,11 @@ export function RegisterPatientScreen() {
     ownerForm,
     existingOwner,
     params.ownerId,
+    params.fromCheckIn,
     registerMutation,
     addPetMutation,
+    checkInMutation,
+    router,
   ]);
 
   const handleAddAnother = useCallback(() => {

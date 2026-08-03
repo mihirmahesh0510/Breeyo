@@ -100,6 +100,22 @@ describe('Patient Validation Schemas', () => {
         ownerRegistrationSchema.parse({ mobile: '1234567890', name: 'Test' }),
       ).toThrow();
     });
+
+    it('accepts Hindi/Devanagari owner name (D-41)', () => {
+      const result = ownerRegistrationSchema.parse({
+        mobile: '9876543210',
+        name: 'राहुल कुमार',
+      });
+      expect(result.name).toBe('राहुल कुमार');
+    });
+
+    it('accepts mixed Hindi and English name (D-41)', () => {
+      const result = ownerRegistrationSchema.parse({
+        mobile: '9876543210',
+        name: 'Rahul राहुल Kumar',
+      });
+      expect(result.name).toBe('Rahul राहुल Kumar');
+    });
   });
 
   describe('petRegistrationSchema', () => {
@@ -189,6 +205,14 @@ describe('Patient Validation Schemas', () => {
           birthMonth: 13,
         }),
       ).toThrow();
+    });
+
+    it('accepts Hindi/Devanagari pet name (D-41)', () => {
+      const result = petRegistrationSchema.parse({
+        name: 'शेरू',
+        species: 'DOG',
+      });
+      expect(result.name).toBe('शेरू');
     });
   });
 

@@ -3,6 +3,7 @@ import { View, StyleSheet, Alert } from 'react-native';
 import { Text, FAB, ActivityIndicator } from 'react-native-paper';
 import { useRouter } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
+import { showToast } from '@breeyo/ui';
 import { QueueStatus } from '@breeyo/types/constants/queue-status';
 import { useAuth } from '../../../providers/AuthProvider';
 import { useQueue } from '../hooks/useQueue';
@@ -89,8 +90,7 @@ export function QueueScreen() {
 
   const handleCheckInSuccess = useCallback(
     (petName: string, position: number) => {
-      // Toast handled by the app's toast system
-      Alert.alert('Checked In', `${petName} checked in — Position #${position}`);
+      showToast('success', `${petName} checked in — Position #${position}`);
     },
     [],
   );

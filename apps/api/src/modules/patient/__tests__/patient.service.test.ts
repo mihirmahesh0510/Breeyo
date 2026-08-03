@@ -198,6 +198,36 @@ describe('PatientService', () => {
         }),
       ).rejects.toThrow('Owner not found at this clinic');
     });
+
+    it('allows multiple pets under the same owner (PAT-03)', async () => {
+      const pet2Id = '00000000-0000-0000-0000-000000000004';
+      const mockPet2 = {
+        ...mockPet,
+        id: pet2Id,
+        name: 'Coco',
+        species: 'CAT' as const,
+      };
+
+      vi.mocked(repo.findOwnerById).mockResolvedValue({ ...mockOwner, pets: [mockPet] });
+      vi.mocked(repo.createPet).mockResolvedValue(mockPet2);
+
+      const result = await service.registerPet({
+        clinicId: CLINIC_ID,
+        ownerId: OWNER_ID,
+        name: 'Coco',
+        species: 'CAT',
+      });
+
+      expect(result.id).toBe(pet2Id);
+      expect(result.name).toBe('Coco');
+      expect(repo.createPet).toHaveBeenCalledWith(
+        expect.objectContaining({
+          ownerId: OWNER_ID,
+          name: 'Coco',
+          species: 'CAT',
+        }),
+      );
+    });
   });
 
   describe('registerPatient', () => {
