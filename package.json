@@ -1,0 +1,17 @@
+{
+  "name": "breeyo",
+  "private": true,
+  "packageManager": "pnpm@9.15.0",
+  "scripts": {
+    "build": "turbo build",
+    "dev": "turbo dev",
+    "test": "turbo test",
+    "lint": "turbo lint",
+    "db:migrate": "pnpm --filter @breeyo/api db:migrate",
+    "db:generate": "pnpm --filter @breeyo/api db:generate",
+    "db:seed": "pnpm --filter @breeyo/api db:seed"
+  },
+  "devDependencies": {
+    "turbo": "latest"
+  }
+}

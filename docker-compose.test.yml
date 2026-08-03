@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  postgres-test:
+    image: postgres:16-alpine
+    ports:
+      - '5433:5432'
+    environment:
+      POSTGRES_USER: breeyo_admin
+      POSTGRES_PASSWORD: dev_password_only
+      POSTGRES_DB: breeyo_test
+    volumes:
+      - ./apps/api/prisma/init-rls-roles.sql:/docker-entrypoint-initdb.d/01-roles.sql
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U breeyo_admin']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis-test:
+    image: redis:7-alpine
+    ports:
+      - '6380:6379'
+    command: redis-server --maxmemory 128mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 5

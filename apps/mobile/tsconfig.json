@@ -1,0 +1,4 @@
+{
+  "extends": "../../packages/config/tsconfig/react-native.json",
+  "include": ["app", "src", "tests"]
+}

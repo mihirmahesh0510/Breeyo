@@ -1,0 +1,85 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Lint, Build & Test
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: breeyo_admin
+          POSTGRES_PASSWORD: admin_dev_password
+          POSTGRES_DB: breeyo
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U breeyo_admin -d breeyo"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://breeyo_admin:admin_dev_password@localhost:5432/breeyo
+      DATABASE_URL_APP: postgresql://breeyo_app:app_dev_password@localhost:5432/breeyo
+      REDIS_URL: redis://localhost:6379
+      JWT_SECRET: ci-jwt-secret-not-for-production
+      COOKIE_SECRET: ci-cookie-secret-not-for-production
+      NODE_ENV: test
+      AWS_REGION: ap-south-1
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm --filter @breeyo/api db:generate
+
+      - name: Run database migrations
+        run: pnpm --filter @breeyo/api db:migrate
+
+      - name: Setup RLS roles and permissions
+        run: |
+          psql "$DATABASE_URL" -f apps/api/prisma/init-rls-roles.sql
+          psql "$DATABASE_URL" -f apps/api/prisma/post-migrate.sql
+
+      - name: Build
+        run: pnpm build
+
+      - name: Seed database
+        run: pnpm --filter @breeyo/api db:seed
+
+      - name: Run tests
+        run: pnpm test

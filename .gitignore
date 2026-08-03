@@ -1,0 +1,15 @@
+node_modules
+dist
+.next
+.expo
+.env
+.turbo
+coverage
+prisma/*.db
+postgres_data
+*.tsbuildinfo
+.DS_Store
+.venv/
+
+# Ephemeral tooling state (local only)
+.claude-flow/

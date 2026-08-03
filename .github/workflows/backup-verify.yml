@@ -1,0 +1,60 @@
+name: Verify Database Backups
+
+on:
+  schedule:
+    # Every Monday at 6:00 UTC (11:30 IST)
+    - cron: '0 6 * * 1'
+  workflow_dispatch: {}
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  verify-staging:
+    name: Verify PITR -- Staging
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ap-south-1
+          role-to-assume: ${{ secrets.AWS_GITHUB_ROLE_ARN }}
+
+      - name: Install jq
+        run: sudo apt-get install -y jq
+
+      - name: Verify PITR on staging
+        run: |
+          chmod +x scripts/backup/verify-pitr.sh
+          ./scripts/backup/verify-pitr.sh \
+            --instance-id ${{ secrets.RDS_STAGING_INSTANCE_ID }} \
+            --region ap-south-1
+
+  verify-production:
+    name: Verify PITR -- Production
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ap-south-1
+          role-to-assume: ${{ secrets.AWS_GITHUB_ROLE_ARN }}
+
+      - name: Install jq
+        run: sudo apt-get install -y jq
+
+      - name: Verify PITR on production
+        run: |
+          chmod +x scripts/backup/verify-pitr.sh
+          ./scripts/backup/verify-pitr.sh \
+            --instance-id ${{ secrets.RDS_PRODUCTION_INSTANCE_ID }} \
+            --region ap-south-1
