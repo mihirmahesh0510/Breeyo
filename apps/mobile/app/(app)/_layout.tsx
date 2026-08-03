@@ -30,7 +30,24 @@ export default function AppLayout() {
         headerShown: true,
         headerRight: () => <HeaderRight />,
       }}
-    />
+    >
+      <Stack.Screen
+        name="(tabs)"
+        options={{ headerShown: false, title: 'Breeyo' }}
+      />
+      <Stack.Screen
+        name="patient/[petId]"
+        options={{ title: 'Pet Profile' }}
+      />
+      <Stack.Screen
+        name="patient/register"
+        options={{ title: 'Register Patient' }}
+      />
+      <Stack.Screen
+        name="owner/[ownerId]"
+        options={{ title: 'Owner Detail' }}
+      />
+    </Stack>
   );
 }
 

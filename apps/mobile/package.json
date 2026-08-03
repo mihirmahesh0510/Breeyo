@@ -10,20 +10,26 @@
     "lint": "echo 'no lint configured'"
   },
   "dependencies": {
+    "@breeyo/types": "workspace:*",
+    "@breeyo/validators": "workspace:*",
+    "@expo/vector-icons": "^15.1.1",
+    "@tanstack/react-query": "^5.101.4",
     "expo": "~52.0.0",
-    "expo-router": "~4.0.0",
-    "expo-secure-store": "~14.0.0",
+    "expo-haptics": "^57.0.1",
+    "expo-image-picker": "^57.0.7",
     "expo-linking": "~7.0.0",
     "expo-notifications": "~0.29.0",
+    "expo-router": "~4.0.0",
+    "expo-secure-store": "~14.0.0",
     "react": "^18.3.0",
     "react-native": "^0.76.0",
-    "@breeyo/types": "workspace:*",
-    "@breeyo/validators": "workspace:*"
+    "socket.io-client": "^4.8.3",
+    "zustand": "^5.0.14"
   },
   "devDependencies": {
-    "typescript": "^5.7.0",
-    "vitest": "^2.1.0",
     "@testing-library/react-native": "^12.9.0",
-    "@types/react": "^18.3.0"
+    "@types/react": "^18.3.0",
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.0"
   }
 }
