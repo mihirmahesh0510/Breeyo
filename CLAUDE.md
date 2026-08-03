@@ -20,12 +20,12 @@ Breeyo is a mobile-first veterinary clinic management platform for solo and smal
 
 | Package | Path | Description |
 |---------|------|-------------|
-| `@breeyo/api` | `apps/api` | Fastify backend |
+| `@breeyo/api` | `apps/api` | Fastify backend (auth, clinic, notifications, patient, queue) |
 | `@breeyo/mobile` | `apps/mobile` | Expo React Native app |
 | `@breeyo/web` | `apps/web` | Next.js web dashboard |
 | `@breeyo/ui` | `packages/ui` | Design system (26 components) |
-| `@breeyo/validators` | `packages/validators` | Shared Zod schemas |
-| `@breeyo/types` | `packages/types` | Shared TypeScript types |
+| `@breeyo/validators` | `packages/validators` | Shared Zod schemas (auth, clinic, patient, queue) |
+| `@breeyo/types` | `packages/types` | Shared TypeScript types (auth, patient, queue, notifications) |
 | `@breeyo/config` | `packages/config` | Shared tsconfig bases |
 
 ## Development Commands
@@ -109,5 +109,6 @@ pnpm --filter @breeyo/ui test
 
 ## Build Phases
 
-Current phase: **03 - Patient Registration & Walk-in Queue**
+Completed phases: **01** (Foundation & Auth), **02** (UI/UX Design System), **03** (Patient Registration & Walk-in Queue)
+Current phase: **04 - EMR & Clinical Records**
 See `ROADMAP.md` for full phase plan.

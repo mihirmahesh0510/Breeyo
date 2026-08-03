@@ -12,13 +12,14 @@ Solo vets can manage their entire practice — walk-ins, medical records, invent
 
 ### Validated
 
-(None yet — ship to validate)
+- [x] Multi-user access with role-based permissions (Admin, Clinician, Front Desk, Inventory Manager) — Phase 01
+- [x] Mobile app for clinical workflows (vets and staff) — Phase 01-03
+- [x] Walk-in queue as the default patient flow, with scheduled appointments layered on top — Phase 03
+- [x] Unified cloud pet profiles linked by owner mobile number, accessible across clinics — Phase 03
 
 ### Active
 
-- [ ] Walk-in queue as the default patient flow, with scheduled appointments layered on top
 - [ ] WhatsApp-based appointment booking, reminders, and invoice delivery (simulated initially, real API later)
-- [ ] Unified cloud pet profiles linked by owner mobile number, accessible across clinics
 - [ ] Voice-to-text transcription for clinical notes (basic speech-to-text, not structured SOAP mapping yet)
 - [ ] Full EMR data model: SOAP notes, vitals, lab/imaging, prescriptions, billing
 - [ ] Mobile barcode scanning for inventory with offline support
@@ -29,8 +30,6 @@ Solo vets can manage their entire practice — walk-ins, medical records, invent
 - [ ] WhatsApp invoice delivery with embedded pay links (simulated initially)
 - [ ] Automated appointment reminders with interactive keep/move/cancel responses
 - [ ] Multi-device calendar sync (mobile + web) with push notifications
-- [ ] Multi-user access with role-based permissions (Admin, Clinician, Front Desk, Inventory Manager)
-- [ ] Mobile app for clinical workflows (vets and staff)
 - [ ] Web dashboard for admin, analytics, and inventory management
 
 ### Out of Scope
@@ -109,4 +108,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-10 after initialization*
+*Last updated: 2026-08-03 after Phase 03 merge to main*

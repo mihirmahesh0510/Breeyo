@@ -19,8 +19,17 @@ Mobile-first veterinary clinic management for solo and small-team vets in India.
 ```
 breeyo/
   apps/
-    api/              Fastify backend (auth, clinic, notifications)
+    api/              Fastify backend
+      src/modules/
+        auth/         JWT auth, OTP, RBAC, permissions
+        clinic/       Clinic management
+        notifications/ Push notifications, BullMQ workers
+        patient/      Owner/pet registration, search, profiles
+        queue/        Walk-in queue, status transitions, Socket.IO realtime
     mobile/           Expo React Native app
+      src/features/
+        patient/      Registration wizard, search, profiles
+        queue/        Queue board, check-in, offline support
     web/              Next.js web dashboard (Phase 9)
   packages/
     ui/               Shared design system (tokens, components, wireframes)
@@ -34,6 +43,7 @@ breeyo/
   docs/
     disaster-recovery.md
     phase-01-test-results.md
+  ERD/                Entity relationship documentation (phases 01-03)
   .github/
     workflows/        CI, deploy staging/production, visual regression, backup verify
 ```
@@ -90,9 +100,9 @@ pnpm --filter @breeyo/ui test
 - 8 organisms (Card, Modal, BottomSheet, NavigationBar, BottomTabBar, QueueCard, WizardStepper, NotificationList)
 - Wireframe stories for all modules with 4 states (empty, loading, populated, error)
 
-**`@breeyo/validators`** -- Zod schemas shared between API and mobile for auth and clinic validation.
+**`@breeyo/validators`** -- Zod schemas shared between API and mobile for auth, clinic, patient, and queue validation.
 
-**`@breeyo/types`** -- Shared TypeScript types.
+**`@breeyo/types`** -- Shared TypeScript types for auth, patient, queue, notifications, and API contracts.
 
 ## Build Phases
 
@@ -100,8 +110,8 @@ pnpm --filter @breeyo/ui test
 |-------|--------|-------------|
 | 01 | Done | Foundation & Authentication |
 | 02 | Done | UI/UX Design & Design System |
-| 03 | Planned | Patient Registration & Walk-in Queue |
-| 04 | Planned | EMR & Clinical Records |
+| 03 | Done | Patient Registration & Walk-in Queue |
+| 04 | Next | EMR & Clinical Records |
 | 05 | Planned | Inventory Management |
 | 06 | Planned | Invoicing & Payments |
 | 07 | Planned | WhatsApp Communication |

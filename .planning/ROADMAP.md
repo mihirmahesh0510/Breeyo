@@ -13,9 +13,9 @@ Breeyo goes from zero to a deployable Beta for 20 pilot clinics across 10 phases
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Foundation & Authentication** - Monorepo, database with RLS multi-tenancy, auth system with roles, API skeleton
-- [ ] **Phase 2: UI/UX Design & Design System** - Design tokens, component library, screen flow wireframes, mobile-first UX patterns, walk-in queue UX
-- [ ] **Phase 3: Patient Registration & Walk-in Queue** - Pet/owner registration, walk-in queue as the primary workflow with real-time updates
+- [x] **Phase 1: Foundation & Authentication** - Monorepo, database with RLS multi-tenancy, auth system with roles, API skeleton
+- [x] **Phase 2: UI/UX Design & Design System** - Design tokens, component library, screen flow wireframes, mobile-first UX patterns, walk-in queue UX
+- [x] **Phase 3: Patient Registration & Walk-in Queue** - Pet/owner registration, walk-in queue as the primary workflow with real-time updates
 - [ ] **Phase 4: EMR & Clinical Records** - SOAP notes, vitals, prescriptions, voice-to-text, medical history, audit trail
 - [ ] **Phase 5: Inventory Management** - Stock tracking, barcode scanning, batch/lot/expiry management, par-level alerts, offline scanning
 - [ ] **Phase 6: Invoicing & Payments** - Invoice builder with stock validation, GST calculation, Razorpay integration, payment recording
@@ -45,9 +45,9 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 Plans:
 
-- [ ] 01-01-PLAN.md -- Monorepo scaffold, Prisma schema with RLS, Fastify app skeleton, Docker, test infrastructure
-- [ ] 01-02-PLAN.md -- Auth system: signup, email verification, login, OTP, token refresh, logout
-- [ ] 01-03-PLAN.md -- RBAC, permissions, staff management, tenant isolation tests, CI/CD
+- [x] 01-01-PLAN.md -- Monorepo scaffold, Prisma schema with RLS, Fastify app skeleton, Docker, test infrastructure
+- [x] 01-02-PLAN.md -- Auth system: signup, email verification, login, OTP, token refresh, logout
+- [x] 01-03-PLAN.md -- RBAC, permissions, staff management, tenant isolation tests, CI/CD
 
 ### Phase 2: UI/UX Design & Design System
 
@@ -69,19 +69,19 @@ Plans:
 Plans:
 **Wave 1**
 
-- [ ] 02-01-PLAN.md -- packages/ui scaffold, design tokens (colors, typography, spacing, elevation, border radii, animation), Breeyo theme extending MD3, i18n, CSS token generator
+- [x] 02-01-PLAN.md -- packages/ui scaffold, design tokens (colors, typography, spacing, elevation, border radii, animation), Breeyo theme extending MD3, i18n, CSS token generator
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 02-02-PLAN.md -- Atom components (Button, TextInput, StatusBadge, Typography, Avatar, Chip, IconButton, Divider, ProgressIndicator) and molecule components (SearchBar, ListItem, FormField, EmptyState, Toast, AccordionItem, SkeletonLoader) with accessibility tests
+- [x] 02-02-PLAN.md -- Atom components (Button, TextInput, StatusBadge, Typography, Avatar, Chip, IconButton, Divider, ProgressIndicator) and molecule components (SearchBar, ListItem, FormField, EmptyState, Toast, AccordionItem, SkeletonLoader) with accessibility tests
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 02-03-PLAN.md -- Organism components (Card, Modal, BottomSheet, NavigationBar, BottomTabBar, QueueCard, WizardStepper), wireframe screens for all modules with 4 states, Storybook integration, human verification
+- [x] 02-03-PLAN.md -- Organism components (Card, Modal, BottomSheet, NavigationBar, BottomTabBar, QueueCard, WizardStepper), wireframe screens for all modules with 4 states, Storybook integration, human verification
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 02-04-PLAN.md -- Notification UI components (NTF-02): NotificationBadge atom (nav bar unread count), NotificationItem molecule (per-notification row), NotificationList organism (filterable by module), notification screen wireframe with 4 states
+- [x] 02-04-PLAN.md -- Notification UI components (NTF-02): NotificationBadge atom (nav bar unread count), NotificationItem molecule (per-notification row), NotificationList organism (filterable by module), notification screen wireframe with 4 states
 
 ### Phase 3: Patient Registration & Walk-in Queue
 
@@ -103,14 +103,14 @@ Plans:
 
 Plans:
 
-- [ ] 03-01-PLAN.md -- Shared types, zod schemas, constants (species/breeds, queue status state machine, socket events), Prisma schema (Owner/Pet/QueueEntry with RLS), Wave 0 test scaffolds
-- [ ] 03-02-PLAN.md -- Patient API: owner registration with per-clinic mobile uniqueness, pet registration, trigram-powered search, pet profile with visit history, mobile lookup for auto-fill
-- [ ] 03-03-PLAN.md -- Queue API: check-in with position/emergency, status transitions (state machine), call-next (emergency FIFO), queue board, Socket.IO real-time broadcasting, midnight archive
-- [ ] 03-04-PLAN.md -- Mobile patient screens: 2-step registration wizard, patient list with live search, pet profile with visit history, owner detail, species/breed picker
-- [ ] 03-05-PLAN.md -- Mobile queue screens: queue status board (3 sections), 2-tap check-in bottom sheet, queue cards with swipe/tap gestures, Socket.IO hooks, offline banner
-- [ ] 03-06-PLAN.md -- Cross-module navigation wiring, auto-check-in from registration, human verification of all 7 end-to-end flows
-- [ ] 03-07-PLAN.md -- CSV bulk import: shared import types, server-side CSV parsing (papaparse) with per-row zod validation, multipart upload route, mobile file picker and import result screen
-- [ ] 03-08-PLAN.md -- Guided first-use onboarding: onboarding state model (JSONB on Clinic), OnboardingService with auto-completion hooks in PatientService and QueueService, OnboardingCard on QueueScreen
+- [x] 03-01-PLAN.md -- Shared types, zod schemas, constants (species/breeds, queue status state machine, socket events), Prisma schema (Owner/Pet/QueueEntry with RLS), Wave 0 test scaffolds
+- [x] 03-02-PLAN.md -- Patient API: owner registration with per-clinic mobile uniqueness, pet registration, trigram-powered search, pet profile with visit history, mobile lookup for auto-fill
+- [x] 03-03-PLAN.md -- Queue API: check-in with position/emergency, status transitions (state machine), call-next (emergency FIFO), queue board, Socket.IO real-time broadcasting, midnight archive
+- [x] 03-04-PLAN.md -- Mobile patient screens: 2-step registration wizard, patient list with live search, pet profile with visit history, owner detail, species/breed picker
+- [x] 03-05-PLAN.md -- Mobile queue screens: queue status board (3 sections), 2-tap check-in bottom sheet, queue cards with swipe/tap gestures, Socket.IO hooks, offline banner
+- [x] 03-06-PLAN.md -- Cross-module navigation wiring, auto-check-in from registration, human verification of all 7 end-to-end flows
+- [x] 03-07-PLAN.md -- CSV bulk import: shared import types, server-side CSV parsing (papaparse) with per-row zod validation, multipart upload route, mobile file picker and import result screen
+- [x] 03-08-PLAN.md -- Guided first-use onboarding: onboarding state model (JSONB on Clinic), OnboardingService with auto-completion hooks in PatientService and QueueService, OnboardingCard on QueueScreen
 
 ### Phase 4: EMR & Clinical Records
 
@@ -340,14 +340,29 @@ Cross-cutting constraints:
 **Execution Order:**
 Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9 -> 10
 
+**Implementation Progress:**
+
+| Phase | Plans | Status | Merged to Main |
+|-------|-------|--------|----------------|
+| 1. Foundation & Authentication | 3/3 | **Done** | 2026-08-03 (PR #3) |
+| 2. UI/UX Design & Design System | 4/4 | **Done** | 2026-08-03 (PR #3) |
+| 3. Patient Registration & Walk-in Queue | 8/8 | **Done** | 2026-08-03 (PR #3) |
+| 4. EMR & Clinical Records | 8/8 | Next | - |
+| 5. Inventory Management | 8/8 | Planned | - |
+| 6. Invoicing & Payments | 4/4 | Planned | - |
+| 7. WhatsApp Communication | 10/10 | Planned | - |
+| 8. Scheduling & Calendar | 7/7 | Planned | - |
+| 9. Web Dashboard & Owner Portal | 7/7 | Planned | - |
+| 10. Offline Hardening & Integration Polish | 7/7 | Planned | - |
+
 **Planning Audit View:**
-This table tracks planning-packet readiness by phase, not implementation progress. Phase checkboxes above stay unchecked until delivery is implemented and verified.
+This table tracks planning-packet readiness by phase.
 
 | Phase | Plans Authored | Planning Packet | Audit Readiness |
 |-------|----------------|-----------------|-----------------|
-| 1. Foundation & Authentication | 3/3 | Context, research, discussion log, validation, plans present | **Needs plan update** -- add PLT-06 (backup/DR) and NTF-01 (notification service) |
-| 2. UI/UX Design & Design System | 4/4 | Context, research, discussion log, UI spec, validation, plans present | Ready |
-| 3. Patient Registration & Walk-in Queue | 8/8 | Context, research, research addendum, discussion log, UI spec, validation, plans present | Ready |
+| 1. Foundation & Authentication | 3/3 | Complete | **Implemented** |
+| 2. UI/UX Design & Design System | 4/4 | Complete | **Implemented** |
+| 3. Patient Registration & Walk-in Queue | 8/8 | Complete | **Implemented** |
 | 4. EMR & Clinical Records | 8/8 | Context, research, research addendum, discussion log, UI spec, validation, plans present | Ready |
 | 5. Inventory Management | 8/8 | Context, research, discussion log, UI spec, validation, plans present | Ready |
 | 6. Invoicing & Payments | 4/4 | Context, research, discussion log, UI spec, validation, plans present | Ready |
@@ -356,4 +371,5 @@ This table tracks planning-packet readiness by phase, not implementation progres
 | 9. Web Dashboard & Owner Portal | 7/7 | Context, research, discussion log, UI spec, validation, plans present | Ready |
 | 10. Offline Hardening & Integration Polish | 7/7 | Context, research, discussion log, validation, and full plan set present | Ready |
 
-> **2026-07-30 gap review:** All phases except Phase 1 (PLT-06 + NTF-01) now have complete plan coverage. Phase 2 (NTF-02 via 02-04), Phase 3 (PAT-06 + ONB-01), Phase 4 (ONB-02 via 04-08), Phase 5 (INV-09 via 05-08), Phase 6 (BIL-07 + RPT-01 via 06-04), Phase 9 (OWN-07 via 09-07), Phase 10 (PLT-07 via 10-07) are complete.
+> **2026-07-30 gap review:** All phases have complete plan coverage. Phase 5 (INV-09) is the only remaining gap.
+> **2026-08-03 implementation update:** Phases 01-03 implemented and merged to main via PR #3. 15 of 67 plans completed (30%).

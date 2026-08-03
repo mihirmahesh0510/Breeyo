@@ -20,7 +20,8 @@
 11. [Web Dashboard](#11-web-dashboard)
 12. [Owner Portal](#12-owner-portal)
 13. [Offline Mode](#13-offline-mode)
-14. [End-to-End Flow: A Full Clinic Day](#14-end-to-end-flow-a-full-clinic-day)
+14. [Settings & Clinic Configuration](#14-settings--clinic-configuration)
+15. [End-to-End Flow: A Full Clinic Day](#15-end-to-end-flow-a-full-clinic-day)
 
 ---
 
@@ -1658,7 +1659,619 @@ NOT available offline:
 
 ---
 
-## 14. End-to-End Flow: A Full Clinic Day
+## 14. Settings & Clinic Configuration
+
+### 14a. Mobile Settings Hub
+
+```
++=========================================================+
+|  <  Settings                                            |
++---------------------------------------------------------+
+|                                                         |
+|  CLINIC                                                 |
+|  +---------------------------------------------------+  |
+|  | [icon] Clinic Profile                          >  |  |
+|  |        Name, address, logo, hours                 |  |
+|  +---------------------------------------------------+  |
+|  | [icon] Billing & GST                           >  |  |
+|  |        GSTIN, tax rates, payment gateway          |  |
+|  +---------------------------------------------------+  |
+|  | [icon] Service Catalog                         >  |  |
+|  |        Consultation types, prices, HSN codes      |  |
+|  +---------------------------------------------------+  |
+|  | [icon] WhatsApp Configuration                  >  |  |
+|  |        Provider, templates, reminders             |  |
+|  +---------------------------------------------------+  |
+|  | [icon] Scheduling Defaults                     >  |  |
+|  |        Slot length, blocked periods, reminders    |  |
+|  +---------------------------------------------------+  |
+|                                                         |
+|  ACCOUNT                                                |
+|  +---------------------------------------------------+  |
+|  | [icon] My Profile                              >  |  |
+|  |        Name, email, phone, license number         |  |
+|  +---------------------------------------------------+  |
+|  | [icon] Notifications                           >  |  |
+|  |        Push notification preferences              |  |
+|  +---------------------------------------------------+  |
+|  | [icon] Language                                >  |  |
+|  |        English / Hindi                            |  |
+|  +---------------------------------------------------+  |
+|                                                         |
+|  TEAM (Admin only)                                      |
+|  +---------------------------------------------------+  |
+|  | [icon] Staff & Roles                           >  |  |
+|  |        Manage staff, invite, assign roles         |  |
+|  +---------------------------------------------------+  |
+|                                                         |
+|  ABOUT                                                  |
+|  +---------------------------------------------------+  |
+|  | [icon] About Breeyo                            >  |  |
+|  |        Version, terms, privacy policy             |  |
+|  +---------------------------------------------------+  |
+|  | [icon] Log Out                                    |  |
+|  +---------------------------------------------------+  |
+|                                                         |
++---------------------------------------------------------+
+
+Access: Settings icon in top-right of any screen
+         or via profile avatar in navigation
+Some sections only visible to Admin role
+```
+
+### 14b. Clinic Profile Settings
+
+```
++=========================================================+
+|  <  Clinic Profile                            [Save]    |
++---------------------------------------------------------+
+|                                                         |
+|  +------------------+                                   |
+|  |                  |  [Change Logo]                    |
+|  |  [Clinic Logo]   |                                   |
+|  |                  |                                   |
+|  +------------------+                                   |
+|                                                         |
+|  BASIC INFORMATION                                      |
+|                                                         |
+|  Clinic Name:                                           |
+|  [Breeyo Vet Clinic_______________]                     |
+|                                                         |
+|  Phone:                                                 |
+|  [+91 98765xxxxx__________________]                     |
+|                                                         |
+|  Email:                                                 |
+|  [clinic@breeyo.in________________]                     |
+|                                                         |
+|  ADDRESS                                                |
+|                                                         |
+|  Street Address:                                        |
+|  [42 MG Road______________________]                     |
+|                                                         |
+|  City:                                                  |
+|  [Bangalore_______________________]                     |
+|                                                         |
+|  State:                                                 |
+|  [Karnataka  v]                                         |
+|                                                         |
+|  PIN Code:                                              |
+|  [560001__________________________]                     |
+|                                                         |
+|  OPERATING HOURS                                        |
+|                                                         |
+|  +---------------------------------------------------+  |
+|  | Day       | Open   | Close  | Status              |  |
+|  +-----------+--------+--------+---------------------+  |
+|  | Monday    | [09:00]| [18:00]| [Open  v]           |  |
+|  | Tuesday   | [09:00]| [18:00]| [Open  v]           |  |
+|  | Wednesday | [09:00]| [18:00]| [Open  v]           |  |
+|  | Thursday  | [09:00]| [18:00]| [Open  v]           |  |
+|  | Friday    | [09:00]| [18:00]| [Open  v]           |  |
+|  | Saturday  | [09:00]| [14:00]| [Open  v]           |  |
+|  | Sunday    |   --   |   --   | [Closed v]          |  |
+|  +---------------------------------------------------+  |
+|                                                         |
+|  REGISTRATION DETAILS                                   |
+|                                                         |
+|  Veterinary License No:                                 |
+|  [KA/VET/2024/1234_______________]                      |
+|                                                         |
+|  Registered Vet Name:                                   |
+|  [Dr. Priya Sharma________________]                     |
+|                                                         |
++---------------------------------------------------------+
+
+Access: Admin only
+Changes reflected on invoice headers and WhatsApp messages
+State field used for GST intra/inter-state determination
+```
+
+### 14c. Billing & GST Settings
+
+```
++=========================================================+
+|  <  Billing & GST                             [Save]    |
++---------------------------------------------------------+
+|                                                         |
+|  TAX INFORMATION                                        |
+|                                                         |
+|  GSTIN (optional):                                      |
+|  [29AABCU9603R1ZM_________________]                     |
+|                                                         |
+|  State Code:                                            |
+|  [29 - Karnataka  v]                                    |
+|  (Used to determine CGST/SGST vs IGST)                 |
+|                                                         |
+|  Default GST Rate:                                      |
+|  [18___] %                                              |
+|  (Applied to new invoice items unless overridden)       |
+|                                                         |
+|  INVOICE DEFAULTS                                       |
+|                                                         |
+|  Invoice Prefix:                                        |
+|  [INV____________________________]                      |
+|                                                         |
+|  Payment Due (days from invoice date):                  |
+|  [7______]                                              |
+|                                                         |
+|  Invoice Footer Text (optional):                        |
+|  [Thank you for choosing Breeyo Vet Clinic.            |
+|   All drugs dispensed are for veterinary use only.___]  |
+|                                                         |
+|  BANK DETAILS (shown on invoice, optional)              |
+|                                                         |
+|  Account Name:                                          |
+|  [Breeyo Vet Clinic______________]                      |
+|                                                         |
+|  Account Number:                                        |
+|  [1234567890_____________________]                      |
+|                                                         |
+|  IFSC Code:                                             |
+|  [HDFC0001234____________________]                      |
+|                                                         |
+|  UPI ID (optional):                                     |
+|  [breeyovet@upi__________________]                      |
+|                                                         |
+|  PAYMENT GATEWAY                                        |
+|                                                         |
+|  Razorpay Key ID:                                       |
+|  [rzp_live_xxxxxxxxxx____________]                      |
+|                                                         |
+|  Razorpay Key Secret:                                   |
+|  [**************************_____]    [Show]            |
+|                                                         |
+|  Mode:                                                  |
+|  (o) Live       ( ) Test                                |
+|  (Test mode uses separate test keys)                    |
+|                                                         |
++---------------------------------------------------------+
+
+Access: Admin only
+GSTIN flows to invoice PDF header
+State code determines CGST/SGST (intra-state) vs IGST (inter-state)
+```
+
+### 14d. Service Catalog
+
+```
++=========================================================+
+|  <  Service Catalog                    [+ Add Service]  |
++---------------------------------------------------------+
+|                                                         |
+|  Pre-loaded services (editable):                        |
+|                                                         |
+|  +---------------------------------------------------+  |
+|  | General Consultation                              |  |
+|  | Rs. 500 | HSN: 9983 | GST: 18%            [Edit] |  |
+|  +---------------------------------------------------+  |
+|  | Follow-up Consultation                            |  |
+|  | Rs. 300 | HSN: 9983 | GST: 18%            [Edit] |  |
+|  +---------------------------------------------------+  |
+|  | Vaccination (Administration)                      |  |
+|  | Rs. 200 | HSN: 9983 | GST: 18%            [Edit] |  |
+|  +---------------------------------------------------+  |
+|  | Surgery (Minor)                                   |  |
+|  | Rs. 2,000 | HSN: 9983 | GST: 18%          [Edit] |  |
+|  +---------------------------------------------------+  |
+|  | Surgery (Major)                                   |  |
+|  | Rs. 5,000 | HSN: 9983 | GST: 18%          [Edit] |  |
+|  +---------------------------------------------------+  |
+|  | Grooming                                          |  |
+|  | Rs. 500 | HSN: 9983 | GST: 18%            [Edit] |  |
+|  +---------------------------------------------------+  |
+|  | Lab Test                                          |  |
+|  | Rs. 300 | HSN: 9983 | GST: 18%            [Edit] |  |
+|  +---------------------------------------------------+  |
+|  | X-Ray                                             |  |
+|  | Rs. 500 | HSN: 9983 | GST: 18%            [Edit] |  |
+|  +---------------------------------------------------+  |
+|  | Dental Cleaning                                   |  |
+|  | Rs. 800 | HSN: 9983 | GST: 18%            [Edit] |  |
+|  +---------------------------------------------------+  |
+|                                                         |
++---------------------------------------------------------+
+|  Edit Service:                                          |
+|  -------- [drag handle] --------                        |
+|                                                         |
+|  Service Name:                                          |
+|  [General Consultation____________]                     |
+|                                                         |
+|  Price:                                                 |
+|  Rs. [500_________________________]                     |
+|                                                         |
+|  HSN/SAC Code:                                          |
+|  [9983 - Veterinary services  v]                        |
+|                                                         |
+|  GST Rate:                                              |
+|  [18___] % (or use clinic default)                      |
+|                                                         |
+|  Active: [toggle ON]                                    |
+|                                                         |
+|  [  Delete  ]                  [  Save  ]               |
++---------------------------------------------------------+
+
+Access: Admin only
+20 default services seeded at clinic creation
+Services appear in invoice builder when adding line items
+HSN/SAC codes required for GST-compliant invoicing
+```
+
+### 14e. WhatsApp Configuration (Admin Only)
+
+```
++=========================================================+
+|  <  WhatsApp Configuration                    [Save]    |
++---------------------------------------------------------+
+|                                                         |
+|  PROVIDER                                               |
+|                                                         |
+|  Current Provider:                                      |
+|  (o) Simulator (for testing)                            |
+|  ( ) Meta Business API (production)                     |
+|                                                         |
+|  +---------------------------------------------------+  |
+|  | [i] Beta uses the simulator. All message flows    |  |
+|  | work identically. Switch to Meta Business API     |  |
+|  | when your WhatsApp Business verification is       |  |
+|  | approved.                                         |  |
+|  +---------------------------------------------------+  |
+|                                                         |
+|  REMINDER DEFAULTS                                      |
+|                                                         |
+|  Vaccination Reminder:                                  |
+|  Send [7___] days before due date                       |
+|                                                         |
+|  Deworming Reminder:                                    |
+|  Send [7___] days before due date                       |
+|                                                         |
+|  Appointment Reminder:                                  |
+|  Send [1___] day(s) before appointment                  |
+|                                                         |
+|  Follow-up Reminder:                                    |
+|  Send on day of recheck date: [toggle ON]               |
+|                                                         |
+|  BOOKING SETTINGS                                       |
+|                                                         |
+|  Accept bookings via WhatsApp: [toggle ON]              |
+|                                                         |
+|  Default Slot Length:                                    |
+|  [30___] minutes                                        |
+|                                                         |
+|  Booking Window:                                        |
+|  Allow bookings up to [14___] days in advance           |
+|                                                         |
+|  Auto-confirm bookings: [toggle OFF]                    |
+|  (When OFF, staff must manually confirm each booking)   |
+|                                                         |
+|  SIMULATOR CONTROLS (visible in test mode only)         |
+|                                                         |
+|  +---------------------------------------------------+  |
+|  | Simulate delivery failure rate:  [0___] %         |  |
+|  | Simulate response delay:         [0___] seconds   |  |
+|  | Log all messages to console:     [toggle ON]      |  |
+|  +---------------------------------------------------+  |
+|                                                         |
++---------------------------------------------------------+
+
+Access: Admin only
+Provider swap is configuration-only (no code change needed)
+Reminder timing is clinic-configurable
+Simulator controls help test failure scenarios
+```
+
+### 14f. Scheduling Defaults
+
+```
++=========================================================+
+|  <  Scheduling Defaults                       [Save]    |
++---------------------------------------------------------+
+|                                                         |
+|  APPOINTMENT SLOTS                                      |
+|                                                         |
+|  Default Slot Duration:                                 |
+|  [30___] minutes                                        |
+|                                                         |
+|  Buffer Between Appointments:                           |
+|  [0____] minutes                                        |
+|                                                         |
+|  Max Appointments Per Day:                              |
+|  [20___] (0 = unlimited)                                |
+|                                                         |
+|  SCHEDULE TEMPLATES                                     |
+|                                                         |
+|  Use clinic operating hours as default schedule:        |
+|  [toggle ON]                                            |
+|                                                         |
+|  (When ON, available slots match clinic hours from      |
+|   Clinic Profile. When OFF, set custom schedule below.) |
+|                                                         |
+|  BLOCKED PERIODS                                        |
+|                                                         |
+|  +---------------------------------------------------+  |
+|  | Lunch Break (daily)                               |  |
+|  | 13:00 - 14:00                           [Edit][x] |  |
+|  +---------------------------------------------------+  |
+|  | [+ Add Blocked Period]                            |  |
+|  +---------------------------------------------------+  |
+|                                                         |
+|  CANCELLATION POLICY                                    |
+|                                                         |
+|  Allow owner cancellation via WhatsApp: [toggle ON]     |
+|                                                         |
+|  Cancellation window:                                   |
+|  Owners can cancel up to [2___] hours before            |
+|                                                         |
+|  REMINDERS                                              |
+|                                                         |
+|  Send same-day morning reminder: [toggle ON]            |
+|  Reminder time: [08:00]                                 |
+|                                                         |
+|  Owner actions in reminder:                             |
+|  [x] KEEP (confirm attendance)                          |
+|  [x] MOVE (request reschedule)                          |
+|  [x] CANCEL (cancel appointment)                        |
+|                                                         |
++---------------------------------------------------------+
+
+Access: Admin only
+Schedule templates define available slots per day
+Blocked periods prevent bookings during breaks/holidays
+Owner actions sent via WhatsApp reminder messages
+```
+
+### 14g. My Profile (Account Settings)
+
+```
++=========================================================+
+|  <  My Profile                                [Save]    |
++---------------------------------------------------------+
+|                                                         |
+|  +------------------+                                   |
+|  |                  |  [Change Photo]                   |
+|  |  [User Photo]    |                                   |
+|  |                  |                                   |
+|  +------------------+                                   |
+|                                                         |
+|  PERSONAL INFORMATION                                   |
+|                                                         |
+|  Full Name:                                             |
+|  [Dr. Priya Sharma________________]                     |
+|                                                         |
+|  Email:                                                 |
+|  [priya@breeyovet.com_____________]  [Verified]         |
+|                                                         |
+|  Phone:                                                 |
+|  [+91 98765xxxxx__________________]  [Verified]         |
+|                                                         |
+|  PROFESSIONAL DETAILS                                   |
+|                                                         |
+|  Veterinary License Number:                             |
+|  [KA/VET/2024/1234_______________]                      |
+|                                                         |
+|  Specialization (optional):                             |
+|  [Small Animal Practice___________]                     |
+|                                                         |
+|  SECURITY                                               |
+|                                                         |
+|  [  Change Password  ]                                  |
+|                                                         |
+|  Current Password: [________________]                   |
+|  New Password:     [________________]                   |
+|  Confirm Password: [________________]                   |
+|                                                         |
+|  ACTIVE SESSIONS                                        |
+|                                                         |
+|  +---------------------------------------------------+  |
+|  | iPhone 13 (this device)                           |  |
+|  | Last active: Now                                  |  |
+|  +---------------------------------------------------+  |
+|  | Samsung Galaxy A52                                |  |
+|  | Last active: 2 hours ago          [Revoke]        |  |
+|  +---------------------------------------------------+  |
+|  | Chrome on MacBook                                 |  |
+|  | Last active: Yesterday            [Revoke]        |  |
+|  +---------------------------------------------------+  |
+|                                                         |
+|  [     Log Out of All Devices     ]                     |
+|                                                         |
++---------------------------------------------------------+
+
+Access: All users (own profile only)
+Password change requires current password verification
+Session revoke uses refresh token family invalidation
+```
+
+### 14h. Notification Preferences
+
+```
++=========================================================+
+|  <  Notifications                             [Save]    |
++---------------------------------------------------------+
+|                                                         |
+|  Push Notifications: [toggle ON]                        |
+|                                                         |
+|  Notify me about:                                       |
+|                                                         |
+|  QUEUE                                                  |
+|  +---------------------------------------------------+  |
+|  | New patient checked in              [toggle ON]   |  |
+|  | Patient called into consult         [toggle ON]   |  |
+|  | Emergency check-in                  [toggle ON]   |  |
+|  +---------------------------------------------------+  |
+|                                                         |
+|  SCHEDULING                                             |
+|  +---------------------------------------------------+  |
+|  | New booking request                 [toggle ON]   |  |
+|  | Appointment reminder (1 hour)       [toggle ON]   |  |
+|  | Appointment cancelled               [toggle ON]   |  |
+|  +---------------------------------------------------+  |
+|                                                         |
+|  BILLING                                                |
+|  +---------------------------------------------------+  |
+|  | Payment received                    [toggle ON]   |  |
+|  | Invoice overdue                     [toggle OFF]  |  |
+|  +---------------------------------------------------+  |
+|                                                         |
+|  INVENTORY                                              |
+|  +---------------------------------------------------+  |
+|  | Stock below par level               [toggle ON]   |  |
+|  | Item expiring soon (7 days)         [toggle ON]   |  |
+|  | Item expired                        [toggle ON]   |  |
+|  +---------------------------------------------------+  |
+|                                                         |
+|  WHATSAPP                                               |
+|  +---------------------------------------------------+  |
+|  | Message delivery failed             [toggle ON]   |  |
+|  | New booking request via WhatsApp    [toggle ON]   |  |
+|  +---------------------------------------------------+  |
+|                                                         |
+|  Sound: [Default  v]                                    |
+|  Vibrate: [toggle ON]                                   |
+|                                                         |
++---------------------------------------------------------+
+
+Access: All users (own preferences)
+Per-module notification toggles
+Push via expo-notifications
+Device token registered on first toggle-on
+```
+
+### 14i. Language Settings
+
+```
++=========================================================+
+|  <  Language                                            |
++---------------------------------------------------------+
+|                                                         |
+|  Select your preferred language:                        |
+|                                                         |
+|  +---------------------------------------------------+  |
+|  | (o) English                             [Active]  |  |
+|  +---------------------------------------------------+  |
+|  | ( ) Hindi                                         |  |
+|  +---------------------------------------------------+  |
+|                                                         |
+|  This changes all labels, buttons, and messages         |
+|  in the app. Clinical terms and drug names remain       |
+|  in English for safety.                                 |
+|                                                         |
+|  [i] Pet owner names, notes, and free-text fields       |
+|  support Hindi/Unicode input regardless of this         |
+|  setting.                                               |
+|                                                         |
++---------------------------------------------------------+
+
+Access: All users
+Powered by i18next + react-i18next
+Language preference stored per user, synced across devices
+Clinical/drug terms always English (patient safety)
+```
+
+### 14j. Web Dashboard Settings
+
+```
++------------------+--------------------------------------------------+
+|                  |  Settings                                        |
+|  Sidebar         |                                                  |
+|                  +--------------------------------------------------+
+|                  |                                                  |
+|                  |  Clinic Profile    | Billing & GST               |
+|                  |  +----------------+ +---------------------------+ |
+|                  |  | [Clinic Logo]  | | GSTIN: 29AABCU9603R1ZM   | |
+|                  |  | Breeyo Vet     | | Default GST: 18%         | |
+|                  |  | Clinic         | | Due Days: 7              | |
+|                  |  | Bangalore, KA  | | Razorpay: Connected      | |
+|                  |  |                | |                           | |
+|                  |  | [Edit Profile] | | [Edit Billing]           | |
+|                  |  +----------------+ +---------------------------+ |
+|                  |                                                  |
+|                  |  +----------------------------------------------+|
+|                  |  | Service Catalog (9 services)                 ||
+|                  |  |                                              ||
+|                  |  | General Consultation  Rs.500  HSN:9983       ||
+|                  |  | Follow-up             Rs.300  HSN:9983       ||
+|                  |  | Vaccination           Rs.200  HSN:9983       ||
+|                  |  | Surgery (Minor)       Rs.2K   HSN:9983       ||
+|                  |  | ...and 5 more                                ||
+|                  |  |                                              ||
+|                  |  | [Manage Catalog]                             ||
+|                  |  +----------------------------------------------+|
+|                  |                                                  |
+|                  |  +----------------------------------------------+|
+|                  |  | Scheduling                                   ||
+|                  |  |                                              ||
+|                  |  | Slot Duration: 30 min                        ||
+|                  |  | Max/Day: 20                                  ||
+|                  |  | Blocked: Lunch 13:00-14:00                   ||
+|                  |  | WhatsApp Bookings: Enabled                   ||
+|                  |  |                                              ||
+|                  |  | [Edit Schedule Settings]                     ||
+|                  |  +----------------------------------------------+|
+|                  |                                                  |
+|                  |  +----------------------------------------------+|
+|                  |  | WhatsApp Configuration                      ||
+|                  |  |                                              ||
+|                  |  | Provider: Simulator                          ||
+|                  |  | Vaccine Reminder: 7 days before              ||
+|                  |  | Deworming Reminder: 7 days before            ||
+|                  |  | Auto-confirm Bookings: OFF                   ||
+|                  |  |                                              ||
+|                  |  | [Edit WhatsApp Settings]                     ||
+|                  |  +----------------------------------------------+|
+|                  |                                                  |
++------------------+--------------------------------------------------+
+
+Access: Admin only (Settings hidden from sidebar for non-admins)
+Web presents all settings as card summaries with edit links
+Same data as mobile settings - changes sync in real time
+```
+
+### Settings Access by Role
+
+```
++----------------------------------+--------+-----------+--------+---------+
+| Setting                          | Admin  | Clinician | Front  | Inv Mgr |
+|                                  |        |           | Desk   |         |
++----------------------------------+--------+-----------+--------+---------+
+| Clinic Profile                   |  Edit  |   View    |  View  |    -    |
+| Billing & GST                    |  Edit  |     -     |    -   |    -    |
+| Service Catalog                  |  Edit  |   View    |    -   |    -    |
+| WhatsApp Configuration           |  Edit  |     -     |    -   |    -    |
+| Scheduling Defaults              |  Edit  |   View    |  View  |    -    |
+| User & Role Management          |  Edit  |     -     |    -   |    -    |
+| My Profile                       |  Edit  |   Edit    |  Edit  |  Edit   |
+| Notifications                    |  Edit  |   Edit    |  Edit  |  Edit   |
+| Language                         |  Edit  |   Edit    |  Edit  |  Edit   |
++----------------------------------+--------+-----------+--------+---------+
+
+Edit = Can view and modify
+View = Can see but not change
+  -  = Not visible / no access
+```
+
+---
+
+## 15. End-to-End Flow: A Full Clinic Day
 
 This shows how all modules connect in a typical day for Dr. Priya, a solo vet.
 
@@ -1908,7 +2521,14 @@ PET OWNER AT HOME (Evening)
 | Push notifications               |   Y    |    -     |
 | Dashboard cockpit                |   -    |    Y     |
 | User & role management           |   -    |    Y     |
-| Clinic settings                  |   -    |    Y     |
+| Clinic profile settings          |   Y    |    Y     |
+| Billing & GST settings           |   Y    |    Y     |
+| Service catalog management       |   Y    |    Y     |
+| WhatsApp configuration           |   Y    |    -     |
+| Scheduling defaults              |   Y    |    Y     |
+| User profile / account           |   Y    |    Y     |
+| Notification preferences         |   Y    |    -     |
+| Language (English / Hindi)       |   Y    |    -     |
 | Owner portal (magic link)        |   -    |    Y     |
 | Offline check-in                 |   Y    |    -     |
 | Offline barcode scanning         |   Y    |    -     |
