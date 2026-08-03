@@ -6,7 +6,9 @@ import fastifyRateLimit from '@fastify/rate-limit';
 
 import prismaPlugin from './plugins/prisma.js';
 import redisPlugin from './plugins/redis.js';
+import socketPlugin from './realtime/socket.js';
 import { errorHandler } from './middleware/error-handler.js';
+import { scheduleMidnightArchive } from './jobs/midnight-archive.js';
 
 export interface BuildAppOptions {
   logger?: boolean;
@@ -73,6 +75,16 @@ export async function buildApp(
   });
   await app.register(import('./modules/notifications/notification.routes.js'), { prefix: '/api/v1' });
   await app.register(import('./modules/clinic/clinic.routes.js'), { prefix: '/api/v1' });
+  await app.register(import('./modules/patient/patient.routes.js'), { prefix: '/api/v1' });
+
+  // Socket.IO and queue (depends on prisma + redis + jwt being registered)
+  await app.register(socketPlugin);
+  await app.register(import('./modules/queue/queue.routes.js'), { prefix: '/api/v1' });
+
+  // Midnight archive cron (skip in test environment)
+  if (!isTest) {
+    scheduleMidnightArchive(app.prisma, app.io);
+  }
 
   return app;
 }
