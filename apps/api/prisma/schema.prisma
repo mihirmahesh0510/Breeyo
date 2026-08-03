@@ -47,8 +47,11 @@ model Clinic {
   createdAt        DateTime  @default(now()) @map("created_at")
   updatedAt        DateTime  @updatedAt @map("updated_at")
 
-  owner   User           @relation(fields: [ownerId], references: [id])
-  members ClinicMember[]
+  owner        User           @relation(fields: [ownerId], references: [id])
+  members      ClinicMember[]
+  petOwners    PetOwner[]
+  pets         Pet[]
+  queueEntries QueueEntry[]
 
   @@map("clinics")
 }
@@ -195,6 +198,95 @@ model DeviceToken {
 
   @@unique([userId, token])
   @@map("device_tokens")
+}
+
+enum Species {
+  DOG
+  CAT
+  BIRD
+  RABBIT
+  FISH
+  REPTILE
+  OTHER
+}
+
+enum QueueEntryStatus {
+  WAITING
+  IN_CONSULT
+  DONE
+  NO_SHOW
+}
+
+model PetOwner {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clinicId  String   @map("clinic_id") @db.Uuid
+  mobile    String
+  name      String
+  email     String?
+  address   String?
+  altPhone  String?  @map("alt_phone")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  clinic Clinic @relation(fields: [clinicId], references: [id])
+  pets   Pet[]
+
+  @@unique([clinicId, mobile])
+  @@index([clinicId])
+  @@index([clinicId, name])
+  @@map("pet_owners")
+}
+
+model Pet {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clinicId    String   @map("clinic_id") @db.Uuid
+  ownerId     String   @map("owner_id") @db.Uuid
+  name        String
+  species     Species
+  breed       String?
+  birthYear   Int?     @map("birth_year")
+  birthMonth  Int?     @map("birth_month")
+  weight      Float?
+  color       String?
+  microchipId String?  @map("microchip_id")
+  photoUrl    String?  @map("photo_url")
+  notes       String?
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  clinic       Clinic       @relation(fields: [clinicId], references: [id])
+  owner        PetOwner     @relation(fields: [ownerId], references: [id])
+  queueEntries QueueEntry[]
+
+  @@index([clinicId])
+  @@index([clinicId, ownerId])
+  @@index([clinicId, name])
+  @@map("pets")
+}
+
+model QueueEntry {
+  id            String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clinicId      String           @map("clinic_id") @db.Uuid
+  petId         String           @map("pet_id") @db.Uuid
+  checkedInBy   String           @map("checked_in_by") @db.Uuid
+  treatingVetId String?          @map("treating_vet_id") @db.Uuid
+  status        QueueEntryStatus @default(WAITING)
+  position      Int
+  isEmergency   Boolean          @default(false) @map("is_emergency")
+  visitReason   String?          @map("visit_reason")
+  checkedInAt   DateTime         @default(now()) @map("checked_in_at")
+  calledAt      DateTime?        @map("called_at")
+  completedAt   DateTime?        @map("completed_at")
+  archivedAt    DateTime?        @map("archived_at")
+  updatedAt     DateTime         @updatedAt @map("updated_at")
+
+  clinic Clinic @relation(fields: [clinicId], references: [id])
+  pet    Pet    @relation(fields: [petId], references: [id])
+
+  @@index([clinicId, status])
+  @@index([clinicId, checkedInAt])
+  @@index([clinicId, petId, checkedInAt])
+  @@map("queue_entries")
 }
 
 model ConsentRecord {
