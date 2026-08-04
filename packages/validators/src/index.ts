@@ -2,3 +2,6 @@ export * from './auth.js';
 export * from './clinic.js';
 export * from './patient.js';
 export * from './queue.js';
+export * from './emr.js';
+export * from './vitals.js';
+export * from './prescription.js';

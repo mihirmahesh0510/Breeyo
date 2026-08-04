@@ -25,10 +25,11 @@ model User {
   createdAt               DateTime  @default(now()) @map("created_at")
   updatedAt               DateTime  @updatedAt @map("updated_at")
 
-  clinicMemberships ClinicMember[]
-  ownedClinics      Clinic[]
-  refreshTokens     RefreshToken[]
-  deviceTokens      DeviceToken[]
+  clinicMemberships  ClinicMember[]
+  ownedClinics       Clinic[]
+  refreshTokens      RefreshToken[]
+  deviceTokens       DeviceToken[]
+  consultationsAsVet Consultation[] @relation("ConsultationVet")
 
   @@map("users")
 }
@@ -47,11 +48,16 @@ model Clinic {
   createdAt        DateTime  @default(now()) @map("created_at")
   updatedAt        DateTime  @updatedAt @map("updated_at")
 
-  owner        User           @relation(fields: [ownerId], references: [id])
-  members      ClinicMember[]
-  petOwners    PetOwner[]
-  pets         Pet[]
-  queueEntries QueueEntry[]
+  owner              User                @relation(fields: [ownerId], references: [id])
+  members            ClinicMember[]
+  petOwners          PetOwner[]
+  pets               Pet[]
+  queueEntries       QueueEntry[]
+  consultations      Consultation[]
+  consultationDrafts ConsultationDraft[]
+  vaccinationRecords VaccinationRecord[]
+  dewormingRecords   DewormingRecord[]
+  drugs              Drug[]
 
   @@map("clinics")
 }
@@ -254,9 +260,12 @@ model Pet {
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
-  clinic       Clinic       @relation(fields: [clinicId], references: [id])
-  owner        PetOwner     @relation(fields: [ownerId], references: [id])
-  queueEntries QueueEntry[]
+  clinic             Clinic              @relation(fields: [clinicId], references: [id])
+  owner              PetOwner            @relation(fields: [ownerId], references: [id])
+  queueEntries       QueueEntry[]
+  consultations      Consultation[]
+  vaccinationRecords VaccinationRecord[]
+  dewormingRecords   DewormingRecord[]
 
   @@index([clinicId])
   @@index([clinicId, ownerId])
@@ -302,4 +311,222 @@ model ConsentRecord {
 
   @@index([ownerId])
   @@map("consent_records")
+}
+
+// ─── Phase 4: EMR & Clinical Records ─────────────────────────────────
+
+model Consultation {
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clinicId         String    @map("clinic_id") @db.Uuid
+  petId            String    @map("pet_id") @db.Uuid
+  vetId            String    @map("vet_id") @db.Uuid
+  queueEntryId     String?   @map("queue_entry_id") @db.Uuid
+  visitType        String    @default("general") @map("visit_type")
+  status           String    @default("draft")
+  startedAt        DateTime  @default(now()) @map("started_at")
+  finalizedAt      DateTime? @map("finalized_at")
+  durationMinutes  Int?      @map("duration_minutes")
+  subjective       Json?
+  objective        Json?
+  assessment       String?
+  plan             Json?
+  careInstructions String?   @map("care_instructions")
+  referral         Json?
+  rxNotes          String?   @map("rx_notes")
+  followUpDate     DateTime? @map("follow_up_date")
+  followUpReason   String?   @map("follow_up_reason")
+  addenda          Json?     @default("[]")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  clinic             Clinic                  @relation(fields: [clinicId], references: [id])
+  pet                Pet                     @relation(fields: [petId], references: [id])
+  vet                User                    @relation("ConsultationVet", fields: [vetId], references: [id])
+  vitals             Vitals?
+  prescriptions      Prescription[]
+  attachments        ConsultationAttachment[]
+  vaccinationRecords VaccinationRecord[]
+  dewormingRecords   DewormingRecord[]
+
+  @@index([clinicId])
+  @@index([clinicId, petId])
+  @@index([clinicId, vetId])
+  @@index([clinicId, status])
+  @@map("consultations")
+}
+
+model ConsultationDraft {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  consultationId String   @unique @map("consultation_id") @db.Uuid
+  clinicId       String   @map("clinic_id") @db.Uuid
+  data           Json
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  clinic Clinic @relation(fields: [clinicId], references: [id])
+
+  @@index([clinicId])
+  @@map("consultation_drafts")
+}
+
+model ConsultationLock {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  consultationId String   @unique @map("consultation_id") @db.Uuid
+  vetId          String   @map("vet_id") @db.Uuid
+  vetName        String   @map("vet_name")
+  acquiredAt     DateTime @default(now()) @map("acquired_at")
+  lastHeartbeat  DateTime @default(now()) @map("last_heartbeat")
+  expiresAt      DateTime @map("expires_at")
+
+  @@map("consultation_locks")
+}
+
+model Vitals {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  consultationId  String   @unique @map("consultation_id") @db.Uuid
+  weightKg        Decimal? @map("weight_kg") @db.Decimal(6, 2)
+  temperatureC    Decimal? @map("temperature_c") @db.Decimal(4, 1)
+  heartRateBpm    Int?     @map("heart_rate_bpm")
+  respiratoryRate Int?     @map("respiratory_rate")
+
+  consultation Consultation @relation(fields: [consultationId], references: [id])
+
+  @@map("vitals")
+}
+
+model Drug {
+  id          String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clinicId    String? @map("clinic_id") @db.Uuid
+  name        String
+  genericName String  @map("generic_name")
+  category    String
+  isActive    Boolean @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  clinic        Clinic?          @relation(fields: [clinicId], references: [id])
+  formulations  DrugFormulation[]
+  dosageRanges  SpeciesDosage[]
+
+  @@index([name])
+  @@index([genericName])
+  @@map("drugs")
+}
+
+model DrugFormulation {
+  id            String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  drugId        String  @map("drug_id") @db.Uuid
+  form          String
+  strength      String
+  strengthValue Decimal @map("strength_value") @db.Decimal(10, 2)
+  strengthUnit  String  @map("strength_unit")
+
+  drug Drug @relation(fields: [drugId], references: [id], onDelete: Cascade)
+
+  @@map("drug_formulations")
+}
+
+model SpeciesDosage {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  drugId         String   @map("drug_id") @db.Uuid
+  species        String
+  minDoseMgPerKg Decimal  @map("min_dose_mg_per_kg") @db.Decimal(10, 4)
+  maxDoseMgPerKg Decimal  @map("max_dose_mg_per_kg") @db.Decimal(10, 4)
+  isFixedDose    Boolean  @default(false) @map("is_fixed_dose")
+  fixedDoseMin   Decimal? @map("fixed_dose_min") @db.Decimal(10, 2)
+  fixedDoseMax   Decimal? @map("fixed_dose_max") @db.Decimal(10, 2)
+  notes          String?
+
+  drug Drug @relation(fields: [drugId], references: [id], onDelete: Cascade)
+
+  @@unique([drugId, species])
+  @@map("species_dosages")
+}
+
+model Prescription {
+  id                   String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  consultationId       String   @map("consultation_id") @db.Uuid
+  drugId               String?  @map("drug_id") @db.Uuid
+  drugName             String   @map("drug_name")
+  formulationId        String?  @map("formulation_id") @db.Uuid
+  formulation          String
+  strength             String
+  dosage               String
+  dosageMg             Decimal? @map("dosage_mg") @db.Decimal(10, 2)
+  route                String
+  frequency            String
+  duration             String
+  durationDays         Int?     @map("duration_days")
+  clinicalInstructions String?  @map("clinical_instructions")
+  ownerInstructions    String?  @map("owner_instructions")
+  dispensed            Boolean  @default(false)
+  inventoryItemId      String?  @map("inventory_item_id") @db.Uuid
+  sortOrder            Int      @default(0) @map("sort_order")
+  createdAt            DateTime @default(now()) @map("created_at")
+
+  consultation Consultation @relation(fields: [consultationId], references: [id])
+
+  @@index([consultationId])
+  @@map("prescriptions")
+}
+
+model VaccinationRecord {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clinicId        String    @map("clinic_id") @db.Uuid
+  petId           String    @map("pet_id") @db.Uuid
+  consultationId  String?   @map("consultation_id") @db.Uuid
+  vaccineName     String    @map("vaccine_name")
+  batchNumber     String?   @map("batch_number")
+  manufacturer    String?
+  expiryDate      DateTime? @map("expiry_date")
+  administeredAt  DateTime  @map("administered_at")
+  administeredBy  String    @map("administered_by") @db.Uuid
+  nextDueDate     DateTime? @map("next_due_date")
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  clinic       Clinic        @relation(fields: [clinicId], references: [id])
+  pet          Pet           @relation(fields: [petId], references: [id])
+  consultation Consultation? @relation(fields: [consultationId], references: [id])
+
+  @@index([clinicId, petId])
+  @@index([clinicId, petId, vaccineName])
+  @@map("vaccination_records")
+}
+
+model DewormingRecord {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clinicId       String    @map("clinic_id") @db.Uuid
+  petId          String    @map("pet_id") @db.Uuid
+  consultationId String?   @map("consultation_id") @db.Uuid
+  drugName       String    @map("drug_name")
+  administeredAt DateTime  @map("administered_at")
+  administeredBy String    @map("administered_by") @db.Uuid
+  nextDueDate    DateTime? @map("next_due_date")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  clinic       Clinic        @relation(fields: [clinicId], references: [id])
+  pet          Pet           @relation(fields: [petId], references: [id])
+  consultation Consultation? @relation(fields: [consultationId], references: [id])
+
+  @@index([clinicId, petId])
+  @@map("deworming_records")
+}
+
+model ConsultationAttachment {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  consultationId  String   @map("consultation_id") @db.Uuid
+  fileType        String   @map("file_type")
+  fileName        String   @map("file_name")
+  mimeType        String   @map("mime_type")
+  fileSizeBytes   Int      @map("file_size_bytes")
+  s3Key           String   @map("s3_key")
+  s3Url           String?  @map("s3_url")
+  thumbnailS3Key  String?  @map("thumbnail_s3_key")
+  description     String?
+  uploadedBy      String   @map("uploaded_by") @db.Uuid
+  uploadedAt      DateTime @default(now()) @map("uploaded_at")
+
+  consultation Consultation @relation(fields: [consultationId], references: [id])
+
+  @@index([consultationId])
+  @@map("consultation_attachments")
 }
