@@ -1,4 +1,5 @@
 import { PrismaClient } from '@prisma/client';
+import { seedServiceCatalog } from '../src/modules/billing/service-catalog-seed.js';
 
 const prisma = new PrismaClient();
 
@@ -103,6 +104,13 @@ async function main() {
         },
       });
     }
+  }
+
+  // Seed service catalog for demo clinic (if one exists)
+  const demoClinic = await prisma.clinic.findFirst();
+  if (demoClinic) {
+    const serviceCatalogCount = await seedServiceCatalog(prisma, demoClinic.id);
+    console.log(`Seeded ${serviceCatalogCount} service catalog entries for clinic: ${demoClinic.name}`);
   }
 
   console.log('Seed complete.');

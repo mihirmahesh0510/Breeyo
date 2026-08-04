@@ -9,3 +9,4 @@ export * from './emr.js';
 export * from './drug.js';
 export * from './vaccination.js';
 export * from './attachment.js';
+export * from './billing.js';

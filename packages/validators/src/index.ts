@@ -5,3 +5,4 @@ export * from './queue.js';
 export * from './emr.js';
 export * from './vitals.js';
 export * from './prescription.js';
+export * from './billing.js';

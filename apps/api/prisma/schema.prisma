@@ -58,6 +58,7 @@ model Clinic {
   vaccinationRecords VaccinationRecord[]
   dewormingRecords   DewormingRecord[]
   drugs              Drug[]
+  serviceCatalog     ServiceCatalog[]
 
   @@map("clinics")
 }
@@ -529,4 +530,28 @@ model ConsultationAttachment {
 
   @@index([consultationId])
   @@map("consultation_attachments")
+}
+
+// ─── Phase 4: Service Catalog (Pre-Phase 6 Billing) ────────────────
+
+model ServiceCatalog {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clinicId        String   @map("clinic_id") @db.Uuid
+  name            String
+  category        String   @default("other")
+  price           Int      // price in paise
+  sacCode         String?  @map("sac_code")
+  hsnCode         String?  @map("hsn_code")
+  gstRateOverride Decimal? @map("gst_rate_override") @db.Decimal(5, 2)
+  isActive        Boolean  @default(true) @map("is_active")
+  isPreset        Boolean  @default(false) @map("is_preset")
+  sortOrder       Int      @default(0) @map("sort_order")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  clinic Clinic @relation(fields: [clinicId], references: [id])
+
+  @@index([clinicId, isActive])
+  @@index([clinicId, category])
+  @@map("service_catalog")
 }
