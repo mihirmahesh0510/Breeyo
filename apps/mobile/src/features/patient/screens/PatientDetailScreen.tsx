@@ -7,6 +7,11 @@ import { usePetProfile, useUpdatePet } from '../hooks/usePatientProfile';
 import { PetProfileCard } from '../components/PetProfileCard';
 import { VisitTimeline } from '../components/VisitTimeline';
 import { EditPetForm } from './EditPetForm';
+import { PreventiveCareCard } from '../../history/components/PreventiveCareCard';
+import { WeightTrendChart } from '../../history/components/WeightTrendChart';
+import { MedicalTimeline } from '../../history/components/MedicalTimeline';
+import { navigateToConsultationDetail } from '../../../navigation/consultation-navigator';
+import type { ConsultationSummary } from '@breeyo/types';
 
 /**
  * Format a date for quick stats display.
@@ -152,12 +157,34 @@ export function PatientDetailScreen() {
               </View>
             </View>
 
-            {/* Visit Timeline */}
+            {/* Preventive Care */}
+            {petId ? (
+              <PreventiveCareCard petId={petId} />
+            ) : null}
+
+            {/* Weight History */}
+            <View style={styles.section}>
+              <WeightTrendChart
+                data={visits
+                  .filter((v: Record<string, unknown>) => v.weightKg != null)
+                  .map((v: Record<string, unknown>) => ({
+                    date: new Date(v.checkedInAt as string),
+                    weightKg: v.weightKg as number,
+                  }))}
+              />
+            </View>
+
+            {/* Medical Timeline */}
             <View style={styles.section}>
               <Text variant="titleLarge" style={styles.sectionTitle}>
                 Visit History
               </Text>
-              <VisitTimeline visits={visits} testID="visit-timeline" />
+              <MedicalTimeline
+                consultations={(visits as unknown as ConsultationSummary[])}
+                onViewConsultation={(consultationId) => {
+                  navigateToConsultationDetail(router, { consultationId });
+                }}
+              />
             </View>
           </>
         )}

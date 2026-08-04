@@ -6,6 +6,11 @@ import { useQueryClient } from '@tanstack/react-query';
 import { showToast } from '@breeyo/ui';
 import { QueueStatus } from '@breeyo/types/constants/queue-status';
 import { useAuth } from '../../../providers/AuthProvider';
+import { ResumeBanner } from '../components/ResumeBanner';
+import {
+  navigateToConsultation,
+  navigateToConsultationDetail,
+} from '../../../navigation/consultation-navigator';
 import { useQueue } from '../hooks/useQueue';
 import { useQueueSocket } from '../hooks/useQueueSocket';
 import { useUpdateQueueStatus, useCallNext } from '../hooks/useQueueActions';
@@ -75,11 +80,24 @@ export function QueueScreen() {
   );
 
   const handleCardPress = useCallback(
-    (petId: string) => {
-      router.push({
-        pathname: '/patient/[petId]',
-        params: { petId },
-      });
+    (petId: string, entryStatus?: QueueStatus, consultationId?: string, queueEntryId?: string) => {
+      if (entryStatus === QueueStatus.IN_CONSULT) {
+        // Navigate to ConsultationScreen for in-progress consultations
+        navigateToConsultation(router, {
+          consultationId,
+          petId,
+          queueEntryId,
+        });
+      } else if (entryStatus === QueueStatus.DONE && consultationId) {
+        // Navigate to ConsultationDetailScreen for completed consultations
+        navigateToConsultationDetail(router, { consultationId });
+      } else {
+        // Default: navigate to patient detail
+        router.push({
+          pathname: '/patient/[petId]',
+          params: { petId },
+        });
+      }
     },
     [router],
   );
@@ -132,6 +150,8 @@ export function QueueScreen() {
       </Text>
 
       <OfflineBanner />
+
+      <ResumeBanner />
 
       <CallNextButton
         onPress={handleCallNext}

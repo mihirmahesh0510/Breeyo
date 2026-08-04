@@ -25,7 +25,14 @@ import { ObjectiveSection } from '../components/ObjectiveSection';
 import { AssessmentSection } from '../components/AssessmentSection';
 import { PlanSection } from '../components/PlanSection';
 import { FloatingActionBar } from '../components/FloatingActionBar';
-import type { VisitType, Consultation } from '@breeyo/types';
+import { PrescriptionSection } from '../components/PrescriptionSection';
+import { FilesSection } from '../components/FilesSection';
+import { VaccinationForm } from '../components/VaccinationForm';
+import type { VaccinationFormData } from '../components/VaccinationForm';
+import { DewormingForm } from '../components/DewormingForm';
+import type { DewormingFormData } from '../components/DewormingForm';
+import { HistoryBottomSheet } from '../../history/components/HistoryBottomSheet';
+import type { VisitType, Consultation, PrescriptionItem, AttachmentFileType } from '@breeyo/types';
 
 // ---------- Accordion ----------
 
@@ -153,6 +160,32 @@ export function ConsultationScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [isNew, setIsNew] = useState(!params.consultationId);
   const [isRecording, setIsRecording] = useState(false);
+
+  // Prescription state
+  const [medications, setMedications] = useState<PrescriptionItem[]>([]);
+  const [generalRxNotes, setGeneralRxNotes] = useState('');
+
+  // File attachment state
+  const [attachments, setAttachments] = useState<Array<{
+    attachment: { id: string; consultationId: string; fileUrl: string; fileName: string; fileType: string; mimeType: string; fileSizeBytes: number; description: string | null; uploadedAt: Date };
+    status: 'uploading' | 'uploaded' | 'error';
+    progress?: number;
+  }>>([]);
+
+  // Vaccination / Deworming form data
+  const [vaccinationData, setVaccinationData] = useState<VaccinationFormData | null>(null);
+  const [dewormingData, setDewormingData] = useState<DewormingFormData | null>(null);
+
+  // History bottom sheet
+  const [showHistory, setShowHistory] = useState(false);
+
+  // Pet age in days (estimated from dateOfBirth string)
+  const petAgeDays = (() => {
+    if (!petInfo.age) return 365; // default 1 year
+    const dob = new Date(petInfo.age);
+    if (isNaN(dob.getTime())) return 365;
+    return Math.floor((Date.now() - dob.getTime()) / (1000 * 60 * 60 * 24));
+  })();
 
   // Consultation ID
   const consultationId = store.consultationId || params.consultationId || '';
@@ -307,14 +340,82 @@ export function ConsultationScreen() {
     });
   }, [forceSave, consultationId, router]);
 
-  // Floating action bar handlers (placeholders)
+  // File upload handler
+  const handleAddFile = useCallback(
+    (
+      file: { uri: string; name: string; mimeType: string; size: number },
+      fileType: AttachmentFileType,
+      description?: string,
+    ) => {
+      const tempId = `temp-${Date.now()}`;
+      const newAttachment = {
+        attachment: {
+          id: tempId,
+          consultationId,
+          fileUrl: file.uri,
+          fileName: file.name,
+          fileType: fileType as string,
+          mimeType: file.mimeType,
+          fileSizeBytes: file.size,
+          description: description || null,
+          uploadedAt: new Date(),
+        },
+        status: 'uploading' as const,
+        progress: 0,
+      };
+      setAttachments((prev) => [...prev, newAttachment]);
+
+      // Upload via API (fire and forget, update status on completion)
+      if (accessToken) {
+        apiClient(`/api/v1/consultations/${consultationId}/attachments`, {
+          method: 'POST',
+          token: accessToken,
+          body: JSON.stringify({
+            fileName: file.name,
+            mimeType: file.mimeType,
+            fileSizeBytes: file.size,
+            fileType,
+            description: description || undefined,
+          }),
+        })
+          .then(() => {
+            setAttachments((prev) =>
+              prev.map((a) =>
+                a.attachment.id === tempId
+                  ? { ...a, status: 'uploaded' as const, progress: 100 }
+                  : a,
+              ),
+            );
+          })
+          .catch(() => {
+            setAttachments((prev) =>
+              prev.map((a) =>
+                a.attachment.id === tempId
+                  ? { ...a, status: 'error' as const }
+                  : a,
+              ),
+            );
+          });
+      }
+    },
+    [consultationId, accessToken],
+  );
+
+  // View history handler
+  const handleViewHistory = useCallback(() => {
+    setShowHistory(true);
+  }, []);
+
+  // Floating action bar handlers
   const handleMic = useCallback(() => setIsRecording((prev) => !prev), []);
   const handleRx = useCallback(() => {
-    // Prescriptions -- placeholder for Plan 05
-  }, []);
+    // Open prescriptions section by expanding it
+    store.toggleSection('prescriptions');
+  }, [store]);
   const handleCamera = useCallback(() => {
-    // Camera -- placeholder for Plan 06
-  }, []);
+    // Open files section
+    store.toggleSection('files');
+  }, [store]);
   const handleTimer = useCallback(() => {
     // Timer -- placeholder
   }, []);
@@ -426,31 +527,84 @@ export function ConsultationScreen() {
           />
         </AccordionItem>
 
-        {/* 6. Prescriptions (placeholder) */}
+        {/* 5b. Vaccination Form (when visitType is vaccination) */}
+        {store.visitType === 'vaccination' && (
+          <AccordionItem
+            title="Vaccination Details"
+            expanded={expandedSection === 'vaccination'}
+            onToggle={() => handleToggleSection('vaccination')}
+          >
+            <VaccinationForm
+              species={petInfo.species}
+              petAgeDays={petAgeDays}
+              onDataChange={setVaccinationData}
+            />
+          </AccordionItem>
+        )}
+
+        {/* 5c. Deworming Form (when visitType is vaccination) */}
+        {store.visitType === 'vaccination' && (
+          <AccordionItem
+            title="Deworming Details"
+            expanded={expandedSection === 'deworming'}
+            onToggle={() => handleToggleSection('deworming')}
+          >
+            <DewormingForm
+              petAgeDays={petAgeDays}
+              onDataChange={setDewormingData}
+            />
+          </AccordionItem>
+        )}
+
+        {/* 6. Prescriptions */}
         <AccordionItem
           title="Prescriptions"
           expanded={expandedSection === 'prescriptions'}
           onToggle={() => handleToggleSection('prescriptions')}
         >
-          <View style={styles.placeholderSection}>
-            <Text style={styles.placeholderText}>
-              Prescriptions will be available in a future update.
-            </Text>
-          </View>
+          <PrescriptionSection
+            medications={medications}
+            onMedicationsChange={setMedications}
+            generalNotes={generalRxNotes}
+            onGeneralNotesChange={setGeneralRxNotes}
+            petWeightKg={store.vitals.weightKg ?? undefined}
+            petSpecies={petInfo.species}
+          />
         </AccordionItem>
 
-        {/* 7. Files (placeholder) */}
+        {/* 7. Files */}
         <AccordionItem
           title="Files"
           expanded={expandedSection === 'files'}
           onToggle={() => handleToggleSection('files')}
         >
-          <View style={styles.placeholderSection}>
-            <Text style={styles.placeholderText}>
-              File attachments will be available in a future update.
-            </Text>
-          </View>
+          <FilesSection
+            attachments={attachments}
+            onAddFile={handleAddFile}
+            onRetry={(attachmentId) => {
+              // Retry upload logic
+              setAttachments((prev) =>
+                prev.map((a) =>
+                  a.attachment.id === attachmentId
+                    ? { ...a, status: 'uploading' as const }
+                    : a,
+                ),
+              );
+            }}
+            onRemove={(attachmentId) => {
+              setAttachments((prev) =>
+                prev.filter((a) => a.attachment.id !== attachmentId),
+              );
+            }}
+          />
         </AccordionItem>
+
+        {/* View History Button */}
+        <View style={styles.historyButtonContainer}>
+          <Pressable style={styles.historyButton} onPress={handleViewHistory}>
+            <Text style={styles.historyButtonText}>View History</Text>
+          </Pressable>
+        </View>
 
         {/* End Consultation Button */}
         <View style={styles.endButtonContainer}>
@@ -462,6 +616,25 @@ export function ConsultationScreen() {
         {/* Extra padding for floating bar */}
         <View style={styles.bottomPadding} />
       </ScrollView>
+
+      {/* History Bottom Sheet */}
+      <HistoryBottomSheet
+        visible={showHistory}
+        petId={params.petId || ''}
+        petName={petInfo.name}
+        onClose={() => setShowHistory(false)}
+        onRepeatRx={(rxConsultationId) => {
+          // Repeat Rx from past visit -- could load prescriptions from that consultation
+          setShowHistory(false);
+        }}
+        onViewConsultation={(viewConsultationId) => {
+          setShowHistory(false);
+          router.push({
+            pathname: '/consultation/detail/[consultationId]',
+            params: { consultationId: viewConsultationId },
+          });
+        }}
+      />
 
       {/* Floating Action Bar */}
       {!isLocked && (
@@ -517,6 +690,22 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
+  },
+  historyButtonContainer: {
+    paddingHorizontal: 16,
+    paddingTop: 8,
+  },
+  historyButton: {
+    borderWidth: 1,
+    borderColor: '#49454F',
+    paddingVertical: 12,
+    borderRadius: 24,
+    alignItems: 'center',
+  },
+  historyButtonText: {
+    color: '#49454F',
+    fontSize: 14,
+    fontWeight: '500',
   },
   bottomPadding: {
     height: 80,
