@@ -51,6 +51,10 @@ Requirements for Beta launch (20 pilot clinics, solo vets).
 - [ ] **EMR-06**: User can attach lab/imaging result files to a consultation record
 - [ ] **EMR-07**: All EMR changes are audit-trailed (who changed what, when)
 
+### Onboarding / Seed Data
+
+- [ ] **ONB-02**: System ships with seed data: common veterinary drug database (50 entries for Beta, 200-300 for production), breed lists per species, and default service catalog presets (consultation, vaccination, surgery, grooming)
+
 ### Inventory Management
 
 - [ ] **INV-01**: User can add inventory items with name, category, unit, and price
