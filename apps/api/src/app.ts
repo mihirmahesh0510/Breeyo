@@ -81,6 +81,11 @@ export async function buildApp(
   await app.register(socketPlugin);
   await app.register(import('./modules/queue/queue.routes.js'), { prefix: '/api/v1' });
 
+  // Phase 4: EMR & Clinical Records
+  await app.register(import('./modules/emr/emr.routes.js'), { prefix: '/api/v1' });
+  await app.register(import('./modules/drug/drug.routes.js'), { prefix: '/api/v1' });
+  await app.register(import('./modules/attachment/attachment.routes.js'), { prefix: '/api/v1' });
+
   // Midnight archive cron (skip in test environment)
   if (!isTest) {
     scheduleMidnightArchive(app.prisma, app.io);
