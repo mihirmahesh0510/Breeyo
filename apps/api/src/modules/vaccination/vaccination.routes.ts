@@ -1,0 +1,28 @@
+import type { FastifyInstance } from 'fastify';
+import { VaccinationRepository } from './vaccination.repository.js';
+import { VaccinationService } from './vaccination.service.js';
+import { VaccinationController } from './vaccination.controller.js';
+import { authenticate } from '../../middleware/authenticate.js';
+import { tenantContext } from '../../middleware/tenant-context.js';
+
+export default async function vaccinationRoutes(fastify: FastifyInstance) {
+  const repository = new VaccinationRepository(fastify.prisma);
+  const service = new VaccinationService(repository);
+  const controller = new VaccinationController(service);
+
+  const preHandler = [authenticate, tenantContext];
+
+  // Vaccination records
+  fastify.post('/pets/:petId/vaccinations', { preHandler, handler: controller.addVaccination });
+  fastify.get('/pets/:petId/vaccinations', { preHandler, handler: controller.getVaccinationHistory });
+
+  // Deworming records
+  fastify.post('/pets/:petId/deworming', { preHandler, handler: controller.addDeworming });
+  fastify.get('/pets/:petId/deworming', { preHandler, handler: controller.getDewormingHistory });
+
+  // Preventive care status
+  fastify.get('/pets/:petId/preventive-care', { preHandler, handler: controller.getPreventiveCareStatus });
+
+  // Vaccination certificate
+  fastify.get('/pets/:petId/vaccinations/:vaccinationId/certificate', { preHandler, handler: controller.getCertificateData });
+}

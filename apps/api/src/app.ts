@@ -85,6 +85,7 @@ export async function buildApp(
   await app.register(import('./modules/emr/emr.routes.js'), { prefix: '/api/v1' });
   await app.register(import('./modules/drug/drug.routes.js'), { prefix: '/api/v1' });
   await app.register(import('./modules/attachment/attachment.routes.js'), { prefix: '/api/v1' });
+  await app.register(import('./modules/vaccination/vaccination.routes.js'), { prefix: '/api/v1' });
 
   // Midnight archive cron (skip in test environment)
   if (!isTest) {
