@@ -1,0 +1,133 @@
+# Phase 7: WhatsApp Communication - Context
+
+**Gathered:** 2026-08-12
+**Status:** Ready for planning
+
+<domain>
+## Phase Boundary
+
+The clinic communicates with pet owners via WhatsApp for automated reminders (follow-up, vaccine-due, deworming-due), invoice delivery, and appointment booking — all through a simulator with a clean abstraction layer swappable for the real Meta Business API later. Delivers: provider abstraction layer, six Beta message templates, booking conversation flow with provisional slot records, reminder scheduling with bounded escalation, consent/opt-out tracking, and a mobile staff inbox/thread log for every message flow. Phase 7 sits on top of Phase 4 (follow-up/vaccine/deworming due dates), Phase 5 (want-list share), and Phase 6 (invoice delivery, payment reminders). It does NOT build a real calendar (Phase 8 owns that) or a general customer-support chat — booking records here are explicitly provisional and confirmed bookings do not auto-enter the walk-in queue.
+
+07-UI-SPEC.md (approved 2026-05-06) already locks the screens, copy, interaction contract, and component inventory for this phase. This discussion focused only on implementation decisions the UI-SPEC left open: reminder cadence/escalation, booking approval flow, consent/opt-out scope, and simulator demo behavior.
+
+</domain>
+
+<decisions>
+## Implementation Decisions
+
+### Reminder Cadence & Escalation
+- **D-01:** Follow-up reminder fires twice — 1 day before the follow-up date set at consultation end (Phase 4 D-09), and again on the date itself.
+- **D-02:** Vaccine/deworming due reminder fires twice — a fixed 3 days before the due date (Phase 4 D-42/D-43), and again on the due date. Not configurable for Beta (no admin picker, unlike Phase 5's expiry lead-time config).
+- **D-03:** Bounded escalation on no-reply — if the owner doesn't respond to a follow-up/vaccine/deworming reminder, the system resends. Claude's discretion on exact count/spacing; recommended default is 2 total attempts, 3 days apart.
+- **D-04:** After the escalation cap is reached with no reply, the thread is flagged "Needs action" in the inbox (using the filter chip already in UI-SPEC). No further automated sends happen after that — a human decides whether to call the owner.
+- **D-05:** Payment reminders for overdue invoices (deferred from Phase 6) are manual-only in Phase 7 — no automated sending or escalation logic at all. Front desk sends the "Payment reminder" template by hand from invoice detail. This is a deliberate exception to D-03's escalation pattern — do not generalize escalation to payment reminders.
+
+### Booking Approval Flow
+- **D-06:** Booking requests auto-confirm as soon as the requested clinic-hours slot is open — no staff review gate before the owner gets a confirmation. Staff still see the booking land in the thread via the ConversationActionCard.
+- **D-07:** Slot conflicts resolve first-come-first-served — the first booking request to arrive takes the slot; a second request for the same slot is told it's unavailable and prompted to pick another.
+- **D-08:** A confirmed Phase 7 booking blocks that clinic-hours slot from being offered to other WhatsApp booking requests for that day, even though there's no real calendar yet (Phase 8 owns that). This is enforcement inside Phase 7's own booking-request logic, not a calendar integration.
+- **D-09:** Moving or cancelling a confirmed booking is staff-only, via the Move/Cancel action cards already speced in UI-SPEC. No owner self-service quick-replies for changing a booking in Beta — an owner who wants to change a booking contacts the clinic and staff acts on it.
+
+### Consent & Opt-Out Scope
+- **D-10:** Template category split — "Payment reminder", "Follow-up reminder", "Vaccine due", and "Deworming due" are reminder-category templates an owner can silence via STOP. "Invoice delivery" and "Booking confirmation" are transactional — always attempted regardless of STOP status (per UI-SPEC's existing STOP-state copy: "Transactional messages still need staff review").
+- **D-11:** Opt-out is a single global per-owner toggle — one STOP silences all reminder-category templates across all of that owner's pets. No per-category opt-out granularity in Beta (there's no WhatsApp-native mechanism for it without adding new quick-reply chips beyond what UI-SPEC defines).
+- **D-12:** WhatsApp communication requires explicit opt-in consent, captured and logged via Phase 1's existing `ConsentRecord` model (new `consentType` value, e.g. `whatsapp_communication`) rather than treating patient registration as implied consent. Reuses the existing consent infrastructure instead of building a parallel one.
+- **D-13:** Missing consent does not block sending — the TemplateSendSheet shows its already-speced consent/preference warning, but staff can proceed anyway. Consent tracking is for audit/compliance visibility, not an operational gate, for Beta.
+
+### Simulator Demo Realism
+- **D-14:** Simulated owner replies are auto-generated after a short delay rather than manually triggered by staff — threads feel alive for pilot-clinic demos without anyone touching the Config screen mid-demo.
+- **D-15:** For booking action cards (Confirm/Move/Cancel), the simulator's auto-reply always takes the positive/default path (Confirm). Cancel/Move scenarios are not auto-simulated in Beta — those still require someone to drive the thread manually if a demo needs to show them.
+- **D-16:** The deterministic failure/delayed-delivery/invalid-number controls (already locked in UI-SPEC's SimulatorControlCard) apply as a global toggle affecting the next send(s), not a per-owner/thread override. Simpler single control surface; matches the SimulatorControlCard states as speced.
+
+### Claude's Discretion
+- Exact escalation attempt count and interval for bounded reminder escalation (D-03) — recommended default: 2 attempts, 3 days apart
+- BullMQ job scheduling design for reminder cadence (delay jobs, repeatable jobs, or cron sweep matching Phase 5's daily-expiry-cron pattern)
+- Provider abstraction layer interface shape (how the simulator and future real Meta API both implement it)
+- Booking slot-blocking data model (how "confirmed booking blocks a slot" is represented without a real calendar)
+- Exact auto-reply delay timing for simulator realism (D-14)
+- `ConsentRecord.consentType` naming convention and where in the flow consent gets captured (registration vs. first WhatsApp send)
+- Template variable rendering and validation approach
+- Retry/backoff mechanics for provider-level delivery failures (distinct from the escalation-on-no-reply behavior in D-03/D-04)
+
+</decisions>
+
+<canonical_refs>
+## Canonical References
+
+**Downstream agents MUST read these before planning or implementing.**
+
+### Project Context
+- `.planning/PROJECT.md` — Core value (mobile-first for solo vets), WhatsApp dependency constraint (Meta Business verification not started, simulator-first), price sensitivity, India data residency
+- `.planning/REQUIREMENTS.md` — WHA-01 through WHA-05 are the requirements for this phase
+- `.planning/ROADMAP.md` — Phase 7 goal, success criteria, dependency on Phase 6, 10-plan breakdown (07-01 through 07-10)
+
+### UI Design Contract
+- `.planning/phases/07-whatsapp-communication/07-UI-SPEC.md` — Approved UI design contract (2026-05-06). Locks: screen surfaces (Inbox, Thread, TemplateSendSheet, Config), spacing/typography/color tokens, copywriting contract (all six template names, empty/error state copy, STOP/invalid-number warning text), interaction contract (inbox filters, thread bubbles, booking action cards, simulator admin controls), component inventory, accessibility contract. Downstream agents MUST read this before planning screens — do not re-derive UI decisions already locked here.
+
+### Prior Phase Context
+- `.planning/phases/01-foundation-authentication/01-CONTEXT.md` — RBAC with per-user permission overrides (D-16), multi-tenant RLS (D-22-D-26), API conventions `/api/v1/{resource}` (D-27-D-30), immutable audit trail pattern (D-34-D-36), existing `ConsentRecord` model (consent-based cross-clinic sharing, D-25) — reused in this phase for WhatsApp opt-in (D-12)
+- `.planning/phases/04-emr-clinical-records/04-CONTEXT.md` — Follow-up reminders stored silently at consultation end, Phase 7 sends them (D-09); vaccination tracker with next-due-date calculation feeds Phase 7 reminders (D-42); deworming tracker similarly feeds Phase 7 (D-43)
+- `.planning/phases/05-inventory-management/05-CONTEXT.md` — Want-list WhatsApp share as plain formatted text (D-24), configurable expiry lead-time picker pattern (D-21) considered and explicitly NOT reused for vaccine/deworming reminders (D-02 uses a fixed value instead)
+- `.planning/phases/06-invoicing-payments/06-CONTEXT.md` — Invoice PDF sharing via WhatsApp abstraction layer (D-16); automated overdue payment reminders explicitly deferred to Phase 7 (resolved here as manual-only, D-05); one-invoice-per-pet model (D-27)
+
+### Technology Stack
+- `.planning/research/STACK.md` — React Native/Expo, Node.js/Fastify, PostgreSQL, Redis, Prisma, TypeScript, Zustand, React Query, zod, BullMQ
+
+No additional external specs or ADRs — requirements fully captured in decisions above, REQUIREMENTS.md, and 07-UI-SPEC.md.
+
+</canonical_refs>
+
+<code_context>
+## Existing Code Insights
+
+### Reusable Assets
+- `apps/api/src/modules/notifications/notification-bus.ts` — BullMQ `Queue`-based event bus (`emit`/`emitBulk` with retry/backoff job options). The WhatsApp provider abstraction and reminder scheduling can follow this same shape rather than inventing a new dispatch pattern
+- `apps/api/src/lib/audit-log.ts` — existing audit trail utility; extend to log WhatsApp message sends/status changes per D-16's audit expectations from Phase 1
+- `ConsentRecord` model (`apps/api/prisma/schema.prisma`) — generic consent model (`consentType`, `purposeText`, `grantedAt`/`withdrawnAt`, `actorId`) already exists from Phase 1. Reused directly for D-12 rather than creating a WhatsApp-specific consent table
+- `packages/ui/src/wireframes/whatsapp/MessageLogScreen.stories.ts` — Phase 2 wireframe already sketches a WhatsApp message log screen; check for reusable layout/component decisions before building the real Inbox/Thread screens
+
+### Established Patterns
+- Monorepo bounded-context module structure from Phase 1 — WhatsApp module follows `apps/api/src/modules/whatsapp/` (or similar) pattern
+- PostgreSQL RLS multi-tenancy from Phase 1 — all WhatsApp messages/threads/booking records scoped to clinic tenant
+- BullMQ workers from Phase 1's notification system — reminder scheduling (D-01/D-02) and escalation (D-03) likely implemented as delayed/repeatable jobs following this existing pattern
+- Daily cron pattern from Phase 5 (D-56, daily expiry check) — a similar daily sweep could drive due-date reminder triggers (D-02) rather than per-item scheduled jobs, Claude's discretion on which fits better
+- Zod schema validation and Prisma Client Extensions for RLS — same conventions as every prior phase
+
+### Integration Points
+- EMR (Phase 4) — follow-up reminder dates and vaccination/deworming due dates are the trigger inputs for D-01/D-02
+- Inventory (Phase 5) — want-list WhatsApp share (D-24) uses the same abstraction layer Phase 7 builds
+- Billing (Phase 6) — invoice PDF delivery and payment reminder template (manual-only per D-05) both send through this phase's abstraction layer
+- Owner Portal (Phase 9) — may eventually surface WhatsApp thread history or consent status to owners; not in scope for Phase 7
+- Scheduling (Phase 8) — Phase 7's provisional booking records are a known, deliberate gap until Phase 8's real calendar exists (D-08's slot-blocking is a stopgap, not calendar integration)
+
+</code_context>
+
+<specifics>
+## Specific Ideas
+
+- The "before + on the date" two-touch reminder pattern (D-01, D-02) mirrors how a caring front-desk staff member would actually nudge an owner — one advance heads-up, one on the day
+- Bounded escalation with a hard stop into "Needs action" (D-03/D-04) keeps the system from nagging owners indefinitely while still surfacing genuinely stuck cases to a human
+- Payment reminders staying manual-only (D-05) is a deliberate carve-out — money conversations are the one place staff want direct control rather than an automated chase, especially in a pilot with small clinics who know their patients personally
+- Auto-confirm booking (D-06) plus slot-blocking (D-08) tries to get the convenience of a real booking bot without pretending Phase 7 has a real calendar — it's an honest stopgap, not a workaround
+- Auto-replying simulator (D-14) exists specifically so a solo vet or sales demo to a pilot clinic doesn't require someone hand-puppeting "the owner" during a live walkthrough
+- Reusing `ConsentRecord` (D-12) instead of a new WhatsApp-specific consent table keeps the audit/compliance story consistent across the whole app rather than fragmenting it per feature
+
+</specifics>
+
+<deferred>
+## Deferred Ideas
+
+- Configurable reminder lead times (admin-adjustable, like Phase 5's expiry lead-time picker) — Beta ships fixed values (1 day before follow-up, 3 days before vaccine/deworming due) per D-01/D-02; configurability deferred to post-Beta if clinics ask for it
+- Per-category opt-out granularity (owner silences vaccine reminders but keeps payment reminders) — deferred; D-11 keeps opt-out as a single global toggle for Beta
+- Owner self-service booking move/cancel via quick-reply — deferred; D-09 keeps this staff-only for Beta
+- Escalating/automated payment reminders — deferred; D-05 keeps payment reminders manual-only for Beta, revisit post-Beta once real payment behavior data exists
+- Admin-scriptable simulator outcomes (choosing which quick-reply the simulated owner "picks" per scenario) — deferred; D-15 keeps the auto-reply always taking the positive/default path for Beta
+
+None of the above are scope creep — all stayed within Phase 7's domain (reminders, invoice delivery, booking, simulator, logging) and were narrowed to a Beta-appropriate default rather than expanded.
+
+</deferred>
+
+---
+
+*Phase: 07-whatsapp-communication*
+*Context gathered: 2026-08-12*
