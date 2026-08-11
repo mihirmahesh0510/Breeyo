@@ -21,7 +21,7 @@ Generate invoices from consultation services and dispensed inventory items, acce
 - **D-05:** Front Desk + Admin billing permissions — only Front Desk and Admin roles can create and manage invoices. Clinicians cannot create invoices directly. Solo vets use Admin role which has full billing access
 - **D-06:** Front Desk pulls from completed visits — Front Desk sees completed consultations and creates invoices by pulling in dispensed items and adding services. No auto-queue or vet-initiated handoff
 - **D-07:** Line-item + invoice-level discounts — percentage or flat discount on individual items OR on the total invoice. Common in Indian vet clinics for regulars and multi-pet owners
-- **D-08:** Single configurable GST rate — one GST rate (e.g., 18%) applied to all services and products. Configured in clinic settings. Full GST with CGST/SGST/IGST and HSN/SAC codes deferred to v2 (BIL-07)
+- **D-08 (superseded 2026-08-12 during plan-phase research — see 06-RESEARCH.md Contradiction 1):** Full per-line-item GST — each line item (service or product) carries its own `taxTreatment` (exempt/taxable), GST rate, and HSN/SAC code, sourced from `ServiceCatalog`/`InventoryItem`. CGST+SGST for intra-state, IGST for inter-state, computed per line and rounded per tax head at invoice level (Section 170/Rule 51). Full GST breakdown is now IN SCOPE for Phase 6 (BIL-07), matching ROADMAP success criterion #4 — both upstream catalogs already carry the HSN/SAC + rate fields needed. Veterinary healthcare services (consultation, surgery, vaccination) are GST-exempt by law (Notification 12/2017-CT(R) Entry 46, SAC 998351) — a single flat rate applied to everything (the original D-08) would have meant illegally taxing exempt services, not just a simplification.
 
 ### Payment Integration
 - **D-09:** Razorpay Payment Links API — server creates payment link via Razorpay API. QR code displayed on clinic device for in-person payment. Shareable link for remote collection (owner left without paying). Webhook confirms payment status
@@ -34,7 +34,7 @@ Generate invoices from consultation services and dispensed inventory items, acce
 - **D-14:** Full professional invoice — clinic header (logo, name, address, phone, GSTIN), owner info (name, phone), pet info (name, species), line items (services + products with qty, rate, amount), subtotal, GST line, discount, grand total, payment status, invoice number, date
 - **D-15:** Auto-sequential numbering per clinic — format: INV-YYYYMM-XXXX (e.g., INV-202605-0001). Sequential within each clinic, resets monthly. Unique, auditable, GST-friendly
 - **D-16:** Print + WhatsApp share + download — three share options: Print (thermal/regular), WhatsApp (sends PDF to owner via Phase 7 abstraction layer), Download (save to device). Same pattern as Phase 4 PDFs (D-45 to D-48)
-- **D-17:** Basic GST line — show "GST @ X%: ₹Y" on invoice. No CGST/SGST split, no HSN/SAC codes. Clinic configures GST rate + GSTIN in settings. Full GST compliance deferred to v2 (BIL-07)
+- **D-17 (superseded 2026-08-12 — see D-08 update, 06-RESEARCH.md Contradiction 1):** Full GST breakdown on invoice — CGST/SGST shown per line for intra-state transactions, IGST for inter-state, with HSN/SAC codes per line. Document heading switches between `INVOICE` / `BILL OF SUPPLY` / `TAX INVOICE` / `INVOICE-CUM-BILL OF SUPPLY` depending on clinic registration status and exempt/taxable line mix (CGST Rule 46A). GST is a first-class per-clinic on/off toggle — most solo vets are below the ₹20L registration threshold and must not collect GST at all; an invoice from an unregistered clinic never shows a GST line or GSTIN. Clinic configures GSTIN, state code, and registration status in settings.
 - **D-18:** Full in-app invoice view — invoice displayed as native screen with all details, action buttons (Pay, Print, Share, Refund), payment history, and status. PDF generated on demand when Print/Share is tapped
 - **D-19:** Credit note numbering — auto-sequential: CN-YYYYMM-XXXX. Same pattern as invoice numbering
 
@@ -51,6 +51,15 @@ Generate invoices from consultation services and dispensed inventory items, acce
 ### Navigation & Settings
 - **D-28:** Replace 'More' tab with Billing — bottom tabs become: Queue, Patients, Inventory, Billing. 'More' menu items (settings, profile, reports) move to a drawer/hamburger menu or settings gear icon. Billing is a core daily workflow
 - **D-29:** Essential billing settings — admin configures in clinic settings: GSTIN number, default GST rate (%), default due date (days from invoice), clinic bank account details (for display on invoice), invoice footer text (terms/notes), Razorpay API keys. All optional except Razorpay keys for digital payments
+
+### Plan-Phase Research Resolutions (2026-08-12)
+
+Decisions made resolving 06-RESEARCH.md's blocking contradictions and open questions, before plan generation:
+
+- **D-30:** Wave 0 infrastructure remediation in scope — a blocking plan (06-00) precedes all other Phase 6 plans. Fixes `createTenantClient` (new `PrismaClient` per request with no disconnect; `SET LOCAL app.clinic_id` outside a transaction, so RLS may not be enforced today), generates missing Prisma migrations for Phase 3-4 tables (only 2 migrations exist covering 13 of 24 tables), and adds missing mobile deps (`expo-print`, `expo-sharing`, `react-native-paper` are imported/specified but not declared). Billing tables do not get created on top of an unverified tenant-isolation boundary.
+- **D-31:** Money representation — integer paise throughout Phase 6's own billing tables and calculations, matching the already-shipped `ServiceCatalog.price: Int`. Phase 5's `InventoryItem.sellingPrice` plan (`Decimal(10,2)` rupees) is NOT modified. Instead, Phase 6 adds a tested `toPaise()` boundary adapter in the invoice line-item builder that converts product prices to paise at the point they enter an invoice, with a unit test guarding the 100x conversion error.
+- **D-32:** Billing audit events go in a new, dedicated `billing_audit_log` table — separate from the existing auth-centric `auth_audit_log`. Financial events (void, refund, credit note, payment) get independent retention (GST record-keeping requires 6-year retention under Section 36) decoupled from auth audit policy.
+- **D-33:** RPT-01 (patients-seen-today) ships as a 5th summary card on the Billing dashboard, alongside D-24's existing four (Today's Revenue, Unpaid Total, Overdue Count, Recent Payments). Computed as `COUNT(DISTINCT petId)` over today's finalized consultations, IST-bounded.
 
 ### Claude's Discretion
 - Invoice builder UI layout (single-page vs sections)
@@ -135,7 +144,7 @@ No additional external specs or ADRs -- requirements fully captured in decisions
 <deferred>
 ## Deferred Ideas
 
-- Full GST compliance with CGST/SGST/IGST breakdown and HSN/SAC codes -- v2 (BIL-07)
+- ~~Full GST compliance with CGST/SGST/IGST breakdown and HSN/SAC codes -- v2 (BIL-07)~~ MOVED INTO SCOPE 2026-08-12 — see D-08/D-17 updates above
 - Payment link generation shareable via WhatsApp/SMS -- v2 (BIL-08)
 - WhatsApp invoice delivery with embedded pay links (real API) -- v2 (BIL-09)
 - Automated overdue payment reminders via WhatsApp -- Phase 7 or post-Beta
