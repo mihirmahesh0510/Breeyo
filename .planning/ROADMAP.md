@@ -345,17 +345,19 @@ Plans:
 
 - **Wave 4** *(blocked on Wave 3 completion)*
 - [ ] 08-09-PLAN.md -- BullMQ sweep: queue handoff, no-show auto-flip, and the three staff push triggers with a durable backlog debounce
-- [ ] 08-10-PLAN.md -- [GATE on Phase 7] Appointment reminders on Phase 7's pipeline, owner KEEP/MOVE/CANCEL bridge, WhatsApp booking formalization
 
 - **Wave 5** *(blocked on Wave 4 completion)*
-- [ ] 08-11-PLAN.md -- Scheduling HTTP surface, permission-guarded routes, app wiring, and the integration test suite
+- [ ] 08-10-PLAN.md -- [GATE on Phase 7] Appointment reminders on Phase 7's pipeline, owner KEEP/MOVE/CANCEL bridge, WhatsApp booking formalization
 
 - **Wave 6** *(blocked on Wave 5 completion)*
+- [ ] 08-11-PLAN.md -- Scheduling HTTP surface, permission-guarded routes, app wiring, and the integration test suite
+
+- **Wave 7** *(blocked on Wave 6 completion)*
 - [ ] 08-12-PLAN.md -- Mobile scheduling data layer, day agenda, booking sheet and appointment quick sheet
 - [ ] 08-13-PLAN.md -- Mobile availability settings, blocked-period sheet and the scheduling wireframe stories
 - [ ] 08-14-PLAN.md -- Web 7-day week grid, first Socket.IO client, appointment and booking drawers, foreground notification opt-in
 
-- **Wave 7** *(blocked on Wave 6 completion)*
+- **Wave 8** *(blocked on Wave 7 completion)*
 - [ ] 08-15-PLAN.md -- Full-suite green, completed validation document, and three human end-to-end verifications
 
 Cross-cutting constraints:
