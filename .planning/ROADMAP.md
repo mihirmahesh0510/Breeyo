@@ -181,13 +181,13 @@ Plans:
   4. Invoices include full GST breakdown: CGST/SGST for intra-state transactions, IGST for inter-state, with HSN/SAC codes per line item pulled from inventory/service catalog
   5. Billing dashboard shows a daily summary card: patients seen today, revenue collected today, total outstanding balance
 
-**Plans**: 20 plans
+**Plans**: 24 plans in 15 waves. Plans 06-20 through 06-23 were split out of 06-02, 06-16, 06-17 and 06-18 for context budget, so their numbers run ahead of their execution waves -- read each plan's `wave` field rather than inferring order from its number.
 
 Plans:
 
 - [ ] 06-00-PLAN.md -- [Wave 0a, BLOCKING] Tenant-client remediation (pooled client, transaction-scoped `set_config`), baseline migration for the 15 untracked Phase 3/4 tables, RLS ENABLE+FORCE and per-operation policies on all clinic-scoped tables, orphan RLS file deleted, cross-tenant isolation tests
 - [ ] 06-01-PLAN.md -- [Wave 0b] Dependency provisioning: `razorpay@2.9.8`, `expo-print`/`expo-sharing`/`expo-file-system`/`react-native-svg` via `expo install`, `react-native-qrcode-svg`, `react-native-paper`, `@breeyo/ui`, PaperProvider at the mobile root, billing env contract, PDF resolution smoke test
-- [ ] 06-02-PLAN.md -- [Wave 0c] Migrate all eight clinic-scoped modules to the per-request tenant client, exemption list for auth/worker/cron, HTTP-layer cross-tenant IDOR tests, `check-tenant-client.sh` CI gate
+- [ ] 06-02-PLAN.md -- [Wave 0c] Migrate six clinic-scoped modules (patient, queue, emr, attachment, vaccination, drug) to the per-request tenant client, establishing the `buildService(db)` reference pattern, with HTTP-layer cross-tenant IDOR tests
 - [ ] 06-03-PLAN.md -- Prisma billing schema: 10 models (Invoice, InvoiceLineItem, Payment, PaymentReceipt, Refund, CreditNote, CreditNoteLineItem, InvoiceNumberCounter, WebhookEvent, BillingAuditLog) + D-29 Clinic settings, migration with the draft partial unique index, billing RLS policies, [BLOCKING] `prisma db push`, test factories
 - [ ] 06-04-PLAN.md -- Shared contracts: billing entity types, invoice state machine (7 statuses), GST constants (slabs 0/5/18/40, Rule 46A document types, GSTIN regex), socket events, 11 Zod schemas that accept no client-supplied total
 - [ ] 06-05-PLAN.md -- [TDD] GST engine: integer-paise `money.ts` with `toPaise` boundary adapter and remainder-exact pro-rata, `gst.service.ts` with per-line exempt-aware CGST/SGST/IGST, invoice-level per-head rounding and Rule 46A document typing (BIL-07)
@@ -201,10 +201,14 @@ Plans:
 - [ ] 06-13-PLAN.md -- D-03 best-effort draft-invoice hook in the consultation finalize path (ungated, non-blocking, idempotent) and the D-04 Quick Sale create-and-finalize endpoint with row-locked stock
 - [ ] 06-14-PLAN.md -- Mobile Billing tab: five summary cards with skeletons, filterable/sortable invoice list, shared paise-only money formatter, `invoice:updated` socket subscription (RPT-01, D-24, D-28)
 - [ ] 06-15-PLAN.md -- PDF templates: Rule 46-compliant invoice with Rule 46A heading switching and no tax artefact for unregistered clinics, 80mm payment receipt, credit note, plus the missing Print and Download actions (BIL-04)
-- [ ] 06-16-PLAN.md -- Mobile invoice builder: catalog service add, dispensed-product hydration, line and invoice discounts, server-computed live totals, stock-shortfall banner, no total ever sent (BIL-01, BIL-02, BIL-07)
-- [ ] 06-17-PLAN.md -- Mobile invoice detail with transition-table-gated action bar, payment collection sheet with device-rendered QR and push-driven confirmation, void/refund/credit-note flows (BIL-03, BIL-05, BIL-06)
-- [ ] 06-18-PLAN.md -- Mobile Quick Sale cart and checkout, billing settings with write-only credential fields and GST-off default, pet-profile Invoices tab (D-04, D-25, D-29)
+- [ ] 06-16-PLAN.md -- Invoice builder pieces: Zustand line-item store holding no totals, mutation and catalog hooks, eight components (line rows, discount inputs, no-arithmetic totals section, catalog sheet, stock-shortfall banner) (BIL-01, BIL-02, BIL-07)
+- [ ] 06-17-PLAN.md -- Invoice detail foundation: the detail query and payment-mutation hooks (no polling, explicit invalidation) plus six presentation components including the `isValidInvoiceTransition`-gated action bar (BIL-03)
+- [ ] 06-18-PLAN.md -- Mobile Quick Sale cart (merges duplicate items, holds no totals) with one-tap checkout and per-row stock errors, plus the additive pet-profile Invoices section (D-04, D-25)
 - [ ] 06-19-PLAN.md -- Phase gate: one-command requirement-to-test verification script with phase-wide money/tenancy/credential invariants, plus blocking human verification of the eight core flows and the GST/Razorpay-onboarding review
+- [ ] 06-20-PLAN.md -- [Wave 0c, split from 06-02] Convert the remaining notifications and clinic modules, document the three admin-client exemptions inline, and add the `check-tenant-client.sh` CI gate plus the Expo dependency check
+- [ ] 06-21-PLAN.md -- [split from 06-16] Invoice builder screen composing the 06-16 pieces with debounced server preview and both 409 paths, plus the two entry routes including the D-06 completed-consultation picker (BIL-01, BIL-02)
+- [ ] 06-22-PLAN.md -- [split from 06-17] Payment collection sheet with device-rendered QR and push-driven confirmation, plus the invoice detail screen, refund sheet and credit-note screen (BIL-03, BIL-04, BIL-05, BIL-06)
+- [ ] 06-23-PLAN.md -- [split from 06-18] Billing settings: write-only Razorpay credential fields, GST-off default with the rate field gated on a valid GSTIN, per-clinic webhook URL with a configured indicator, `MANAGE_CLINIC_SETTINGS` gate (BIL-05, BIL-06, BIL-07)
 
 ### Phase 7: WhatsApp Communication
 
