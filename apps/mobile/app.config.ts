@@ -49,5 +49,15 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       },
     ],
   },
-  plugins: ['expo-router', 'expo-secure-store'],
+  plugins: [
+    'expo-router',
+    'expo-secure-store',
+    'expo-sqlite',
+    [
+      'react-native-vision-camera',
+      {
+        cameraPermissionText: 'Breeyo needs camera access to scan barcodes',
+      },
+    ],
+  ],
 });
