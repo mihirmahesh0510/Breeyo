@@ -381,7 +381,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9 -> 10
 | 4. EMR & Clinical Records | 8/8 | Next | - |
 | 5. Inventory Management | 8/8 | Planned | - |
 | 6. Invoicing & Payments | 4/4 | Planned | - |
-| 7. WhatsApp Communication | 10/10 | Planned | - |
+| 7. WhatsApp Communication | 16/16 | Planned | - |
 | 8. Scheduling & Calendar | 7/7 | Planned | - |
 | 9. Web Dashboard & Owner Portal | 7/7 | Planned | - |
 | 10. Offline Hardening & Integration Polish | 7/7 | Planned | - |
@@ -397,7 +397,7 @@ This table tracks planning-packet readiness by phase.
 | 4. EMR & Clinical Records | 8/8 | Context, research, research addendum, discussion log, UI spec, validation, plans present | Ready |
 | 5. Inventory Management | 8/8 | Context, research, discussion log, UI spec, validation, plans present | Ready |
 | 6. Invoicing & Payments | 4/4 | Context, research, discussion log, UI spec, validation, plans present | Ready |
-| 7. WhatsApp Communication | 10/10 | Context, research, discussion log, UI spec, validation, plans present | Ready |
+| 7. WhatsApp Communication | 16/16 | Context, research, discussion log, UI spec, validation, plans present | Ready |
 | 8. Scheduling & Calendar | 7/7 | Context, research, discussion log, UI spec, validation, and full plan set present | Ready |
 | 9. Web Dashboard & Owner Portal | 7/7 | Context, research, discussion log, UI spec, validation, plans present | Ready |
 | 10. Offline Hardening & Integration Polish | 7/7 | Context, research, discussion log, validation, and full plan set present | Ready |

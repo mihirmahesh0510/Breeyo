@@ -1649,34 +1649,34 @@ The ROADMAP proposes 10 plans (07-01 … 07-10). The structure is sound; the not
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **UI library for mobile: honor UI-SPEC's React Native Paper mandate, or continue Phase 4's plain-RN precedent?**
+1. **RESOLVED — CONTEXT.md D-17.** UI library for mobile: honor UI-SPEC's React Native Paper mandate, or continue Phase 4's plain-RN precedent?
    - What we know: `apps/mobile/package.json` declares neither `@breeyo/ui` nor `react-native-paper`; neither is installed. `packages/ui` has `react-native-paper@^5.15.1` and 26 components plus a `whatsapp/MessageLogScreen.stories.ts` wireframe stub. 07-UI-SPEC.md mandates Paper v5 MD3 and names specific Paper components. STATE.md records the Phase 4 workaround.
    - What's unclear: whether adding `@breeyo/ui` to the Expo app works cleanly — `packages/ui` peer-depends on `react-native-reanimated >=3` and `react-native-gesture-handler >=2`, neither of which is in the mobile app either. That is a non-trivial Expo SDK 52 integration, not a one-line dependency add.
    - Recommendation: make this an explicit Wave 0 decision task with a spike. If the integration proves fiddly, record a UI-SPEC deviation and build with plain RN while honoring UI-SPEC's *token* values (spacing multiples of 4, the exact color hexes, the four type roles, 44 pt targets, WCAG AA). Do not let an implementer decide this silently mid-phase.
 
-2. **Where do invoice PDF bytes come from for `invoice_delivery`?**
+2. **RESOLVED — CONTEXT.md D-18.** Where do invoice PDF bytes come from for `invoice_delivery`?
    - What we know: PDFs are generated client-side via `expo-print` (`useGeneratePdf.ts`); `attachment.service.ts` returns a mock presigned URL in dev with a TODO for the real S3 SDK; `expo-print`/`expo-file-system`/`expo-sharing` are not installed.
    - What's unclear: whether Beta should attach a real PDF at all, or send the `invoice_delivery` template with a payment link and no attachment.
    - Recommendation: **send link-only in Beta.** UI-SPEC says "Unpaid invoice template automatically includes invoice PDF and Razorpay payment link" — so this is a genuine UI-SPEC-vs-infrastructure conflict that should be raised with the user rather than resolved by an implementer. Keep `WaMediaRef` in the port so attaching later is additive.
 
-3. **Should the missing Phase 3–6 Prisma migrations be Phase 7 scope?**
+3. **RESOLVED — CONTEXT.md D-19.** Should the missing Phase 3–6 Prisma migrations be Phase 7 scope?
    - What we know: only 2 migrations exist for 29 models; the dev and CI databases lack every Phase 3+ table; Phase 3/4 unit tests pass only because they mock repositories; the real integration suites under `tests/patient/` and `tests/queue/` cannot pass on a fresh database.
    - What's unclear: whether the user considers this Phase 7 work or a separate remediation.
    - Recommendation: include it as Wave 0 of Phase 7, framed as a prerequisite. Phase 7 cannot be *verified* without it, and deferring it pushes the problem into Phase 8.
 
-4. **`SEND_WHATSAPP` is granted to Clinician, but UI-SPEC limits access to Front Desk + Admin.**
+4. **RESOLVED — CONTEXT.md D-20.** `SEND_WHATSAPP` is granted to Clinician, but UI-SPEC limits access to Front Desk + Admin.
    - What we know: `seed.ts` grants `SEND_WHATSAPP` to Admin, Clinician, and FrontDesk. UI-SPEC line 28 restricts access to Front Desk and Admin.
    - What's unclear: whether "access" means the inbox surface only, or the send capability too.
    - Recommendation: keep `SEND_WHATSAPP` for the send action (a vet sending a follow-up from a consultation is sensible), gate the inbox/thread *screens* on FrontDesk/Admin, and gate the config screen on `MANAGE_CLINIC_SETTINGS`. Confirm with the user; do not change seeded permissions without a decision.
 
-5. **Should the reminder sweep also re-drive stranded `QUEUED` messages?**
+5. **RESOLVED — Plan 07-11 (`findStrandedQueuedMessages`).** Should the reminder sweep also re-drive stranded `QUEUED` messages?
    - What we know: persist-then-dispatch means a `QUEUED` row can outlive its BullMQ job if Redis evicts it (Pitfall 1 applies to short-lived jobs too, under memory pressure).
    - What's unclear: whether the added complexity is worth it for Beta.
    - Recommendation: yes, and it is nearly free — add a step to the daily sweep that re-enqueues `QUEUED` messages older than 30 minutes. It converts a silent-loss failure mode into a bounded delay.
 
-6. **Does the "Needs action" flag need a manual clear path beyond UI-SPEC's `Mark Resolved`?**
+6. **RESOLVED — Plans 07-11/07-13 (`acknowledgedAt`).** Does the "Needs action" flag need a manual clear path beyond UI-SPEC's `Mark Resolved`?
    - What we know: UI-SPEC has a `Mark resolved` action card and toast `Action marked resolved`; D-04 sets the flag on escalation cap.
    - What's unclear: whether resolving a thread clears `needsAction` globally or per-task.
    - Recommendation: `Mark Resolved` clears `thread.needsAction` and marks the underlying capped task(s) as acknowledged. Model it as an explicit `acknowledgedAt` on the task so the audit trail shows who cleared it.
