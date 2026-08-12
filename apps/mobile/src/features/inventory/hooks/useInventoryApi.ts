@@ -11,6 +11,7 @@ import type {
   BarcodeLookupResult,
   BarcodeConflict,
   BarcodeFormat,
+  WantListItem,
 } from '@breeyo/types';
 // `CreateItemSchemaInput`/`UpdateItemSchemaInput` (the zod-inferred types), not
 // `@breeyo/types`' `CreateItemInput`/`UpdateItemInput`: `barcodeEntrySchema.format`
@@ -84,6 +85,12 @@ interface AlertsResponse {
 }
 interface MovementsResponse {
   data: { movements: StockMovement[]; total: number; page: number; limit: number };
+}
+interface WantListResponse {
+  data: WantListItem[];
+}
+interface MovementsExportResponse {
+  data: StockMovement[];
 }
 
 interface UseInventoryItemsParams {
@@ -188,6 +195,23 @@ export function useItemMovements(
   });
 }
 
+/**
+ * D-47: fetches the flat, unpaginated movement rows CSV export needs. Not a
+ * `useQuery` -- this is triggered on-demand ("Export CSV" tap), not cached
+ * or re-rendered against, so a plain async function (used directly by
+ * csv-export.service.ts's caller) is the right shape here, matching how
+ * WhatsAppShareButton.tsx also calls `apiClient` directly for its one-shot
+ * text fetch rather than wrapping it in a query hook.
+ */
+export function fetchMovementsForExport(
+  accessToken: string | null | undefined,
+  itemId: string,
+): Promise<StockMovement[]> {
+  return apiClient<MovementsExportResponse>(`/api/v1/inventory/items/${itemId}/movements/export`, {
+    token: accessToken || undefined,
+  }).then((response) => response.data);
+}
+
 export function useInventoryCategories(clinicId: string | null | undefined) {
   const { accessToken } = useAuth();
 
@@ -197,6 +221,26 @@ export function useInventoryCategories(clinicId: string | null | undefined) {
       apiClient<CategoriesResponse>('/api/v1/inventory/categories', { token: accessToken! }),
     enabled: !!accessToken && !!clinicId,
     staleTime: 60_000,
+    select: (response) => response.data,
+  });
+}
+
+/**
+ * Want-list (D-06/D-24): items below par level, biggest deficit first
+ * (server-sorted, see want-list.service.ts). Feeds WantListScreen; the
+ * WhatsApp text share and CSV export use their own dedicated calls (the
+ * text share needs the raw GET /want-list/text endpoint, and CSV export
+ * needs only this same array), so no separate hook for those.
+ */
+export function useWantList(clinicId: string | null | undefined) {
+  const { accessToken } = useAuth();
+
+  return useQuery({
+    queryKey: ['inventory', 'want-list', clinicId],
+    queryFn: () =>
+      apiClient<WantListResponse>('/api/v1/inventory/want-list', { token: accessToken! }),
+    enabled: !!accessToken && !!clinicId,
+    staleTime: 30_000,
     select: (response) => response.data,
   });
 }

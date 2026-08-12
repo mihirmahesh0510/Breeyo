@@ -112,6 +112,15 @@ export function InventoryListScreen() {
         testID="inventory-attention-card"
       />
 
+      <Text
+        variant="labelLarge"
+        style={styles.wantListLink}
+        onPress={() => router.push('/(app)/(tabs)/inventory/want-list' as any)}
+        testID="inventory-view-want-list-link"
+      >
+        View Want List →
+      </Text>
+
       <View style={styles.searchRow}>
         <View style={styles.searchBarWrap}>
           <SearchBar
@@ -126,6 +135,12 @@ export function InventoryListScreen() {
           accessibilityLabel="Scan barcode"
           onPress={() => router.push('/(app)/(tabs)/inventory/scan' as any)}
           testID="inventory-scan-button"
+        />
+        <BreeyoIconButton
+          icon="clipboard-check-outline"
+          accessibilityLabel="Stock-take"
+          onPress={() => router.push('/(app)/(tabs)/inventory/stock-take' as any)}
+          testID="inventory-stock-take-button"
         />
       </View>
 
@@ -214,6 +229,12 @@ const styles = StyleSheet.create({
   },
   offlineText: {
     color: '#1C1B1F',
+  },
+  wantListLink: {
+    color: '#2E7D32',
+    paddingHorizontal: 16,
+    paddingTop: 4,
+    paddingBottom: 4,
   },
   searchRow: {
     flexDirection: 'row',

@@ -4,6 +4,7 @@ import { apiClient } from '../../../lib/api';
 import { useAuth } from '../../../providers/AuthProvider';
 import { useOfflineSync } from './useOfflineSync';
 import { useScannerStore, type ScannedItem, type ScannerMode } from '../stores/scanner.store';
+import { useStockTakeStore } from '../stores/stock-take.store';
 import {
   OfflineBarcodeCache,
   type CachedBarcodeItem,
@@ -219,6 +220,17 @@ export function useBarcodeScan({ mode }: UseBarcodeScanOptions): UseBarcodeScanR
             itemName: view.itemName,
             scannedAt: Date.now(),
           });
+          // D-37/D-38: in stock-take mode, a found scan feeds directly into
+          // the shared stock-take session store (Plan 05-07) -- the same
+          // store StockTakeScreen reads from -- so scanning here and then
+          // navigating back to StockTakeScreen shows the item as a row
+          // ready for its actual count, rather than being stuck in this
+          // hook's own local (session-less) `actualCounts` state.
+          if (mode === 'stockTake') {
+            useStockTakeStore
+              .getState()
+              .addEntry(view.itemId, view.itemName, view.unit, view.currentStock);
+          }
           setLastResult({ status: 'found', code, item: view });
         } else {
           void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
@@ -228,7 +240,7 @@ export function useBarcodeScan({ mode }: UseBarcodeScanOptions): UseBarcodeScanR
         setIsLooking(false);
       }
     },
-    [accessToken, isOffline, addScannedItem],
+    [accessToken, isOffline, addScannedItem, mode],
   );
 
   const setActualCount = useCallback((itemId: string, value: string) => {

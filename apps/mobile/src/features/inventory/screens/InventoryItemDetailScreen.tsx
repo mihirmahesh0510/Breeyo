@@ -3,24 +3,16 @@ import { View, ScrollView, RefreshControl, StyleSheet } from 'react-native';
 import { Text, ActivityIndicator } from 'react-native-paper';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
-import * as FileSystem from 'expo-file-system';
-import * as Sharing from 'expo-sharing';
-import Papa from 'papaparse';
 import { Button, EmptyState, SkeletonLoader } from '@breeyo/ui';
 import { useAuth } from '../../../providers/AuthProvider';
-import { apiClient } from '../../../lib/api';
-import { useInventoryItem, useItemMovements } from '../hooks/useInventoryApi';
+import { useInventoryItem, useItemMovements, fetchMovementsForExport } from '../hooks/useInventoryApi';
+import { exportStockMovementsCSV } from '../services/csv-export.service';
 import { ItemProfileHeader } from '../components/ItemProfileHeader';
 import { BatchList } from '../components/BatchList';
 import { StockMovementTimeline } from '../components/StockMovementTimeline';
 import { ItemDetailsTab } from '../components/ItemDetailsTab';
-import type { StockMovement } from '@breeyo/types';
 
 type DetailTab = 'batches' | 'history' | 'details';
-
-interface MovementsExportResponse {
-  data: StockMovement[];
-}
 
 export function InventoryItemDetailScreen() {
   const { itemId } = useLocalSearchParams<{ itemId: string }>();
@@ -68,29 +60,15 @@ export function InventoryItemDetailScreen() {
     router.push(`/(app)/(tabs)/inventory/${itemId}/edit` as any);
   }, [router, itemId]);
 
+  // D-47: uses the shared csv-export.service.ts (papaparse + BOM +
+  // expo-file-system + expo-sharing, per RESEARCH.md's exact pattern)
+  // instead of hand-rolling CSV generation inline.
   const handleExportCSV = useCallback(async () => {
     if (!itemId || !activeClinicId) return;
     setIsExporting(true);
     try {
-      const response = await apiClient<MovementsExportResponse>(
-        `/api/v1/inventory/items/${itemId}/movements/export`,
-        { token: accessToken || undefined },
-      );
-      const csv = Papa.unparse(
-        response.data.map((m) => ({
-          date: m.createdAt,
-          type: m.type,
-          quantity: m.quantity,
-          reason: m.reason ?? '',
-          runningTotal: m.runningTotal,
-          user: m.userName,
-          batchId: m.batchId ?? '',
-        })),
-      );
-      const itemName = itemQuery.data?.name?.replace(/[^a-zA-Z0-9_-]/g, '_') ?? 'item';
-      const fileUri = `${FileSystem.cacheDirectory}${itemName}_movements.csv`;
-      await FileSystem.writeAsStringAsync(fileUri, csv, { encoding: FileSystem.EncodingType.UTF8 });
-      await Sharing.shareAsync(fileUri, { mimeType: 'text/csv', dialogTitle: 'Export stock movements' });
+      const movements = await fetchMovementsForExport(accessToken, itemId);
+      await exportStockMovementsCSV(movements, itemQuery.data?.name ?? 'item');
     } finally {
       setIsExporting(false);
     }
