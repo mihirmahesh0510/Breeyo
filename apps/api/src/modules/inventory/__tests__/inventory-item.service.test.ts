@@ -6,6 +6,7 @@ import {
   mockUser,
   mockItem,
   mockItemVaccine,
+  mockItemNoHsn,
   mockBatch1,
   mockBarcode,
   mockClinicCategory,
@@ -123,6 +124,195 @@ describe('InventoryItemService', () => {
         expect.objectContaining({ category: 'medicine' }),
       );
     });
+
+    // INV-09: HSN/SAC code and GST rate validation (D-62 -- optional on every item,
+    // no category-based enforcement).
+    it('creates item with hsnSacCode and gstRate', async () => {
+      repository.create.mockResolvedValue({ ...mockItem, hsnSacCode: '30049099', gstRate: 12 });
+
+      await service.createItem(mockClinic.id, mockUser.id, {
+        name: mockItem.name,
+        category: mockItem.category,
+        unit: mockItem.unit,
+        sellingPrice: mockItem.sellingPrice,
+        hsnSacCode: '30049099',
+        gstRate: 12,
+      });
+
+      expect(repository.create).toHaveBeenCalledWith(
+        mockClinic.id,
+        expect.objectContaining({ hsnSacCode: '30049099', gstRate: 12 }),
+      );
+    });
+
+    it('creates item without hsnSacCode and gstRate (both optional per D-62)', async () => {
+      repository.create.mockResolvedValue(mockItemNoHsn);
+
+      await service.createItem(mockClinic.id, mockUser.id, {
+        name: mockItemNoHsn.name,
+        category: mockItemNoHsn.category,
+        unit: mockItemNoHsn.unit,
+        sellingPrice: mockItemNoHsn.sellingPrice,
+      });
+
+      expect(repository.create).toHaveBeenCalledWith(
+        mockClinic.id,
+        expect.objectContaining({ hsnSacCode: null, gstRate: null }),
+      );
+    });
+
+    it('creates a medicine-category item without hsnSacCode/gstRate (D-62: no category enforcement, unlike D-27 expiry)', async () => {
+      repository.create.mockResolvedValue({ ...mockItem, hsnSacCode: null, gstRate: null });
+
+      await expect(
+        service.createItem(mockClinic.id, mockUser.id, {
+          name: mockItem.name,
+          category: 'medicine',
+          unit: mockItem.unit,
+          sellingPrice: mockItem.sellingPrice,
+        }),
+      ).resolves.toBeDefined();
+
+      expect(repository.create).toHaveBeenCalled();
+    });
+
+    it('accepts a 4-digit HSN code', async () => {
+      repository.create.mockResolvedValue({ ...mockItem, hsnSacCode: '3004' });
+
+      await service.createItem(mockClinic.id, mockUser.id, {
+        name: mockItem.name,
+        category: mockItem.category,
+        unit: mockItem.unit,
+        sellingPrice: mockItem.sellingPrice,
+        hsnSacCode: '3004',
+      });
+
+      expect(repository.create).toHaveBeenCalledWith(
+        mockClinic.id,
+        expect.objectContaining({ hsnSacCode: '3004' }),
+      );
+    });
+
+    it('accepts a 6-digit HSN code', async () => {
+      repository.create.mockResolvedValue({ ...mockItem, hsnSacCode: '300490' });
+
+      await service.createItem(mockClinic.id, mockUser.id, {
+        name: mockItem.name,
+        category: mockItem.category,
+        unit: mockItem.unit,
+        sellingPrice: mockItem.sellingPrice,
+        hsnSacCode: '300490',
+      });
+
+      expect(repository.create).toHaveBeenCalledWith(
+        mockClinic.id,
+        expect.objectContaining({ hsnSacCode: '300490' }),
+      );
+    });
+
+    it('accepts an 8-digit HSN code', async () => {
+      repository.create.mockResolvedValue({ ...mockItem, hsnSacCode: '30049099' });
+
+      await service.createItem(mockClinic.id, mockUser.id, {
+        name: mockItem.name,
+        category: mockItem.category,
+        unit: mockItem.unit,
+        sellingPrice: mockItem.sellingPrice,
+        hsnSacCode: '30049099',
+      });
+
+      expect(repository.create).toHaveBeenCalledWith(
+        mockClinic.id,
+        expect.objectContaining({ hsnSacCode: '30049099' }),
+      );
+    });
+
+    it('rejects invalid hsnSacCode format (non-numeric)', async () => {
+      await expect(
+        service.createItem(mockClinic.id, mockUser.id, {
+          name: mockItem.name,
+          category: mockItem.category,
+          unit: mockItem.unit,
+          sellingPrice: mockItem.sellingPrice,
+          hsnSacCode: 'ABC123',
+        }),
+      ).rejects.toThrow();
+
+      expect(repository.create).not.toHaveBeenCalled();
+    });
+
+    it('rejects hsnSacCode shorter than 4 digits', async () => {
+      await expect(
+        service.createItem(mockClinic.id, mockUser.id, {
+          name: mockItem.name,
+          category: mockItem.category,
+          unit: mockItem.unit,
+          sellingPrice: mockItem.sellingPrice,
+          hsnSacCode: '300',
+        }),
+      ).rejects.toThrow();
+
+      expect(repository.create).not.toHaveBeenCalled();
+    });
+
+    it('rejects hsnSacCode longer than 8 digits', async () => {
+      await expect(
+        service.createItem(mockClinic.id, mockUser.id, {
+          name: mockItem.name,
+          category: mockItem.category,
+          unit: mockItem.unit,
+          sellingPrice: mockItem.sellingPrice,
+          hsnSacCode: '123456789',
+        }),
+      ).rejects.toThrow();
+
+      expect(repository.create).not.toHaveBeenCalled();
+    });
+
+    it.each([0, 5, 12, 18, 28])('accepts gstRate of %i (standard GST slab)', async (gstRate) => {
+      repository.create.mockResolvedValue({ ...mockItem, gstRate });
+
+      await service.createItem(mockClinic.id, mockUser.id, {
+        name: mockItem.name,
+        category: mockItem.category,
+        unit: mockItem.unit,
+        sellingPrice: mockItem.sellingPrice,
+        gstRate,
+      });
+
+      expect(repository.create).toHaveBeenCalledWith(
+        mockClinic.id,
+        expect.objectContaining({ gstRate }),
+      );
+    });
+
+    it('rejects gstRate above 28', async () => {
+      await expect(
+        service.createItem(mockClinic.id, mockUser.id, {
+          name: mockItem.name,
+          category: mockItem.category,
+          unit: mockItem.unit,
+          sellingPrice: mockItem.sellingPrice,
+          gstRate: 30,
+        }),
+      ).rejects.toThrow();
+
+      expect(repository.create).not.toHaveBeenCalled();
+    });
+
+    it('rejects negative gstRate', async () => {
+      await expect(
+        service.createItem(mockClinic.id, mockUser.id, {
+          name: mockItem.name,
+          category: mockItem.category,
+          unit: mockItem.unit,
+          sellingPrice: mockItem.sellingPrice,
+          gstRate: -5,
+        }),
+      ).rejects.toThrow();
+
+      expect(repository.create).not.toHaveBeenCalled();
+    });
   });
 
   describe('updateItem', () => {
@@ -145,6 +335,49 @@ describe('InventoryItemService', () => {
       await expect(
         service.updateItem(mockClinic.id, 'unknown-item', { sellingPrice: 7.5 }),
       ).rejects.toMatchObject({ code: 'ITEM_NOT_FOUND', statusCode: 404 });
+    });
+
+    // INV-09
+    it('updates hsnSacCode only', async () => {
+      repository.update.mockResolvedValue({ ...mockItem, hsnSacCode: '23099090' });
+
+      const result = await service.updateItem(mockClinic.id, mockItem.id, { hsnSacCode: '23099090' });
+
+      expect(result.hsnSacCode).toBe('23099090');
+      expect(repository.update).toHaveBeenCalledWith(
+        mockClinic.id,
+        mockItem.id,
+        expect.objectContaining({ hsnSacCode: '23099090' }),
+      );
+    });
+
+    it('updates gstRate only', async () => {
+      repository.update.mockResolvedValue({ ...mockItem, gstRate: 18 });
+
+      const result = await service.updateItem(mockClinic.id, mockItem.id, { gstRate: 18 });
+
+      expect(result.gstRate).toBe(18);
+      expect(repository.update).toHaveBeenCalledWith(
+        mockClinic.id,
+        mockItem.id,
+        expect.objectContaining({ gstRate: 18 }),
+      );
+    });
+
+    it('accepts partial update with only hsnSacCode set to null (clearing it)', async () => {
+      repository.update.mockResolvedValue({ ...mockItem, hsnSacCode: null });
+
+      const result = await service.updateItem(mockClinic.id, mockItem.id, { hsnSacCode: null });
+
+      expect(result.hsnSacCode).toBeNull();
+    });
+
+    it('rejects an update with an invalid gstRate', async () => {
+      await expect(
+        service.updateItem(mockClinic.id, mockItem.id, { gstRate: 50 }),
+      ).rejects.toThrow();
+
+      expect(repository.update).not.toHaveBeenCalled();
     });
   });
 
@@ -169,6 +402,25 @@ describe('InventoryItemService', () => {
         code: 'ITEM_NOT_FOUND',
         statusCode: 404,
       });
+    });
+
+    // INV-09
+    it('returns hsnSacCode and gstRate in item response', async () => {
+      repository.findById.mockResolvedValue(mockItem);
+
+      const result = await service.getItem(mockClinic.id, mockItem.id);
+
+      expect(result.hsnSacCode).toBe('30049099');
+      expect(result.gstRate).toBe(12);
+    });
+
+    it('returns null hsnSacCode/gstRate for an item without GST info set (D-62)', async () => {
+      repository.findById.mockResolvedValue(mockItemNoHsn);
+
+      const result = await service.getItem(mockClinic.id, mockItemNoHsn.id);
+
+      expect(result.hsnSacCode).toBeNull();
+      expect(result.gstRate).toBeNull();
     });
   });
 

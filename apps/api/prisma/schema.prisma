@@ -575,6 +575,8 @@ model InventoryItem {
   photoUrl     String?  @map("photo_url")
   isActive     Boolean  @default(true) @map("is_active")
   currentStock Int      @default(0) @map("current_stock")
+  hsnSacCode   String?  @map("hsn_sac_code") // INV-09: HSN (products)/SAC (services) code for GST invoicing; optional per D-62, no category enforcement
+  gstRate      Decimal? @map("gst_rate") @db.Decimal(5, 2) // INV-09: item-specific GST rate (0/5/12/18/28); null = use clinic default (Phase 6)
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 

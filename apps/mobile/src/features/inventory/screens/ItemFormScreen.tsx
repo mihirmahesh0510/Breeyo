@@ -1,12 +1,14 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { View, ScrollView, Pressable, StyleSheet } from 'react-native';
-import { Text, Switch, ActivityIndicator } from 'react-native-paper';
+import { Text, Switch, ActivityIndicator, TextInput as PaperTextInput, HelperText } from 'react-native-paper';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { createItemSchema, updateItemSchema } from '@breeyo/validators';
 import { Button, FormField, BottomSheet, BreeyoTextInput, showToast } from '@breeyo/ui';
 import type { BarcodeFormat, BarcodeConflict } from '@breeyo/types';
+import { getHsnSuggestions, type VetHsnCodeEntry } from '@breeyo/types';
 import { useAuth } from '../../../providers/AuthProvider';
+import { GstRatePicker } from '../components/GstRatePicker';
 import {
   useInventoryItem,
   useInventoryCategories,
@@ -74,6 +76,9 @@ export function ItemFormScreen() {
   const [unit, setUnit] = useState('');
   const [sellingPrice, setSellingPrice] = useState('');
   const [parLevel, setParLevel] = useState('');
+  const [hsnSacCode, setHsnSacCode] = useState('');
+  const [gstRate, setGstRate] = useState<number | null>(null);
+  const [showHsnSuggestions, setShowHsnSuggestions] = useState(false);
   const [scheduleH, setScheduleH] = useState(false);
   const [notes, setNotes] = useState('');
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
@@ -97,6 +102,8 @@ export function ItemFormScreen() {
     setUnit(item.unit);
     setSellingPrice(String(item.sellingPrice));
     setParLevel(item.parLevel != null ? String(item.parLevel) : '');
+    setHsnSacCode(item.hsnSacCode ?? '');
+    setGstRate(item.gstRate ?? null);
     setScheduleH(item.scheduleH);
     setNotes(item.notes ?? '');
     setPhotoUrl(item.photoUrl);
@@ -128,6 +135,8 @@ export function ItemFormScreen() {
         unit,
         sellingPrice: Number(sellingPrice),
         parLevel: parLevel.trim() ? Number(parLevel) : null,
+        hsnSacCode: hsnSacCode.trim() || null,
+        gstRate,
         scheduleH,
         notes: notes.trim() || null,
         photoUrl: null,
@@ -149,12 +158,30 @@ export function ItemFormScreen() {
       unit,
       sellingPrice: Number(sellingPrice),
       parLevel: parLevel.trim() ? Number(parLevel) : null,
+      hsnSacCode: hsnSacCode.trim() || null,
+      gstRate,
       scheduleH,
       notes: notes.trim() || null,
       photoUrl,
     }),
-    [name, category, unit, sellingPrice, parLevel, scheduleH, notes, photoUrl],
+    [name, category, unit, sellingPrice, parLevel, hsnSacCode, gstRate, scheduleH, notes, photoUrl],
   );
+
+  // INV-09: category-aware HSN/SAC suggestions (D-62 -- reference data only, no enforcement).
+  // Shown once the user has typed at least 2 digits, capped at 5 suggestions.
+  const hsnSuggestions: VetHsnCodeEntry[] = React.useMemo(() => {
+    if (hsnSacCode.trim().length < 2) return [];
+    const candidates = getHsnSuggestions(category).filter((entry) =>
+      entry.code.startsWith(hsnSacCode.trim()),
+    );
+    return candidates.slice(0, 5);
+  }, [hsnSacCode, category]);
+
+  const handleSelectHsnSuggestion = useCallback((suggestion: VetHsnCodeEntry) => {
+    setHsnSacCode(suggestion.code);
+    setGstRate(suggestion.defaultGstRate);
+    setShowHsnSuggestions(false);
+  }, []);
 
   const handleAddBarcode = useCallback(async () => {
     const code = manualBarcodeInput.trim();
@@ -312,6 +339,62 @@ export function ItemFormScreen() {
             helperText="Leave blank for no low-stock alerts"
             testID="item-form-par-level"
           />
+        </View>
+
+        <View style={styles.fieldGroup}>
+          <Text variant="bodySmall" style={styles.pickerLabel}>
+            HSN/SAC Code (optional)
+          </Text>
+          {/*
+            Uses react-native-paper's TextInput directly (not @breeyo/ui's
+            BreeyoTextInput/FormField) because neither exposes keyboardType or
+            maxLength -- same convention ManualBarcodeInput.tsx (Plan 05-05)
+            already established for numeric-pad fields.
+          */}
+          <PaperTextInput
+            label="HSN/SAC Code (optional)"
+            placeholder="e.g., 30049099"
+            value={hsnSacCode}
+            onChangeText={(text) => {
+              setHsnSacCode(text);
+              setShowHsnSuggestions(true);
+            }}
+            keyboardType="number-pad"
+            maxLength={8}
+            mode="outlined"
+            error={!!errors.hsnSacCode}
+            accessibilityLabel="HSN/SAC Code"
+            testID="item-form-hsn-code"
+          />
+          {errors.hsnSacCode ? (
+            <HelperText type="error" visible>
+              {errors.hsnSacCode}
+            </HelperText>
+          ) : (
+            <HelperText type="info" visible>
+              4-8 digit code for GST invoicing
+            </HelperText>
+          )}
+          {showHsnSuggestions && hsnSuggestions.length > 0 && (
+            <View style={styles.suggestionsBox} testID="item-form-hsn-suggestions">
+              {hsnSuggestions.map((suggestion) => (
+                <Pressable
+                  key={suggestion.code}
+                  style={styles.suggestionRow}
+                  onPress={() => handleSelectHsnSuggestion(suggestion)}
+                  testID={`item-form-hsn-suggestion-${suggestion.code}`}
+                >
+                  <Text variant="bodyMedium">
+                    {suggestion.code} - {suggestion.description}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          )}
+        </View>
+
+        <View style={styles.fieldGroup}>
+          <GstRatePicker value={gstRate} onChange={setGstRate} testID="item-form-gst-rate-picker" />
         </View>
 
         <View style={styles.toggleRow}>
@@ -590,6 +673,18 @@ const styles = StyleSheet.create({
   },
   barcodeInputField: {
     flex: 1,
+  },
+  suggestionsBox: {
+    marginTop: 4,
+    borderRadius: 8,
+    backgroundColor: '#F5F0EB',
+    overflow: 'hidden',
+  },
+  suggestionRow: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E7E0D8',
   },
   conflictBox: {
     marginTop: 8,

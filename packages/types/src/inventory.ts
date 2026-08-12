@@ -29,6 +29,8 @@ export interface InventoryItem {
   photoUrl: string | null; // D-34
   isActive: boolean; // D-08 persistent catalog
   currentStock: number; // Denormalized total from batches
+  hsnSacCode: string | null; // INV-09: HSN code (products) or SAC code (services) for GST invoicing; optional per D-62
+  gstRate: number | null; // INV-09: GST rate % (0, 5, 12, 18, 28); null means "use clinic default" (Phase 6)
   createdAt: Date;
   updatedAt: Date;
   barcodes: InventoryBarcode[];
@@ -85,6 +87,8 @@ export interface CreateItemInput {
   scheduleH?: boolean;
   notes?: string | null;
   photoUrl?: string | null;
+  hsnSacCode?: string | null; // INV-09
+  gstRate?: number | null; // INV-09
   barcodes?: Array<{ code: string; format: BarcodeFormat }>;
 }
 
@@ -97,6 +101,8 @@ export interface UpdateItemInput {
   scheduleH?: boolean;
   notes?: string | null;
   photoUrl?: string | null;
+  hsnSacCode?: string | null; // INV-09
+  gstRate?: number | null; // INV-09
 }
 
 export interface StockReceiptInput {

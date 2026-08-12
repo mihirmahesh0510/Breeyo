@@ -92,6 +92,8 @@ export class InventoryItemRepository {
           scheduleH: input.scheduleH ?? false,
           notes: input.notes ?? null,
           photoUrl: input.photoUrl ?? null,
+          hsnSacCode: input.hsnSacCode ?? null, // INV-09
+          gstRate: input.gstRate ?? null, // INV-09
           currentStock: 0,
           isActive: true,
         },
@@ -143,6 +145,8 @@ export class InventoryItemRepository {
           ...(input.scheduleH !== undefined && { scheduleH: input.scheduleH }),
           ...(input.notes !== undefined && { notes: input.notes }),
           ...(input.photoUrl !== undefined && { photoUrl: input.photoUrl }),
+          ...(input.hsnSacCode !== undefined && { hsnSacCode: input.hsnSacCode }), // INV-09
+          ...(input.gstRate !== undefined && { gstRate: input.gstRate }), // INV-09
         },
         include: ITEM_INCLUDE,
       });

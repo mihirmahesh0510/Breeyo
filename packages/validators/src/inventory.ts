@@ -17,6 +17,10 @@ export const createItemSchema = z.object({
   scheduleH: z.boolean().optional().default(false),
   notes: z.string().max(1000).nullable().optional(),
   photoUrl: z.string().url().nullable().optional(),
+  // INV-09: HSN/SAC code and GST rate are fully optional on every item regardless of
+  // category, per D-62 (no category-based enforcement, unlike D-27's expiry requirement).
+  hsnSacCode: z.string().regex(/^[0-9]{4,8}$/, 'HSN/SAC code must be 4-8 digits').nullable().optional(),
+  gstRate: z.number().min(0, 'GST rate cannot be negative').max(28, 'GST rate cannot exceed 28%').nullable().optional(),
   barcodes: z.array(barcodeEntrySchema).optional().default([]),
 });
 

@@ -18,7 +18,13 @@ export class InventoryItemService {
    */
   async createItem(clinicId: string, _userId: string, input: unknown) {
     const parsed = createItemSchema.parse(input);
-    return this.repository.create(clinicId, parsed);
+    // INV-09: normalize omitted hsnSacCode/gstRate to null (D-62 -- both are fully
+    // optional on every item) so the repository always receives an explicit value.
+    return this.repository.create(clinicId, {
+      ...parsed,
+      hsnSacCode: parsed.hsnSacCode ?? null,
+      gstRate: parsed.gstRate ?? null,
+    });
   }
 
   /**
