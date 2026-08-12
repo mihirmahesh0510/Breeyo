@@ -5,6 +5,7 @@ status: draft
 shadcn_initialized: false
 preset: none
 created: 2026-08-13
+revised: 2026-08-13
 surfaces: [mobile-expo, web-nextjs]
 requirements: [SCH-01, SCH-02, SCH-03, SCH-04, SCH-05]
 ---
@@ -16,6 +17,8 @@ requirements: [SCH-01, SCH-02, SCH-03, SCH-04, SCH-05]
 > **Sources:** `08-CONTEXT.md` (D-01…D-27), `08-RESEARCH.md` (Patterns 1–5, A1–A6, Open Questions 1–3), `packages/ui/src/theme/*` (existing tokens), `apps/mobile/src/features/queue/*` (established screen patterns), `ROADMAP.md` Phase 8 plan list.
 >
 > **Two surfaces, one contract.** Mobile (Expo, day agenda — D-24) and Web (Next.js, 7-day week grid — D-25) share every token below. Where they must differ, the difference is stated explicitly per-surface.
+>
+> **Revision 2026-08-13:** Dimension 1 (Copywriting) BLOCK resolved — three generic button labels ("Cancel" ×2, "OK") replaced with specific labels. No other section changed.
 
 ---
 
@@ -186,6 +189,8 @@ Add as `vetColors` in a new `packages/ui/src/theme/vetColors.ts`, exported throu
 
 Voice: plain, direct, India-English, no exclamation marks, no "Oops". Verb + noun on every action. Times render as `2:30 PM` (`en-IN`, `hour12: true`) matching `QueueCardItem.formatTime`. Dates render as `Tue, 18 Aug`.
 
+**No generic labels.** `Submit`, `OK`, `Cancel` (standalone), `Save`, `Click Here`, `Yes`, `No` are forbidden as button labels anywhere in this phase. Every button names its own outcome — including the safe/default option in a confirmation dialog (`Keep Appointment`, not `Cancel`). "Cancel" may appear only as a *verb applied to a named object* (`Cancel Appointment`, `Cancel All 6`).
+
 ### Primary actions
 
 | Element | Copy | Placement |
@@ -193,7 +198,7 @@ Voice: plain, direct, India-English, no exclamation marks, no "Oops". Verb + nou
 | **Primary CTA (mobile)** | **Book Appointment** | FAB, bottom-right, `primary` fill, `plus-circle` icon, `customSize={56}`, `borderRadius: 16`, offset 16px — mirrors the Queue "Check In" FAB exactly |
 | **Primary CTA (web)** | **New Appointment** | Top-right of page header, `primary` filled button, 44px min height |
 | Booking sheet confirm | **Confirm Booking** | `primary` filled, full-width, bottom of sheet |
-| Booking sheet dismiss | **Cancel** | Text button, `onSurfaceVariant` |
+| Booking sheet dismiss | **Discard Booking** | Text button, `onSurfaceVariant`, left of confirm. Names the outcome so the user is never guessing what "Cancel" cancels (the sheet, or the appointment they are looking at). Closes the sheet and drops the in-progress form |
 | Reschedule action | **Move Appointment** | Outlined button in appointment detail |
 | Check-in action | **Check In Now** | Outlined button on an `EXPECTED`/`SCHEDULED` appointment |
 | Availability entry point | **Edit Availability** | List row in Settings (dedicated screen — adopting `08-RESEARCH.md` A6) |
@@ -247,19 +252,19 @@ Never show a full-screen spinner over already-rendered calendar data — refetch
 | Situation | Copy | Buttons |
 |-----------|------|---------|
 | **Double booking (D-14)** | Dr. {name} already has {pet} at {time}. You can still book this slot. | **Book Anyway** (`primary`) / **Pick Another Time** (outlined) — inline `tertiaryContainer` strip inside the sheet, shown *before* confirm; never a blocking modal, never a hard block |
-| Recurrence would exceed the horizon (D-22) | Only {n} of {total} repeats fit within 90 days. The rest were not created. | **OK** — informational toast after creation |
+| Recurrence would exceed the horizon (D-22) | Only {n} of {total} repeats fit within 90 days. The rest were not created. | **none** — informational `showToast` (`type: 'info'`) fired after the series is created; auto-dismisses on the standard toast timeout (`toastExit` 100ms). No acknowledgement button, because there is nothing for the user to decide — the appointments that fit are already booked |
 | Booking a slot in the past | That time has already passed. Book a future slot. | Inline; confirm disabled |
 
 ### Destructive confirmations
 
-Mobile uses `Alert.alert` (matching `QueueScreen.handleNoShow`); web uses the `Modal` organism equivalent. Destructive button is `error` #BA1A1A; the safe option is always listed first and is the default.
+Mobile uses `Alert.alert` (matching `QueueScreen.handleNoShow`); web uses the `Modal` organism equivalent. Destructive button is `error` #BA1A1A; the safe option is always listed first and is the default. **Every safe option names what it preserves** — never a bare "Cancel", which is ambiguous in a dialog that is itself about cancelling something.
 
 | Action | Title | Body | Buttons |
 |--------|-------|------|---------|
 | **Cancel appointment** | Cancel this appointment? | {pet} at {time} on {date} will be cancelled. {owner} gets a WhatsApp update. | Keep Appointment / **Cancel Appointment** (destructive) |
 | **Cancel a recurring series (D-22)** | Cancel repeat appointments? | This is 1 of {n} repeats for {pet}. | Keep All / Cancel This One / **Cancel All {n}** (destructive) |
-| **Mark no-show** | Mark as No-show? | This patient will be removed from the active queue. | Cancel / **Mark No-show** (destructive) — verbatim reuse of Phase 3 copy |
-| **Remove blocked period** | Remove this blocked period? | {reason}, {start} to {end} on {date}. Those slots become bookable again. | Keep / **Remove** (destructive) |
+| **Mark no-show** | Mark as No-show? | This patient will be removed from the active queue. | Keep in Queue / **Mark No-show** (destructive) — Phase 3's title and body reused verbatim; the safe label is `Keep in Queue` (Phase 3's bare "Cancel" is not carried forward, and Phase 3's dialog should be updated to match when that screen is next touched) |
+| **Remove blocked period** | Remove this blocked period? | {reason}, {start} to {end} on {date}. Those slots become bookable again. | Keep Blocked Time / **Remove** (destructive) |
 | **Mark a day off with appointments already booked** | {n} appointments already booked on {date} | Marking this day off will not cancel them. Move or cancel them first. | Go Back / **Mark Day Off Anyway** (destructive) |
 | **Clear weekly availability** | Clear weekly hours? | Staff will not be able to book appointments for Dr. {name} until you set hours again. | Keep Hours / **Clear Hours** (destructive) |
 
@@ -284,6 +289,7 @@ Reuse `showToast` from `@breeyo/ui` (as `QueueScreen` does).
 |-------|------|------|
 | Booking created | success | {pet} booked for {time}, {date} |
 | Recurring series created | success | {n} appointments booked for {pet} |
+| Recurrence truncated at the horizon (D-22) | info | Only {n} of {total} repeats fit within 90 days. The rest were not created. |
 | Appointment moved | success | Moved to {time}, {date} |
 | Appointment cancelled | success | Appointment cancelled |
 | Checked in from calendar | success | {pet} checked in — Position #{position} *(verbatim Phase 3 format)* |
@@ -402,7 +408,7 @@ Card: `background` fill, `borderRadius: 12` (`lg`), `md` padding, `elevation.lev
 - Within a group, sorted ascending by scheduled time. Past appointments on today's date render at `opacity: 0.6`; `NowIndicator` sits between the last past and first future row.
 - Pull-to-refresh (`onRefresh` / `refreshing`), `contentContainerStyle: { paddingBottom: 100 }` for FAB clearance — verbatim `QueueBoard` pattern.
 - Blocked periods (D-05) render as a full-width `surfaceVariant` strip, 44px, caption text `Lunch · 1:00 – 2:00 PM`, no interaction.
-- Swipe left on a row → reveal **Cancel** (destructive). Swipe right → **Check In**. Both also reachable by tap → quick sheet (never gesture-only).
+- Swipe left on a row → reveal **Cancel Appointment** (destructive). Swipe right → **Check In**. Both also reachable by tap → quick sheet (never gesture-only).
 
 ### Web week grid (D-25, SCH-03)
 
@@ -431,7 +437,7 @@ Card: `background` fill, `borderRadius: 12` (`lg`), `md` padding, `elevation.lev
 5. **Pick date** — native date picker, capped at **today + 90 days** (D-07); dates past the cap are disabled, not hidden.
 6. **Pick slot** — chip grid of offerable slots for `(vet, date, duration)`. Already-taken slots are **shown, not hidden** (D-14 / research A4), styled `surfaceVariant` fill with a 12px `alert-circle-outline` in `#E65100` and `aria-label="{time}, already booked"`. Selecting one reveals the double-booking warning strip.
 7. **Repeat (D-22, optional, collapsed by default)** — `AccordionItem` "Repeat this appointment"; inside: `Every week` / `Every 2 weeks` / `Every 4 weeks` + `Number of times` stepper (2–12). Live preview caption: `{n} appointments through {last date}`.
-8. **Confirm** — `Confirm Booking`, full-width `primary`. Disabled until owner + ≥1 pet + service + date + slot are all set. Enters `loading` on submit; sheet stays open until success, then closes and toasts.
+8. **Confirm** — `Confirm Booking`, full-width `primary`. Disabled until owner + ≥1 pet + service + date + slot are all set. Enters `loading` on submit; sheet stays open until success, then closes and toasts. The paired dismiss button is `Discard Booking` (see § Primary actions) — never a bare "Cancel".
 
 Progressive disclosure: each step reveals only after the prior one resolves. Never render an empty slot grid before a service is chosen — show the caption `Pick a service to see open slots.`
 
@@ -467,6 +473,7 @@ Honour `prefers-reduced-motion` on web (fades only, no transforms) and RN `Acces
 - Web grid uses `role="grid"` / `role="row"` / `role="gridcell"`; day headers are `<th scope="col">`. Arrow keys move cell focus; `Enter` books the focused cell; `Escape` closes drawer.
 - Status and vet identity are **never** communicated by colour alone — status always has a text label, vet always has initials.
 - Every icon-only control has a text `accessibilityLabel` (`Previous day`, `Next day`, `Filter by vet`).
+- Button labels are self-describing out of context, so a screen-reader user hearing only the button name knows the outcome (`Discard Booking`, `Keep in Queue`, `Cancel Appointment`) — this is the accessibility reason the generic-label ban above is a hard rule, not a style preference.
 - All new copy strings go through i18n (`packages/ui/src/i18n/locales/{en,hi}/common.json`) under a new `scheduling` namespace, matching the existing `queue` / `portal` namespaces. Hindi values may initially mirror English, but the keys must exist.
 - Body text contrast: `#1C1B1F` on `#FFFBF5` ≈ 15.8:1; muted `#49454F` on `#FFFBF5` ≈ 8.3:1; `#79747E` on `#FFFBF5` ≈ 4.6:1 — reserve `#79747E` for 12px+ non-essential text only (grid hairlines, timestamps).
 
@@ -528,6 +535,7 @@ Every new screen must implement all four states — the Phase 02 wireframe conve
 4. Fill in `packages/ui/src/wireframes/scheduling/CalendarScreen.stories.ts` (currently a stub) with the four states for the day agenda.
 5. `08-RESEARCH.md` Open Question 1 (appointment-reminder escalation) has **no UI surface either way** and does not block this contract — it is a messaging-cadence decision.
 6. Copy values `90 days` (D-07 horizon), `15 min` (starting-soon push lead), `5 patients` / `30 min` (backlog debounce) appear verbatim in user-facing strings above. If the planner changes any of these constants, the corresponding copy string must change with it — keep them in `packages/types/src/constants/scheduling.constants.ts` and interpolate, do not hard-code twice.
+7. **Copy carry-over (non-blocking):** Phase 3's existing no-show `Alert.alert` in `QueueScreen.handleNoShow` still uses a bare `Cancel` as its safe option. Phase 8's new no-show dialog uses `Keep in Queue`; when the Phase 3 dialog is touched for the `EXPECTED` quick sheet (D-13 work), update its safe label to match so the two are not divergent.
 
 ---
 
