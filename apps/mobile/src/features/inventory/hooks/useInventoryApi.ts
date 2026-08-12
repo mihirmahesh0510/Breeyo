@@ -21,7 +21,12 @@ import type {
 // hooks take the already-validated `createItemSchema`/`updateItemSchema` output
 // straight from `ItemFormScreen`, so matching that shape avoids fighting a type
 // mismatch with no runtime consequence.
-import type { CreateItemSchemaInput, UpdateItemSchemaInput } from '@breeyo/validators';
+import type {
+  CreateItemSchemaInput,
+  UpdateItemSchemaInput,
+  StockReceiptSchemaInput,
+  StockAdjustmentSchemaInput,
+} from '@breeyo/validators';
 
 // --- Response shapes (API-specific envelopes, not fully captured by @breeyo/types) ---
 
@@ -356,5 +361,63 @@ export function useRequestPhotoUploadUrl(clinicId: string | null | undefined) {
         method: 'POST',
         token: accessToken!,
       }).then((response) => response.data),
+  });
+}
+
+interface ReceiveStockResponse {
+  data: { batch: StockBatch; movement: StockMovement };
+}
+
+/**
+ * Receive stock (Plan 06, D-01/D-03/D-09/D-11/D-27). Always creates a new
+ * StockBatch + a 'received' StockMovement server-side. Invalidates the item
+ * detail (currentStock/batches changed), summary (totals changed), and
+ * movements (new history row) caches.
+ */
+export function useReceiveStock(clinicId: string | null | undefined, itemId: string | undefined) {
+  const { accessToken } = useAuth();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (input: StockReceiptSchemaInput) =>
+      apiClient<ReceiveStockResponse>(`/api/v1/inventory/items/${itemId}/receive`, {
+        method: 'POST',
+        token: accessToken!,
+        body: JSON.stringify(input),
+      }).then((response) => response.data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['inventory', 'item', clinicId, itemId] });
+      queryClient.invalidateQueries({ queryKey: ['inventory', 'summary', clinicId] });
+      queryClient.invalidateQueries({ queryKey: ['inventory', 'movements', clinicId, itemId] });
+    },
+  });
+}
+
+interface AdjustStockResponse {
+  data: StockMovement;
+}
+
+/**
+ * Adjust stock (Plan 06, D-04). Requires a preset reason (enforced by
+ * stockAdjustmentSchema); invalidates item/summary/movements plus alerts,
+ * since an adjustment can push an item above/below its par level.
+ */
+export function useAdjustStock(clinicId: string | null | undefined, itemId: string | undefined) {
+  const { accessToken } = useAuth();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (input: StockAdjustmentSchemaInput) =>
+      apiClient<AdjustStockResponse>(`/api/v1/inventory/items/${itemId}/adjust`, {
+        method: 'POST',
+        token: accessToken!,
+        body: JSON.stringify(input),
+      }).then((response) => response.data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['inventory', 'item', clinicId, itemId] });
+      queryClient.invalidateQueries({ queryKey: ['inventory', 'summary', clinicId] });
+      queryClient.invalidateQueries({ queryKey: ['inventory', 'movements', clinicId, itemId] });
+      queryClient.invalidateQueries({ queryKey: ['inventory', 'alerts', clinicId] });
+    },
   });
 }
