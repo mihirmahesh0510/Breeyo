@@ -324,34 +324,49 @@ Plans:
   2. User can view a calendar in day and week views, with real-time sync across mobile and web
   3. User receives push notifications for upcoming appointments and queue changes
 
-**Plans**: 7 plans
+**Plans**: 15 plans
 **UI hint**: yes
 
 Plans:
 
 - **Wave 1**
-- [ ] 08-01-PLAN.md -- Shared scheduling contracts, Wave 0 tests, Prisma appointment schema, and blocking schema push
+- [ ] 08-01-PLAN.md -- Shared scheduling contracts: appointment lifecycle table, EXPECTED queue status, socket events, tunable constants, Zod validators
+- [ ] 08-02-PLAN.md -- Design-system additions (vet hues, StatusBadge variants, scheduling i18n) and the [BLOCKING] mobile/web dependency manifest fix
+- [ ] 08-03-PLAN.md -- Prisma persistence: five scheduling tables, ServiceCatalog.durationMinutes, QueueEntry.queuePriorityAt, and the [BLOCKING] migration
 
 - **Wave 2** *(blocked on Wave 1 completion)*
-- [ ] 08-02-PLAN.md -- Availability engine, schedule templates/overrides, blocked periods, reason catalog, and settings API
-- [ ] 08-03-PLAN.md -- Appointment lifecycle, provisional booking, queue handoff, queue expected-arrival support, and audit-trail API
+- [ ] 08-04-PLAN.md -- IST date module plus queue integration: queuePriorityAt ordering and full EXPECTED support across every queue query
+- [ ] 08-05-PLAN.md -- Availability engine: pure slot generator, template/override/blocked-period repository and service, AuditEvent extension
+- [ ] 08-06-PLAN.md -- Minimal web staff login, bearer-token API client, session-scoped auth context and route guard
 
 - **Wave 3** *(blocked on Wave 2 completion)*
-- [ ] 08-04-PLAN.md -- Reminder producer, owner-action bridge, push/socket notifications, workers, and scheduling route registration
+- [ ] 08-07-PLAN.md -- Appointment lifecycle: booking with per-service duration, horizon, double-book warning, multi-pet, recurrence, reschedule/cancel with marker resets
+- [ ] 08-08-PLAN.md -- Mobile queue board EXPECTED section, expected-row card treatment and quick-action sheet
 
 - **Wave 4** *(blocked on Wave 3 completion)*
-- [ ] 08-05-PLAN.md -- Mobile day agenda, quick-action bottom sheet, queue scheduled badges, and WhatsApp-linked mobile state
-- [ ] 08-06-PLAN.md -- Web 7-day staff-first week grid, quick drawer, realtime hook, and browser-notification prompt
+- [ ] 08-09-PLAN.md -- BullMQ sweep: queue handoff, no-show auto-flip, and the three staff push triggers with a durable backlog debounce
+- [ ] 08-10-PLAN.md -- [GATE on Phase 7] Appointment reminders on Phase 7's pipeline, owner KEEP/MOVE/CANCEL bridge, WhatsApp booking formalization
 
 - **Wave 5** *(blocked on Wave 4 completion)*
-- [ ] 08-07-PLAN.md -- Mobile/web shell wiring, dashboard/sidebar schedule entry points, and human end-to-end verification
+- [ ] 08-11-PLAN.md -- Scheduling HTTP surface, permission-guarded routes, app wiring, and the integration test suite
+
+- **Wave 6** *(blocked on Wave 5 completion)*
+- [ ] 08-12-PLAN.md -- Mobile scheduling data layer, day agenda, booking sheet and appointment quick sheet
+- [ ] 08-13-PLAN.md -- Mobile availability settings, blocked-period sheet and the scheduling wireframe stories
+- [ ] 08-14-PLAN.md -- Web 7-day week grid, first Socket.IO client, appointment and booking drawers, foreground notification opt-in
+
+- **Wave 7** *(blocked on Wave 6 completion)*
+- [ ] 08-15-PLAN.md -- Full-suite green, completed validation document, and three human end-to-end verifications
 
 Cross-cutting constraints:
 
-- Queue remains the mobile home surface; Scheduling is linked but separate (D-09 + project walk-in-first rule)
-- Scheduled patients enter Queue as `EXPECTED` first, then become true waiting entries only after check-in (D-21, D-22)
-- Mobile defaults to day agenda; dense 7-day week planning belongs to larger screens (D-02, D-03)
-- Reminder timing is clinic-configurable, with shipped same-day-only defaults and `KEEP / MOVE / CANCEL` owner actions (D-25 to D-27)
+- Queue remains the mobile home surface; Scheduling is a linked but separate tab (project walk-in-first rule)
+- Scheduled patients enter Queue as `EXPECTED` first and become true waiting entries only on check-in (D-08, D-11, D-13)
+- Mobile defaults to a day agenda; the dense 7-day week grid belongs to the web surface (D-24, D-25)
+- Appointment reminders reuse Phase 7's WhatsApp pipeline with `KEEP / MOVE / CANCEL` owner actions; no parallel messaging mechanism (D-15 to D-18)
+- Double-booking is allowed with a warning and an explicit override, never hard-blocked (D-14)
+- Push notifications are staff-only for Beta; no owner-facing push and no background web push (D-26)
+- The scheduling sweep is a Redis-coordinated BullMQ `upsertJobScheduler` job, never `node-cron` and never a per-appointment delayed job
 
 ### Phase 9: Web Dashboard & Owner Portal
 
