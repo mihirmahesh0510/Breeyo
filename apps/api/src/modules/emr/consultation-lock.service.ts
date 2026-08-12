@@ -6,6 +6,8 @@ export interface LockResult {
   acquired: boolean;
   lockedBy?: string;
   takenOver?: boolean;
+  /** The vetId that previously held the lock, present only when takenOver is true. */
+  previousVetId?: string;
 }
 
 export interface LockStatus {
@@ -50,6 +52,7 @@ export class ConsultationLockService {
       }
 
       // Stale lock — take over
+      const previousVetId = existing.vetId;
       await this.prisma.consultationLock.update({
         where: { consultationId },
         data: {
@@ -62,8 +65,8 @@ export class ConsultationLockService {
       });
 
       // D-72: Notify original vet (fire-and-forget)
-      // Push notification handled by caller or event system
-      return { acquired: true, takenOver: true };
+      // Push notification handled by caller (see EMR controller/routes)
+      return { acquired: true, takenOver: true, previousVetId };
     }
 
     // No existing lock — create new

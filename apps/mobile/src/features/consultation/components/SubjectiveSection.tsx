@@ -3,14 +3,16 @@ import { View, Text, TextInput, StyleSheet } from 'react-native';
 import type { SubjectiveData, VisitType } from '@breeyo/types';
 import { QUICK_PICK_CHIPS } from '@breeyo/types';
 import { QuickPickChips } from './QuickPickChips';
+import type { SoapFieldName } from '../hooks/useVoiceTranscription';
 
 interface SubjectiveSectionProps {
   data: SubjectiveData;
   onChange: (data: SubjectiveData) => void;
   visitType: VisitType;
+  onFieldFocus?: (field: SoapFieldName) => void;
 }
 
-export function SubjectiveSection({ data, onChange, visitType }: SubjectiveSectionProps) {
+export function SubjectiveSection({ data, onChange, visitType, onFieldFocus }: SubjectiveSectionProps) {
   const chipOptions = [...QUICK_PICK_CHIPS[visitType].subjective];
 
   const handleToggleChip = (chip: string) => {
@@ -18,12 +20,6 @@ export function SubjectiveSection({ data, onChange, visitType }: SubjectiveSecti
       ? data.chips.filter((c) => c !== chip)
       : [...data.chips, chip];
     onChange({ ...data, chips: updated });
-  };
-
-  const handleAddCustomChip = (term: string) => {
-    if (!data.chips.includes(term)) {
-      onChange({ ...data, chips: [...data.chips, term] });
-    }
   };
 
   // Combine preset chips with any custom ones the user has added
@@ -39,12 +35,12 @@ export function SubjectiveSection({ data, onChange, visitType }: SubjectiveSecti
         chips={allChips}
         selectedChips={data.chips}
         onToggle={handleToggleChip}
-        onAddCustom={handleAddCustomChip}
       />
       <TextInput
         style={styles.textArea}
         value={data.ownerReports}
         onChangeText={(text) => onChange({ ...data, ownerReports: text })}
+        onFocus={() => onFieldFocus?.('subjective.ownerReports')}
         placeholder="What did the owner report?"
         placeholderTextColor="#79747E"
         multiline
@@ -57,6 +53,7 @@ export function SubjectiveSection({ data, onChange, visitType }: SubjectiveSecti
         style={styles.textArea}
         value={data.history}
         onChangeText={(text) => onChange({ ...data, history: text })}
+        onFocus={() => onFieldFocus?.('subjective.history')}
         placeholder="Presentation history, prior conditions..."
         placeholderTextColor="#79747E"
         multiline

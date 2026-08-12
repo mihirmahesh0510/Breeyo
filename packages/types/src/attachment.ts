@@ -28,6 +28,7 @@ export interface AttachmentUploadRequest {
 }
 
 export interface PresignedUrlResponse {
+  attachmentId: string;
   uploadUrl: string;
   s3Key: string;
   expiresIn: number;

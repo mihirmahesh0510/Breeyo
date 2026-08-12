@@ -1,9 +1,14 @@
+import type { PrismaClient } from '@prisma/client';
 import type { PreventiveCareStatus } from '@breeyo/types';
 import { calculateNextDueDate, DEWORMING_INTERVALS } from '@breeyo/types';
 import type { VaccinationRepository } from './vaccination.repository.js';
+import { writeAuditLog, AuditEvent } from '../../lib/audit-log.js';
 
 export class VaccinationService {
-  constructor(private readonly repository: VaccinationRepository) {}
+  constructor(
+    private readonly repository: VaccinationRepository,
+    private readonly prisma: PrismaClient,
+  ) {}
 
   async createVaccination(
     clinicId: string,
@@ -31,7 +36,7 @@ export class VaccinationService {
       );
     }
 
-    return this.repository.createVaccination(clinicId, petId, consultationId, {
+    const record = await this.repository.createVaccination(clinicId, petId, consultationId, {
       vaccineName: data.vaccineName,
       batchNumber: data.batchNumber,
       manufacturer: data.manufacturer,
@@ -39,6 +44,19 @@ export class VaccinationService {
       administeredBy: data.administeredBy,
       nextDueDate,
     });
+
+    // EMR-07 / D-62: Audit trail for vaccination records
+    await writeAuditLog(this.prisma, AuditEvent.VACCINATION_RECORDED, {
+      userId: data.administeredBy,
+      clinicId,
+      metadata: {
+        petId,
+        vaccineName: data.vaccineName,
+        recordId: record.id,
+      },
+    });
+
+    return record;
   }
 
   async createDeworming(
@@ -71,11 +89,24 @@ export class VaccinationService {
       nextDueDate.setDate(nextDueDate.getDate() + intervalDays);
     }
 
-    return this.repository.createDeworming(clinicId, petId, consultationId, {
+    const record = await this.repository.createDeworming(clinicId, petId, consultationId, {
       drugName: data.drugName,
       administeredBy: data.administeredBy,
       nextDueDate,
     });
+
+    // EMR-07 / D-62: Audit trail for deworming records
+    await writeAuditLog(this.prisma, AuditEvent.DEWORMING_RECORDED, {
+      userId: data.administeredBy,
+      clinicId,
+      metadata: {
+        petId,
+        drugName: data.drugName,
+        recordId: record.id,
+      },
+    });
+
+    return record;
   }
 
   async getPreventiveCareStatus(

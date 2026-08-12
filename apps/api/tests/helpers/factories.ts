@@ -111,6 +111,26 @@ export async function cleanupTestData() {
     await tx.userPermissionOverride.deleteMany();
     await tx.clinicMemberRole.deleteMany();
     await tx.clinicMember.deleteMany();
+
+    // Phase 3/4 tables (patient, queue, EMR & clinical records) — these were
+    // added after this helper was written, and must be cleared before
+    // clinic/pet rows or `tx.clinic.deleteMany()` below fails on FK
+    // violations (e.g. `pet_owners_clinic_id_fkey`) once any test in the run
+    // has created patient/queue/EMR data.
+    await tx.consultationAttachment.deleteMany();
+    await tx.prescription.deleteMany();
+    await tx.vitals.deleteMany();
+    await tx.vaccinationRecord.deleteMany();
+    await tx.dewormingRecord.deleteMany();
+    await tx.consultationDraft.deleteMany();
+    await tx.consultationLock.deleteMany();
+    await tx.consultation.deleteMany();
+    await tx.queueEntry.deleteMany();
+    await tx.consentRecord.deleteMany();
+    await tx.serviceCatalog.deleteMany();
+    await tx.pet.deleteMany();
+    await tx.petOwner.deleteMany();
+
     await tx.clinic.deleteMany();
     await tx.user.deleteMany();
   });

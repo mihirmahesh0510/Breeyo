@@ -25,6 +25,7 @@ import {
 import { useDosageCalculation } from '../../consultation/hooks/useDosageCalculation';
 import { DosageWarningBanner } from './DosageWarning';
 import { OwnerInstructionsPreview } from './OwnerInstructionsPreview';
+import { parseDosageMg } from '../utils/parseDosageMg';
 
 interface MedicationFormProps {
   drug?: DrugSearchResult | null;
@@ -115,7 +116,7 @@ export function MedicationForm({
     existingItem?.formulation || '',
   );
   const [dosage, setDosage] = useState(
-    existingItem?.dosageMg?.toString() || '',
+    existingItem?.dosage || '',
   );
   const [route, setRoute] = useState<string>(existingItem?.route || '');
   const [frequency, setFrequency] = useState(existingItem?.frequency || '');
@@ -167,13 +168,8 @@ export function MedicationForm({
 
   // Dosage validation - debounced
   useEffect(() => {
-    if (!dosage || !drug?.id || !petWeightKg || !petSpecies) {
-      setDosageWarning(null);
-      return;
-    }
-
-    const doseMg = parseFloat(dosage);
-    if (isNaN(doseMg) || doseMg <= 0) {
+    const doseMg = parseDosageMg(dosage);
+    if (doseMg === null || doseMg <= 0 || !drug?.id || !petWeightKg || !petSpecies) {
       setDosageWarning(null);
       return;
     }
@@ -232,7 +228,7 @@ export function MedicationForm({
       formulation: selectedFormType,
       strength: selectedFormulation?.strength || '',
       dosage,
-      dosageMg: dosage ? parseFloat(dosage) : null,
+      dosageMg: parseDosageMg(dosage),
       route: (route as RouteOfAdmin) || 'Oral',
       frequency,
       duration: finalDuration,
@@ -304,14 +300,13 @@ export function MedicationForm({
 
         {/* Dosage */}
         <View style={styles.fieldContainer}>
-          <Text style={styles.fieldLabel}>Dosage (mg)</Text>
+          <Text style={styles.fieldLabel}>Dosage</Text>
           <TextInput
             style={styles.textInput}
             value={dosage}
             onChangeText={setDosage}
-            placeholder="Enter dosage in mg"
+            placeholder="e.g., 250mg or 5ml"
             placeholderTextColor="#79747E"
-            keyboardType="decimal-pad"
           />
         </View>
 

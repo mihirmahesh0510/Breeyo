@@ -2,12 +2,14 @@ import React from 'react';
 import { View, Text, TextInput, StyleSheet } from 'react-native';
 import { CARE_INSTRUCTION_CHIPS } from '@breeyo/types';
 import { QuickPickChips } from './QuickPickChips';
+import type { SoapFieldName } from '../hooks/useVoiceTranscription';
 
 interface CareInstructionsSectionProps {
   selectedChips: string[];
   freeText: string;
   onChipsChange: (chips: string[]) => void;
   onFreeTextChange: (text: string) => void;
+  onFieldFocus?: (field: SoapFieldName) => void;
 }
 
 export function CareInstructionsSection({
@@ -15,6 +17,7 @@ export function CareInstructionsSection({
   freeText,
   onChipsChange,
   onFreeTextChange,
+  onFieldFocus,
 }: CareInstructionsSectionProps) {
   const chipOptions = [...CARE_INSTRUCTION_CHIPS];
 
@@ -25,13 +28,7 @@ export function CareInstructionsSection({
     onChipsChange(updated);
   };
 
-  const handleAddCustom = (term: string) => {
-    if (!selectedChips.includes(term)) {
-      onChipsChange([...selectedChips, term]);
-    }
-  };
-
-  // Combine preset chips with any custom ones
+  // Combine preset chips with any previously selected custom ones
   const allChips = [
     ...chipOptions,
     ...selectedChips.filter((c) => !chipOptions.includes(c)),
@@ -44,12 +41,12 @@ export function CareInstructionsSection({
         chips={allChips}
         selectedChips={selectedChips}
         onToggle={handleToggle}
-        onAddCustom={handleAddCustom}
       />
       <TextInput
         style={styles.textArea}
         value={freeText}
         onChangeText={onFreeTextChange}
+        onFocus={() => onFieldFocus?.('careInstructions')}
         placeholder="Post-visit care for the pet owner..."
         placeholderTextColor="#79747E"
         multiline

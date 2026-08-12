@@ -15,6 +15,7 @@ function serializeDraft(state: ReturnType<typeof useConsultationDraftStore.getSt
     careInstructions: state.careInstructions,
     referral: state.referral,
     rxNotes: state.rxNotes,
+    prescriptions: state.prescriptions,
   };
 }
 

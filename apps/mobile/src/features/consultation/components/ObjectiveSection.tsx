@@ -2,13 +2,15 @@ import React from 'react';
 import { View, Text, TextInput, StyleSheet } from 'react-native';
 import type { ObjectiveData } from '@breeyo/types';
 import { BodySystemChecklist } from './BodySystemChecklist';
+import type { SoapFieldName } from '../hooks/useVoiceTranscription';
 
 interface ObjectiveSectionProps {
   data: ObjectiveData;
   onChange: (data: ObjectiveData) => void;
+  onFieldFocus?: (field: SoapFieldName) => void;
 }
 
-export function ObjectiveSection({ data, onChange }: ObjectiveSectionProps) {
+export function ObjectiveSection({ data, onChange, onFieldFocus }: ObjectiveSectionProps) {
   return (
     <View style={styles.container}>
       <Text style={styles.sectionLabel}>Physical Examination</Text>
@@ -20,6 +22,7 @@ export function ObjectiveSection({ data, onChange }: ObjectiveSectionProps) {
         style={styles.textArea}
         value={data.notes}
         onChangeText={(notes) => onChange({ ...data, notes })}
+        onFocus={() => onFieldFocus?.('objective.notes')}
         placeholder="Other examination findings..."
         placeholderTextColor="#79747E"
         multiline

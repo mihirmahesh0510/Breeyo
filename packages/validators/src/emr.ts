@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { prescriptionItemSchema } from './prescription.js';
 
 export const createConsultationSchema = z.object({
   petId: z.string().min(1, 'Pet ID is required'),
@@ -39,6 +40,7 @@ export const saveDraftSchema = z.object({
     urgency: z.enum(['routine', 'urgent']),
   }).nullable().optional(),
   rxNotes: z.string().max(2000).optional(),
+  prescriptions: z.array(prescriptionItemSchema).optional(),
 });
 
 export const finalizeConsultationSchema = z.object({

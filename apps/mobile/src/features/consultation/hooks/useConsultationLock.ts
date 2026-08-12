@@ -9,23 +9,34 @@ interface LockStatus {
   stale?: boolean;
 }
 
-export function useConsultationLock(consultationId: string, vetId: string): LockStatus {
+interface UseConsultationLockReturn extends LockStatus {
+  refetch: () => Promise<void>;
+}
+
+export function useConsultationLock(consultationId: string, vetId: string): UseConsultationLockReturn {
   const { accessToken } = useAuth();
   const [lockStatus, setLockStatus] = useState<LockStatus>({ locked: false });
   const backgroundTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const heartbeatIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Check lock on mount
-  useEffect(() => {
+  const checkLock = useCallback(async () => {
     if (!consultationId || !accessToken) return;
 
-    apiClient<{ data: LockStatus }>(`/api/v1/consultations/${consultationId}/lock`, {
-      token: accessToken,
-    })
-      .then((res) => setLockStatus(res.data))
-      .catch(() => {
-        // Lock check failed -- assume unlocked
-      });
+    try {
+      const res = await apiClient<{ data: LockStatus }>(
+        `/api/v1/consultations/${consultationId}/lock`,
+        { token: accessToken },
+      );
+      setLockStatus(res.data);
+    } catch {
+      // Lock check failed -- assume unlocked
+    }
+  }, [consultationId, accessToken]);
+
+  // Check lock on mount
+  useEffect(() => {
+    checkLock();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [consultationId, accessToken]);
 
   // Send heartbeat every 60 seconds (60000ms)
@@ -109,5 +120,5 @@ export function useConsultationLock(consultationId: string, vetId: string): Lock
     };
   }, [handleAppStateChange]);
 
-  return lockStatus;
+  return { ...lockStatus, refetch: checkLock };
 }

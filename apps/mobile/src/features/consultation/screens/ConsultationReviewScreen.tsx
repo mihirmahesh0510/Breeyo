@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -14,7 +14,9 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useAuth } from '../../../providers/AuthProvider';
 import { apiClient } from '../../../lib/api';
 import { useConsultationDraftStore } from '../hooks/useConsultationDraft';
+import { MedicationCard } from '../../prescription/components/MedicationCard';
 import { BODY_SYSTEMS } from '@breeyo/types';
+import type { ConsultationAttachment } from '@breeyo/types';
 
 // ---------- Review Card ----------
 
@@ -222,8 +224,22 @@ export function ConsultationReviewScreen() {
 
   const [showFollowUp, setShowFollowUp] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [attachments, setAttachments] = useState<ConsultationAttachment[]>([]);
 
   const consultationId = params.consultationId || store.consultationId;
+
+  // Fetch attachments for the Files summary card (not tracked in the draft store).
+  useEffect(() => {
+    if (!consultationId || !accessToken) return;
+    apiClient<{ data: ConsultationAttachment[] }>(
+      `/api/v1/consultations/${consultationId}/attachments`,
+      { token: accessToken },
+    )
+      .then((res) => setAttachments(res.data))
+      .catch(() => {
+        // Non-fatal -- Files card will just show as empty
+      });
+  }, [consultationId, accessToken]);
 
   const handleEdit = useCallback(() => {
     router.back();
@@ -401,6 +417,31 @@ export function ConsultationReviewScreen() {
               </Text>
             </>
           )}
+        </ReviewCard>
+
+        {/* Prescriptions */}
+        <ReviewCard title="Prescriptions" isEmpty={store.prescriptions.length === 0}>
+          {store.prescriptions.map((rx) => (
+            <MedicationCard
+              key={`${rx.drugName}-${rx.sortOrder}`}
+              item={rx}
+              onEdit={() => {}}
+              onRemove={() => {}}
+              readOnly
+            />
+          ))}
+        </ReviewCard>
+
+        {/* Files */}
+        <ReviewCard title="Files" isEmpty={attachments.length === 0}>
+          <Text style={styles.reviewLine}>
+            {attachments.length} file{attachments.length === 1 ? '' : 's'} attached
+          </Text>
+          {attachments.map((att) => (
+            <Text key={att.id} style={styles.reviewLine}>
+              {'•'} {att.fileName}
+            </Text>
+          ))}
         </ReviewCard>
 
         {/* Action Buttons */}

@@ -9,21 +9,21 @@ const ROUTES_OF_ADMINISTRATION = [
 ] as const;
 
 export const prescriptionItemSchema = z.object({
-  drugId: z.string().nullable().optional(),
+  drugId: z.string().nullable().optional().default(null),
   drugName: z.string().min(1, 'Drug name is required').max(200),
-  formulationId: z.string().nullable().optional(),
+  formulationId: z.string().nullable().optional().default(null),
   formulation: z.string().min(1, 'Formulation is required'),
   strength: z.string().min(1, 'Strength is required'),
   dosage: z.string().min(1, 'Dosage is required'),
-  dosageMg: z.number().positive().nullable().optional(),
+  dosageMg: z.number().positive().nullable().optional().default(null),
   route: z.enum(ROUTES_OF_ADMINISTRATION),
   frequency: z.string().min(1, 'Frequency is required'),
   duration: z.string().min(1, 'Duration is required'),
-  durationDays: z.number().int().positive().nullable().optional(),
-  clinicalInstructions: z.string().max(1000).nullable().optional(),
-  ownerInstructions: z.string().max(1000).nullable().optional(),
+  durationDays: z.number().int().positive().nullable().optional().default(null),
+  clinicalInstructions: z.string().max(1000).nullable().optional().default(null),
+  ownerInstructions: z.string().max(1000).nullable().optional().default(null),
   dispensed: z.boolean().default(false),
-  inventoryItemId: z.string().nullable().optional(),
+  inventoryItemId: z.string().nullable().optional().default(null),
   sortOrder: z.number().int().min(0),
 });
 

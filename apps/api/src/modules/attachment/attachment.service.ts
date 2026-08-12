@@ -2,6 +2,7 @@ import type { PrismaClient } from '@prisma/client';
 import { attachmentMetaSchema } from '@breeyo/validators';
 import { MAX_FILES_PER_CONSULTATION } from '@breeyo/types';
 import crypto from 'crypto';
+import { writeAuditLog, AuditEvent } from '../../lib/audit-log.js';
 
 export class AttachmentService {
   constructor(private readonly prisma: PrismaClient) {}
@@ -62,7 +63,7 @@ export class AttachmentService {
   /**
    * Confirms upload completed and generates thumbnail if image.
    */
-  async confirmUpload(attachmentId: string, clinicId: string) {
+  async confirmUpload(attachmentId: string, clinicId: string, userId: string) {
     const attachment = await this.prisma.consultationAttachment.findUnique({
       where: { id: attachmentId },
       include: { consultation: { select: { clinicId: true } } },
@@ -80,10 +81,23 @@ export class AttachmentService {
       ? `https://s3.ap-south-1.amazonaws.com/breeyo-uploads/${attachment.s3Key}`
       : `http://localhost:9000/breeyo-uploads/${attachment.s3Key}`;
 
-    return this.prisma.consultationAttachment.update({
+    const updated = await this.prisma.consultationAttachment.update({
       where: { id: attachmentId },
       data: { s3Url },
     });
+
+    // EMR-07 / D-62: Audit trail for attachment uploads
+    await writeAuditLog(this.prisma, AuditEvent.ATTACHMENT_UPLOADED, {
+      userId,
+      clinicId,
+      metadata: {
+        consultationId: attachment.consultationId,
+        attachmentId,
+        fileType: attachment.fileType,
+      },
+    });
+
+    return updated;
   }
 
   /**
@@ -99,7 +113,7 @@ export class AttachmentService {
   /**
    * Deletes an attachment record and schedules S3 object deletion.
    */
-  async deleteAttachment(attachmentId: string, clinicId: string) {
+  async deleteAttachment(attachmentId: string, clinicId: string, userId: string) {
     const attachment = await this.prisma.consultationAttachment.findUnique({
       where: { id: attachmentId },
       include: { consultation: { select: { clinicId: true } } },
@@ -117,5 +131,15 @@ export class AttachmentService {
     });
 
     // TODO: Schedule S3 object deletion via queue job
+
+    // EMR-07 / D-62: Audit trail for attachment deletions
+    await writeAuditLog(this.prisma, AuditEvent.ATTACHMENT_DELETED, {
+      userId,
+      clinicId,
+      metadata: {
+        consultationId: attachment.consultationId,
+        attachmentId,
+      },
+    });
   }
 }

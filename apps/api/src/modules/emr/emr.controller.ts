@@ -1,6 +1,8 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import type { EmrService } from './emr.service.js';
 import type { ConsultationLockService } from './consultation-lock.service.js';
+import type { NotificationBus } from '../notifications/notification-bus.js';
+import { NotificationType, NotificationModule } from '@breeyo/types';
 import {
   createConsultationSchema,
   saveDraftSchema,
@@ -26,6 +28,7 @@ function validationError(reply: FastifyReply, issues: { message: string }[]) {
 export function createEmrController(
   emrService: EmrService,
   lockService: ConsultationLockService,
+  notificationBus?: NotificationBus,
 ) {
   return {
     /**
@@ -80,20 +83,12 @@ export function createEmrController(
         return validationError(reply, params.error.errors);
       }
 
-      // Load draft through repository (service doesn't expose loadDraft directly,
-      // but we can use getConsultation + check status)
-      const consultation = await emrService.getConsultation(
+      const draft = await emrService.getDraftData(
         params.data.consultationId,
         request.user.activeClinicId,
       );
 
-      if (!consultation) {
-        return reply.status(404).send({
-          error: { code: 'CONSULTATION_NOT_FOUND', message: 'Consultation not found' },
-        });
-      }
-
-      return reply.status(200).send({ data: consultation });
+      return reply.status(200).send({ data: draft });
     },
 
     /**
@@ -198,6 +193,61 @@ export function createEmrController(
       const status = await lockService.isLocked(params.data.consultationId);
 
       return reply.status(200).send({ data: status });
+    },
+
+    /**
+     * POST /consultations/:consultationId/lock — Acquire (or take over) the lock.
+     * D-72: Notifies the original vet by push when a stale lock is taken over.
+     */
+    async acquireLockHandler(request: FastifyRequest, reply: FastifyReply) {
+      const params = consultationParamsSchema.safeParse(request.params);
+      if (!params.success) {
+        return validationError(reply, params.error.errors);
+      }
+
+      const vetId = request.user.id;
+      const vetName = (request as any).userName ?? 'Unknown';
+
+      const result = await lockService.acquireLock(params.data.consultationId, vetId, vetName);
+
+      if (result.acquired && result.takenOver && result.previousVetId && notificationBus) {
+        // D-72: Best-effort push notification to the vet who lost the lock.
+        // Never let a notification failure affect the lock-acquisition response.
+        try {
+          const consultation = await emrService.getConsultation(
+            params.data.consultationId,
+            request.user.activeClinicId,
+          );
+
+          await notificationBus.emit({
+            type: NotificationType.SYSTEM,
+            module: NotificationModule.SYSTEM,
+            clinicId: request.user.activeClinicId,
+            recipientUserIds: [result.previousVetId],
+            title: 'Consultation taken over',
+            body: `${vetName} took over consultation for ${consultation?.pet?.name ?? 'a patient'}`,
+            data: { consultationId: params.data.consultationId },
+          });
+        } catch (err) {
+          request.log.error(err, 'Failed to send D-72 lock takeover notification');
+        }
+      }
+
+      return reply.status(200).send({ data: result });
+    },
+
+    /**
+     * DELETE /consultations/:consultationId/lock — Release the lock.
+     */
+    async releaseLockHandler(request: FastifyRequest, reply: FastifyReply) {
+      const params = consultationParamsSchema.safeParse(request.params);
+      if (!params.success) {
+        return validationError(reply, params.error.errors);
+      }
+
+      await lockService.releaseLock(params.data.consultationId, request.user.id);
+
+      return reply.status(200).send({ data: { released: true } });
     },
 
     /**

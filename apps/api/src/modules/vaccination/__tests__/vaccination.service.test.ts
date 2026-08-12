@@ -1,6 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { VaccinationService } from '../vaccination.service.js';
 import type { VaccinationRepository } from '../vaccination.repository.js';
+import { DRUG_SEED_DATA } from '../../drug/drug-seed.js';
+
+// D-42: the 6 seeded vaccine names, each paired with one species it's dosed for,
+// derived straight from drug-seed.ts so this test tracks the real seed data.
+const SEEDED_VACCINE_SPECIES_PAIRS = DRUG_SEED_DATA.filter(
+  (d) => d.category === 'vaccine',
+).map((d) => ({ vaccineName: d.name, species: d.dosageRanges[0].species }));
 
 function createMockRepository(): VaccinationRepository {
   return {
@@ -16,13 +23,23 @@ function createMockRepository(): VaccinationRepository {
   } as unknown as VaccinationRepository;
 }
 
+function createMockPrisma() {
+  return {
+    authAuditLog: {
+      create: vi.fn().mockResolvedValue({}),
+    },
+  } as any;
+}
+
 describe('VaccinationService', () => {
   let service: VaccinationService;
   let mockRepo: ReturnType<typeof createMockRepository>;
+  let mockPrisma: ReturnType<typeof createMockPrisma>;
 
   beforeEach(() => {
     mockRepo = createMockRepository();
-    service = new VaccinationService(mockRepo);
+    mockPrisma = createMockPrisma();
+    service = new VaccinationService(mockRepo, mockPrisma);
   });
 
   describe('createVaccination', () => {
@@ -66,6 +83,54 @@ describe('VaccinationService', () => {
       const callArgs = vi.mocked(mockRepo.createVaccination).mock.calls[0];
       expect(callArgs[3].nextDueDate).toBeNull();
     });
+
+    it('writes a VACCINATION_RECORDED audit log entry on success (EMR-07 / D-62)', async () => {
+      vi.mocked(mockRepo.createVaccination).mockResolvedValue({ id: 'vax_1' } as any);
+
+      await service.createVaccination(
+        'clinic_1', 'pet_1', 'consult_1',
+        'DOG', 100,
+        { vaccineName: 'DHPPi', administeredBy: 'vet_1' },
+      );
+
+      expect(mockPrisma.authAuditLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            event: 'VACCINATION_RECORDED',
+            userId: 'vet_1',
+            clinicId: 'clinic_1',
+            metadata: expect.objectContaining({
+              petId: 'pet_1',
+              vaccineName: 'DHPPi',
+              recordId: 'vax_1',
+            }),
+          }),
+        }),
+      );
+    });
+
+    // D-42: The drug catalog's seeded vaccine names must resolve a non-null
+    // next-due-date. This guards against a name mismatch between drug-seed.ts
+    // and the interval table breaking auto-due-date calculation silently.
+    it('drug-seed.ts vaccine fixtures cover the 6 expected (name, species) pairs', () => {
+      expect(SEEDED_VACCINE_SPECIES_PAIRS.length).toBe(6);
+    });
+
+    it.each(SEEDED_VACCINE_SPECIES_PAIRS)(
+      'resolves a non-null nextDueDate for seeded vaccine "$vaccineName" ($species)',
+      async ({ vaccineName, species }) => {
+        vi.mocked(mockRepo.createVaccination).mockResolvedValue({ id: 'vax_1' } as any);
+
+        await service.createVaccination(
+          'clinic_1', 'pet_1', null,
+          species, 400, // adult
+          { vaccineName, administeredBy: 'vet_1' },
+        );
+
+        const callArgs = vi.mocked(mockRepo.createVaccination).mock.calls.at(-1)!;
+        expect(callArgs[3].nextDueDate).toBeInstanceOf(Date);
+      },
+    );
   });
 
   describe('createDeworming', () => {

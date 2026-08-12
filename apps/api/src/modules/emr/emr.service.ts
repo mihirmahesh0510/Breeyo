@@ -1,3 +1,4 @@
+import type { PrismaClient } from '@prisma/client';
 import {
   createConsultationSchema,
   saveDraftSchema,
@@ -14,12 +15,14 @@ import type {
 import type { EmrRepository } from './emr.repository.js';
 import type { ConsultationLockService } from './consultation-lock.service.js';
 import type { DosageService } from './dosage.service.js';
+import { writeAuditLog, AuditEvent } from '../../lib/audit-log.js';
 
 export class EmrService {
   constructor(
     private readonly repository: EmrRepository,
     private readonly lockService: ConsultationLockService,
     private readonly dosageService: DosageService,
+    private readonly prisma: PrismaClient,
   ) {}
 
   /**
@@ -74,6 +77,17 @@ export class EmrService {
   ) {
     const parsed = saveDraftSchema.parse(data);
 
+    // Security: verify the consultation belongs to the caller's clinic before
+    // touching the lock or draft — otherwise a caller from another clinic with
+    // a valid consultationId could read/overwrite another clinic's draft.
+    const consultation = await this.repository.getConsultation(consultationId, clinicId);
+    if (!consultation) {
+      const error = new Error('Consultation not found') as Error & { statusCode: number; code: string };
+      error.statusCode = 404;
+      error.code = 'CONSULTATION_NOT_FOUND';
+      throw error;
+    }
+
     // Verify lock is held by this vet
     const lockStatus = await this.lockService.isLocked(consultationId);
     if (lockStatus.locked && lockStatus.vetName) {
@@ -91,10 +105,7 @@ export class EmrService {
 
     // D-69: Immediately update pet weight if vitals.weightKg changed
     if (parsed.vitals?.weightKg != null) {
-      const consultation = await this.repository.getConsultation(consultationId, clinicId);
-      if (consultation) {
-        await this.repository.updatePetWeight(consultation.petId, parsed.vitals.weightKg);
-      }
+      await this.repository.updatePetWeight(consultation.petId, parsed.vitals.weightKg);
     }
   }
 
@@ -131,6 +142,9 @@ export class EmrService {
     // Load draft data
     const draftData = await this.repository.loadDraft(consultationId) as any;
 
+    // D-28: Audit any dosage warnings the vet overrode before finalizing
+    await this.auditDosageOverrides(consultationId, clinicId, vetId, consultation, draftData);
+
     // D-13/D-70: Calculate duration
     const durationMinutes = Math.round(
       (Date.now() - new Date(consultation.startedAt).getTime()) / 60000,
@@ -163,7 +177,80 @@ export class EmrService {
     // Release lock
     await this.lockService.releaseLock(consultationId, vetId);
 
+    // EMR-07 / D-62: Audit trail for consultation finalization
+    await writeAuditLog(this.prisma, AuditEvent.CONSULTATION_FINALIZED, {
+      userId: vetId,
+      clinicId,
+      metadata: {
+        consultationId,
+        petId: consultation.petId,
+        visitType: consultation.visitType,
+      },
+    });
+
     return finalized;
+  }
+
+  /**
+   * Best-effort audit of D-28 dosage warning overrides: for each prescribed item
+   * with a known drug and dose, checks it against the species dosage range and
+   * writes a PRESCRIPTION_DOSAGE_OVERRIDDEN entry when the vet's entered dose
+   * was outside the recommended range. Never blocks finalize.
+   */
+  private async auditDosageOverrides(
+    consultationId: string,
+    clinicId: string,
+    vetId: string,
+    consultation: { pet: { species: string; weight: number | null } },
+    draftData: any,
+  ): Promise<void> {
+    const prescriptions: PrescriptionItem[] = draftData?.prescriptions ?? [];
+    if (prescriptions.length === 0) return;
+
+    try {
+      for (const item of prescriptions) {
+        if (!item.drugId || item.dosageMg == null) continue;
+
+        // Only skip when the drug/species dosage row genuinely doesn't exist —
+        // any other failure below propagates to the outer catch.
+        const speciesDosage = await this.prisma.speciesDosage.findFirst({
+          where: { drugId: item.drugId, species: consultation.pet.species },
+        });
+        if (!speciesDosage) continue;
+
+        const petWeightKg = draftData?.vitals?.weightKg ?? consultation.pet.weight;
+        if (!petWeightKg) continue;
+
+        const warning = this.dosageService.validateDosage(item.dosageMg, petWeightKg, {
+          id: speciesDosage.id,
+          drugId: speciesDosage.drugId,
+          species: speciesDosage.species,
+          minDoseMgPerKg: Number(speciesDosage.minDoseMgPerKg),
+          maxDoseMgPerKg: Number(speciesDosage.maxDoseMgPerKg),
+          isFixedDose: speciesDosage.isFixedDose,
+          fixedDoseMin: speciesDosage.fixedDoseMin != null ? Number(speciesDosage.fixedDoseMin) : null,
+          fixedDoseMax: speciesDosage.fixedDoseMax != null ? Number(speciesDosage.fixedDoseMax) : null,
+          notes: speciesDosage.notes,
+        });
+
+        if (warning) {
+          await writeAuditLog(this.prisma, AuditEvent.PRESCRIPTION_DOSAGE_OVERRIDDEN, {
+            userId: vetId,
+            clinicId,
+            metadata: {
+              consultationId,
+              drugName: item.drugName,
+              enteredDoseMg: item.dosageMg,
+              recommendedRange: `${warning.recommendedMinMg}-${warning.recommendedMaxMg}mg`,
+            },
+          });
+        }
+      }
+    } catch (err) {
+      // Best-effort: never block finalize on the dosage-override audit. Surface
+      // the failure via the logger instead of swallowing it outright.
+      console.error('[EmrService] dosage override audit failed', err);
+    }
   }
 
   /**
@@ -203,7 +290,58 @@ export class EmrService {
       addedAt: new Date(),
     };
 
-    return this.repository.addAddendum(consultationId, addendum);
+    const result = await this.repository.addAddendum(consultationId, addendum);
+
+    // EMR-07 / D-62: Audit trail for addenda
+    await writeAuditLog(this.prisma, AuditEvent.ADDENDUM_ADDED, {
+      userId: vetId,
+      clinicId,
+      metadata: {
+        consultationId,
+        addendumId: addendum.id,
+      },
+    });
+
+    return result;
+  }
+
+  /**
+   * Returns the in-progress draft view of a consultation: the consultation row
+   * with its SOAP/vitals/prescriptions fields overridden by the live draft data
+   * (ConsultationDraft.data) while the consultation is still in `draft` status.
+   * Falls back to the consultation row's own values once finalized (no draft
+   * row exists anymore at that point).
+   */
+  async getDraftData(consultationId: string, clinicId: string) {
+    const consultation = await this.repository.getConsultation(consultationId, clinicId);
+    if (!consultation) {
+      const error = new Error('Consultation not found') as Error & { statusCode: number; code: string };
+      error.statusCode = 404;
+      error.code = 'CONSULTATION_NOT_FOUND';
+      throw error;
+    }
+
+    if (consultation.status !== 'draft') {
+      return consultation;
+    }
+
+    const draftData = await this.repository.loadDraft(consultationId) as any;
+    if (!draftData) {
+      return consultation;
+    }
+
+    return {
+      ...consultation,
+      vitals: draftData.vitals ?? consultation.vitals,
+      subjective: draftData.subjective ?? consultation.subjective,
+      objective: draftData.objective ?? consultation.objective,
+      assessment: draftData.assessment ?? consultation.assessment,
+      plan: draftData.plan ?? consultation.plan,
+      careInstructions: draftData.careInstructions ?? consultation.careInstructions,
+      referral: draftData.referral ?? consultation.referral,
+      rxNotes: draftData.rxNotes ?? consultation.rxNotes,
+      prescriptions: draftData.prescriptions ?? consultation.prescriptions,
+    };
   }
 
   /**

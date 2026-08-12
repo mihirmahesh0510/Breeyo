@@ -34,6 +34,7 @@ export function createAttachmentController(attachmentService: AttachmentService)
       const attachment = await attachmentService.confirmUpload(
         params.data.id,
         request.user.activeClinicId,
+        request.user.id,
       );
 
       return reply.status(200).send({ data: attachment });
@@ -51,7 +52,7 @@ export function createAttachmentController(attachmentService: AttachmentService)
       const params = attachmentParamsSchema.safeParse(request.params);
       if (!params.success) return validationError(reply, params.error.errors);
 
-      await attachmentService.deleteAttachment(params.data.id, request.user.activeClinicId);
+      await attachmentService.deleteAttachment(params.data.id, request.user.activeClinicId, request.user.id);
       return reply.status(200).send({ data: { deleted: true } });
     },
   };

@@ -7,7 +7,7 @@ import { tenantContext } from '../../middleware/tenant-context.js';
 
 export default async function vaccinationRoutes(fastify: FastifyInstance) {
   const repository = new VaccinationRepository(fastify.prisma);
-  const service = new VaccinationService(repository);
+  const service = new VaccinationService(repository, fastify.prisma);
   const controller = new VaccinationController(service);
 
   const preHandler = [authenticate, tenantContext];

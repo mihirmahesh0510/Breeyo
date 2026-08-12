@@ -133,6 +133,7 @@ export const mockConsultation: Consultation = {
   followUpDate: new Date('2026-08-04T00:00:00Z'),
   followUpReason: 'Recheck GI symptoms',
   addenda: [],
+  prescriptions: [],
   createdAt: new Date('2026-08-01T10:00:00Z'),
   updatedAt: new Date('2026-08-01T10:30:00Z'),
 };

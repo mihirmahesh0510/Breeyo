@@ -3,14 +3,16 @@ import { View, Text, TextInput, StyleSheet } from 'react-native';
 import type { PlanData, VisitType } from '@breeyo/types';
 import { QUICK_PICK_CHIPS } from '@breeyo/types';
 import { QuickPickChips } from './QuickPickChips';
+import type { SoapFieldName } from '../hooks/useVoiceTranscription';
 
 interface PlanSectionProps {
   data: PlanData;
   onChange: (data: PlanData) => void;
   visitType: VisitType;
+  onFieldFocus?: (field: SoapFieldName) => void;
 }
 
-export function PlanSection({ data, onChange, visitType }: PlanSectionProps) {
+export function PlanSection({ data, onChange, visitType, onFieldFocus }: PlanSectionProps) {
   const chipOptions = [...QUICK_PICK_CHIPS[visitType].plan];
 
   const handleToggle = (chip: string) => {
@@ -18,12 +20,6 @@ export function PlanSection({ data, onChange, visitType }: PlanSectionProps) {
       ? data.actionItems.filter((c) => c !== chip)
       : [...data.actionItems, chip];
     onChange({ ...data, actionItems: updated });
-  };
-
-  const handleAddCustom = (term: string) => {
-    if (!data.actionItems.includes(term)) {
-      onChange({ ...data, actionItems: [...data.actionItems, term] });
-    }
   };
 
   // Combine preset chips with any custom ones the user has added
@@ -39,12 +35,12 @@ export function PlanSection({ data, onChange, visitType }: PlanSectionProps) {
         chips={allChips}
         selectedChips={data.actionItems}
         onToggle={handleToggle}
-        onAddCustom={handleAddCustom}
       />
       <TextInput
         style={styles.textArea}
         value={data.freeText}
         onChangeText={(text) => onChange({ ...data, freeText: text })}
+        onFocus={() => onFieldFocus?.('plan.freeText')}
         placeholder="Treatment plan, additional instructions..."
         placeholderTextColor="#79747E"
         multiline

@@ -106,6 +106,10 @@ export function useGeneratePdf(): UseGeneratePdfReturn {
           detail.prescriptions,
           detail.pet,
           detail.owner,
+          {
+            vetName: detail.vet.fullName,
+            vetLicense: detail.vet.licenseNumber || undefined,
+          },
         );
         await generatePdf(
           html,

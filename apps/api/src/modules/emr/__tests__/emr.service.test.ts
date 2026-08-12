@@ -53,17 +53,30 @@ function createMockDosageService(): {
   } as any;
 }
 
+function createMockPrisma() {
+  return {
+    speciesDosage: {
+      findFirst: vi.fn(),
+    },
+    authAuditLog: {
+      create: vi.fn().mockResolvedValue({}),
+    },
+  } as any;
+}
+
 describe('EmrService', () => {
   let service: EmrService;
   let repository: ReturnType<typeof createMockRepository>;
   let lockService: ReturnType<typeof createMockLockService>;
   let dosageService: ReturnType<typeof createMockDosageService>;
+  let prisma: ReturnType<typeof createMockPrisma>;
 
   beforeEach(() => {
     repository = createMockRepository();
     lockService = createMockLockService();
     dosageService = createMockDosageService();
-    service = new EmrService(repository as any, lockService as any, dosageService as any);
+    prisma = createMockPrisma();
+    service = new EmrService(repository as any, lockService as any, dosageService as any, prisma);
   });
 
   describe('createConsultation', () => {
@@ -136,7 +149,7 @@ describe('EmrService', () => {
       lockService.isLocked.mockResolvedValue({ locked: true, vetName: mockVet.fullName });
       lockService.heartbeat.mockResolvedValue(true);
       repository.saveDraft.mockResolvedValue({});
-      repository.getConsultation.mockResolvedValue(null);
+      repository.getConsultation.mockResolvedValue({ id: 'consult-1', petId: mockPet.id });
 
       await service.saveDraft(
         'consult-1',
@@ -176,6 +189,7 @@ describe('EmrService', () => {
       lockService.isLocked.mockResolvedValue({ locked: true, vetName: mockVet.fullName });
       lockService.heartbeat.mockResolvedValue(true);
       repository.saveDraft.mockResolvedValue({});
+      repository.getConsultation.mockResolvedValue({ id: 'consult-1', petId: mockPet.id });
 
       await service.saveDraft(
         'consult-1',
@@ -185,6 +199,25 @@ describe('EmrService', () => {
       );
 
       expect(repository.updatePetWeight).not.toHaveBeenCalled();
+    });
+
+    // Security: tenant-isolation gap — a caller passing a consultationId that
+    // does not belong to their clinic must be rejected, not silently allowed
+    // to overwrite another clinic's draft.
+    it('rejects with 404 when the consultation does not belong to the caller clinic', async () => {
+      repository.getConsultation.mockResolvedValue(null);
+
+      await expect(
+        service.saveDraft(
+          'consult-owned-by-another-clinic',
+          mockClinic.id,
+          mockVet.id,
+          { assessment: 'Sneaky cross-tenant write' },
+        ),
+      ).rejects.toMatchObject({ code: 'CONSULTATION_NOT_FOUND', statusCode: 404 });
+
+      expect(repository.saveDraft).not.toHaveBeenCalled();
+      expect(lockService.isLocked).not.toHaveBeenCalled();
     });
   });
 
@@ -234,6 +267,160 @@ describe('EmrService', () => {
       );
       // Lock released
       expect(lockService.releaseLock).toHaveBeenCalledWith('consult-1', mockVet.id);
+    });
+
+    it('writes a CONSULTATION_FINALIZED audit log entry on success (EMR-07 / D-62)', async () => {
+      repository.getConsultation.mockResolvedValue({
+        id: 'consult-1',
+        clinicId: mockClinic.id,
+        petId: mockPet.id,
+        vetId: mockVet.id,
+        queueEntryId: null,
+        visitType: 'general',
+        status: 'draft',
+        startedAt: new Date(),
+      });
+      repository.loadDraft.mockResolvedValue({});
+      repository.finalizeConsultation.mockResolvedValue({ id: 'consult-1', status: 'finalized' });
+      lockService.releaseLock.mockResolvedValue(undefined);
+
+      await service.finalize('consult-1', mockClinic.id, mockVet.id);
+
+      expect(prisma.authAuditLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            event: 'CONSULTATION_FINALIZED',
+            userId: mockVet.id,
+            clinicId: mockClinic.id,
+            metadata: expect.objectContaining({
+              consultationId: 'consult-1',
+              petId: mockPet.id,
+              visitType: 'general',
+            }),
+          }),
+        }),
+      );
+    });
+
+    it('writes a PRESCRIPTION_DOSAGE_OVERRIDDEN audit entry when a prescribed dose is out of range (D-28)', async () => {
+      repository.getConsultation.mockResolvedValue({
+        id: 'consult-1',
+        clinicId: mockClinic.id,
+        petId: mockPet.id,
+        vetId: mockVet.id,
+        queueEntryId: null,
+        visitType: 'general',
+        status: 'draft',
+        startedAt: new Date(),
+        pet: { species: 'DOG', weight: 25 },
+      });
+      repository.loadDraft.mockResolvedValue({
+        prescriptions: [{ ...mockPrescriptionItem, drugId: 'drug-1', dosageMg: 1000 }],
+      });
+      repository.finalizeConsultation.mockResolvedValue({ id: 'consult-1', status: 'finalized' });
+      lockService.releaseLock.mockResolvedValue(undefined);
+      prisma.speciesDosage.findFirst.mockResolvedValue({
+        id: 'dose-1',
+        drugId: 'drug-1',
+        species: 'DOG',
+        minDoseMgPerKg: 10,
+        maxDoseMgPerKg: 25,
+        isFixedDose: false,
+        fixedDoseMin: null,
+        fixedDoseMax: null,
+        notes: null,
+      });
+      dosageService.validateDosage.mockReturnValue({
+        level: 'warning',
+        message: 'Dose outside recommended range',
+        enteredDose: 1000,
+        enteredDosePerKg: 40,
+        recommendedMinMg: 250,
+        recommendedMaxMg: 625,
+      });
+
+      await service.finalize('consult-1', mockClinic.id, mockVet.id);
+
+      expect(prisma.speciesDosage.findFirst).toHaveBeenCalledWith({
+        where: { drugId: 'drug-1', species: 'DOG' },
+      });
+      expect(prisma.authAuditLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            event: 'PRESCRIPTION_DOSAGE_OVERRIDDEN',
+            userId: mockVet.id,
+            clinicId: mockClinic.id,
+            metadata: expect.objectContaining({
+              consultationId: 'consult-1',
+              drugName: mockPrescriptionItem.drugName,
+              enteredDoseMg: 1000,
+            }),
+          }),
+        }),
+      );
+    });
+
+    it('does not write a dosage-override audit entry when the dose is within range (D-28)', async () => {
+      repository.getConsultation.mockResolvedValue({
+        id: 'consult-1',
+        clinicId: mockClinic.id,
+        petId: mockPet.id,
+        vetId: mockVet.id,
+        queueEntryId: null,
+        visitType: 'general',
+        status: 'draft',
+        startedAt: new Date(),
+        pet: { species: 'DOG', weight: 25 },
+      });
+      repository.loadDraft.mockResolvedValue({
+        prescriptions: [{ ...mockPrescriptionItem, drugId: 'drug-1', dosageMg: 250 }],
+      });
+      repository.finalizeConsultation.mockResolvedValue({ id: 'consult-1', status: 'finalized' });
+      lockService.releaseLock.mockResolvedValue(undefined);
+      prisma.speciesDosage.findFirst.mockResolvedValue({
+        id: 'dose-1',
+        drugId: 'drug-1',
+        species: 'DOG',
+        minDoseMgPerKg: 10,
+        maxDoseMgPerKg: 25,
+        isFixedDose: false,
+        fixedDoseMin: null,
+        fixedDoseMax: null,
+        notes: null,
+      });
+      dosageService.validateDosage.mockReturnValue(null);
+
+      await service.finalize('consult-1', mockClinic.id, mockVet.id);
+
+      expect(prisma.authAuditLog.create).not.toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ event: 'PRESCRIPTION_DOSAGE_OVERRIDDEN' }),
+        }),
+      );
+    });
+
+    it('does not block finalize when the dosage lookup fails unexpectedly (D-28 best-effort)', async () => {
+      repository.getConsultation.mockResolvedValue({
+        id: 'consult-1',
+        clinicId: mockClinic.id,
+        petId: mockPet.id,
+        vetId: mockVet.id,
+        queueEntryId: null,
+        visitType: 'general',
+        status: 'draft',
+        startedAt: new Date(),
+        pet: { species: 'DOG', weight: 25 },
+      });
+      repository.loadDraft.mockResolvedValue({
+        prescriptions: [{ ...mockPrescriptionItem, drugId: 'drug-1', dosageMg: 1000 }],
+      });
+      repository.finalizeConsultation.mockResolvedValue({ id: 'consult-1', status: 'finalized' });
+      lockService.releaseLock.mockResolvedValue(undefined);
+      prisma.speciesDosage.findFirst.mockRejectedValue(new Error('DB unreachable'));
+
+      const result = await service.finalize('consult-1', mockClinic.id, mockVet.id);
+
+      expect(result.status).toBe('finalized');
     });
 
     it('stores follow-up date and reason when provided (D-09)', async () => {
@@ -367,6 +554,86 @@ describe('EmrService', () => {
           '',
         ),
       ).rejects.toThrow();
+    });
+
+    it('writes an ADDENDUM_ADDED audit log entry on success (EMR-07 / D-62)', async () => {
+      repository.getConsultation.mockResolvedValue({
+        id: 'consult-1',
+        status: 'finalized',
+        addenda: [],
+      });
+      repository.addAddendum.mockResolvedValue({
+        id: 'consult-1',
+        addenda: [{ text: 'Additional note' }],
+      });
+
+      await service.addAddendum(
+        'consult-1',
+        mockClinic.id,
+        mockVet.id,
+        mockVet.fullName,
+        'Additional note',
+      );
+
+      expect(prisma.authAuditLog.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            event: 'ADDENDUM_ADDED',
+            userId: mockVet.id,
+            clinicId: mockClinic.id,
+            metadata: expect.objectContaining({
+              consultationId: 'consult-1',
+              addendumId: expect.any(String),
+            }),
+          }),
+        }),
+      );
+    });
+  });
+
+  describe('getDraftData', () => {
+    it('rejects with 404 when the consultation is not found', async () => {
+      repository.getConsultation.mockResolvedValue(null);
+
+      await expect(
+        service.getDraftData('consult-missing', mockClinic.id),
+      ).rejects.toMatchObject({ code: 'CONSULTATION_NOT_FOUND', statusCode: 404 });
+    });
+
+    it('overlays live draft fields onto the consultation while still in draft status', async () => {
+      repository.getConsultation.mockResolvedValue({
+        ...mockConsultationDraft,
+        subjective: null,
+        assessment: null,
+      });
+      repository.loadDraft.mockResolvedValue({
+        subjective: mockSaveDraftInput.subjective,
+        assessment: mockSaveDraftInput.assessment,
+      });
+
+      const result = await service.getDraftData(mockConsultationDraft.id, mockClinic.id);
+
+      expect(result.subjective).toEqual(mockSaveDraftInput.subjective);
+      expect(result.assessment).toBe(mockSaveDraftInput.assessment);
+      expect(result.id).toBe(mockConsultationDraft.id);
+    });
+
+    it('falls back to the consultation row values when no draft row exists', async () => {
+      repository.getConsultation.mockResolvedValue(mockConsultationDraft);
+      repository.loadDraft.mockResolvedValue(null);
+
+      const result = await service.getDraftData(mockConsultationDraft.id, mockClinic.id);
+
+      expect(result).toEqual(mockConsultationDraft);
+    });
+
+    it('returns the consultation row as-is once finalized (no draft overlay)', async () => {
+      repository.getConsultation.mockResolvedValue(mockConsultation);
+
+      const result = await service.getDraftData(mockConsultation.id, mockClinic.id);
+
+      expect(result).toEqual(mockConsultation);
+      expect(repository.loadDraft).not.toHaveBeenCalled();
     });
   });
 

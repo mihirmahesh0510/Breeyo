@@ -1,3 +1,5 @@
+import type { PrescriptionItem } from './drug.js';
+
 export type VisitType = 'general' | 'surgery' | 'vaccination';
 export type ConsultationStatus = 'draft' | 'finalized';
 export type VitalRangeStatus = 'normal' | 'slightlyAbnormal' | 'criticallyAbnormal';
@@ -68,6 +70,7 @@ export interface Consultation {
   followUpDate: Date | null;
   followUpReason: string | null;
   addenda: AddendumEntry[];
+  prescriptions: PrescriptionItem[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -84,6 +87,7 @@ export interface ConsultationDraftState {
   careInstructions: string;
   referral: ReferralData | null;
   rxNotes: string;
+  prescriptions: PrescriptionItem[];
   isDirty: boolean;
   isFinalizing: boolean;
   lastSavedAt: Date | null;
@@ -118,6 +122,7 @@ export interface SaveDraftInput {
   careInstructions?: string;
   referral?: ReferralData | null;
   rxNotes?: string;
+  prescriptions?: PrescriptionItem[];
 }
 
 export interface FinalizeInput {

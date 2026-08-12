@@ -7,6 +7,7 @@ import type {
   PlanData,
   ReferralData,
   VisitType,
+  PrescriptionItem,
 } from '@breeyo/types';
 
 interface ConsultationDraftStore extends ConsultationDraftState {
@@ -22,6 +23,7 @@ interface ConsultationDraftStore extends ConsultationDraftState {
   updateCareInstructions: (text: string) => void;
   updateReferral: (data: ReferralData | null) => void;
   updateRxNotes: (text: string) => void;
+  updatePrescriptions: (items: PrescriptionItem[]) => void;
   markSaved: () => void;
   markSaving: () => void;
   setFinalizing: (value: boolean) => void;
@@ -64,6 +66,7 @@ const INITIAL_STATE: ConsultationDraftState = {
   careInstructions: '',
   referral: null,
   rxNotes: '',
+  prescriptions: [],
   isDirty: false,
   isFinalizing: false,
   lastSavedAt: null,
@@ -121,6 +124,9 @@ export const useConsultationDraftStore = create<ConsultationDraftStore>((set) =>
   updateRxNotes: (text) =>
     set({ rxNotes: text, isDirty: true }),
 
+  updatePrescriptions: (items) =>
+    set({ prescriptions: items, isDirty: true }),
+
   markSaved: () =>
     set({ isDirty: false, lastSavedAt: new Date() }),
 
@@ -140,6 +146,7 @@ export const useConsultationDraftStore = create<ConsultationDraftStore>((set) =>
       careInstructions: (data.careInstructions as string) || '',
       referral: (data.referral as ReferralData) || null,
       rxNotes: (data.rxNotes as string) || '',
+      prescriptions: (data.prescriptions as PrescriptionItem[]) || [],
       isDirty: false,
       isFinalizing: false,
       lastSavedAt: null,

@@ -23,7 +23,7 @@ interface FileToUpload {
 }
 
 interface UploadResult {
-  attachment: ConsultationAttachment;
+  data: ConsultationAttachment;
 }
 
 interface UseFileUploadReturn {
@@ -122,7 +122,7 @@ export function useFileUpload(): UseFileUploadReturn {
           },
         );
 
-        const { uploadUrl, s3Key } = presignedResponse.data;
+        const { attachmentId, uploadUrl } = presignedResponse.data;
 
         setProgress(0.3);
 
@@ -142,18 +142,16 @@ export function useFileUpload(): UseFileUploadReturn {
         setProgress(0.8);
 
         // 6. Confirm upload with API
-        // Extract attachment ID from s3Key or use a derived approach
         const confirmResponse = await apiClient<UploadResult>(
-          `/api/v1/consultations/${consultationId}/attachments/confirm`,
+          `/api/v1/consultations/${consultationId}/attachments/${attachmentId}/confirm`,
           {
             method: 'POST',
             token: accessToken || undefined,
-            body: JSON.stringify({ s3Key }),
           },
         );
 
         setProgress(1.0);
-        return confirmResponse.attachment;
+        return confirmResponse.data;
       } catch (err) {
         const message =
           err instanceof Error ? err.message : 'Upload failed. Please try again.';

@@ -11,7 +11,7 @@ export function buildOwnerSummaryHtml(
   prescriptions: PrescriptionItem[],
   pet: Pet,
   owner: Owner,
-  options?: { logoBase64?: string },
+  options?: { logoBase64?: string; vetName?: string; vetLicense?: string },
 ): string {
   const date = new Date(consultation.startedAt).toLocaleDateString('en-IN', {
     day: '2-digit',
@@ -155,6 +155,11 @@ export function buildOwnerSummaryHtml(
   <div class="footer">
     <p>This is a computer-generated summary. For any concerns, please contact the clinic.</p>
     <p>${escapeHtml(clinic.name)} | ${escapeHtml(clinic.contactPhone)}</p>
+    ${options?.vetName ? `
+    <p>
+      Attending Veterinarian: ${escapeHtml(options.vetName)}${options?.vetLicense ? ` (Lic. ${escapeHtml(options.vetLicense)})` : ''}
+    </p>
+    ` : ''}
   </div>
 </body>
 </html>`;

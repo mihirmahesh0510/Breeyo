@@ -99,7 +99,10 @@ export function useDosageCalculation() {
           `${prescription.dosage || '1'} ${prescription.formulation} (${prescription.strength})`,
         );
       } else if (prescription.dosage) {
-        parts.push(`${prescription.dosage}mg`);
+        // Free-text dosage (e.g. "250mg" or "5ml") already carries its own unit;
+        // only append "mg" when the vet entered a bare number.
+        const hasUnit = /[a-zA-Z]/.test(prescription.dosage);
+        parts.push(hasUnit ? prescription.dosage : `${prescription.dosage}mg`);
       }
 
       // Route

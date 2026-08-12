@@ -94,6 +94,21 @@ describe('ConsultationLockService', () => {
         }),
       });
     });
+
+    it('captures previousVetId when taking over a stale lock (D-72)', async () => {
+      const pastDate = new Date(Date.now() - 60000);
+      prisma.consultationLock.findUnique.mockResolvedValue({
+        consultationId: 'consult-1',
+        vetId: 'vet-2',
+        vetName: 'Dr. Other',
+        expiresAt: pastDate,
+      });
+      prisma.consultationLock.update.mockResolvedValue({});
+
+      const result = await service.acquireLock('consult-1', 'vet-1', 'Dr. Test');
+
+      expect(result.previousVetId).toBe('vet-2');
+    });
   });
 
   describe('heartbeat', () => {
