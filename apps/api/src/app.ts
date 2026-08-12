@@ -9,6 +9,8 @@ import redisPlugin from './plugins/redis.js';
 import socketPlugin from './realtime/socket.js';
 import { errorHandler } from './middleware/error-handler.js';
 import { scheduleMidnightArchive } from './jobs/midnight-archive.js';
+import { scheduleExpiryCron } from './jobs/expiry-cron.job.js';
+import { createNotificationBus } from './modules/notifications/notification-bus.js';
 
 export interface BuildAppOptions {
   logger?: boolean;
@@ -87,9 +89,21 @@ export async function buildApp(
   await app.register(import('./modules/attachment/attachment.routes.js'), { prefix: '/api/v1' });
   await app.register(import('./modules/vaccination/vaccination.routes.js'), { prefix: '/api/v1' });
 
+  // Phase 5: Inventory Management
+  await app.register(import('./modules/inventory/inventory.routes.js'), { prefix: '/api/v1' });
+  await app.register(import('./modules/inventory/dispense.routes.js'), { prefix: '/api/v1' });
+
   // Midnight archive cron (skip in test environment)
   if (!isTest) {
     scheduleMidnightArchive(app.prisma, app.io);
+
+    // D-56: daily expiry cron -- marks newly-expired batches at midnight IST
+    // and notifies the clinic via the existing BullMQ notifications queue.
+    const expiryNotificationBus = createNotificationBus(app.redis);
+    app.addHook('onClose', async () => {
+      await expiryNotificationBus.close();
+    });
+    scheduleExpiryCron(app.prisma, expiryNotificationBus);
   }
 
   return app;
