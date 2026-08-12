@@ -54,9 +54,12 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     'expo-secure-store',
     'expo-sqlite',
     [
-      'react-native-vision-camera',
+      'expo-camera',
       {
-        cameraPermissionText: 'Breeyo needs camera access to scan barcodes',
+        cameraPermission: 'Breeyo needs camera access to scan barcodes',
+        // Barcode scanning only -- no video/audio capture in this app.
+        microphonePermission: false,
+        recordAudioAndroid: false,
       },
     ],
   ],
