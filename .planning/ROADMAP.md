@@ -202,21 +202,52 @@ Plans:
   3. WhatsApp integration uses a clean abstraction layer where the simulator can be swapped for the real Meta Business API via configuration
   4. All WhatsApp message flows are logged and viewable in the mobile inbox/log surface used by staff
 
-**Plans**: 10 plans
+**Plans**: 16 plans
 **UI hint**: yes
 
 Plans:
+**Wave 0** *(blocking prerequisites — nothing else can be verified until these land)*
 
-- [ ] 07-01-PLAN.md -- Shared WhatsApp contracts, schemas, booking state machine, and shared tests
-- [ ] 07-06-PLAN.md -- Prisma schema registration plus Wave 0 API test scaffolds
-- [ ] 07-02-PLAN.md -- Provider registry, simulator pipeline, persistence services, dispatch, consent, and template rendering
-- [ ] 07-07-PLAN.md -- Inbox/config/simulator/owner-preference controllers and authenticated route registration
-- [ ] 07-10-PLAN.md -- Delivery-status service, validated webhook pipeline, and outbound/simulator workers
-- [ ] 07-03-PLAN.md -- Booking conversation flow, booking records, provisional capture, and booking action endpoints
-- [ ] 07-09-PLAN.md -- Reminder scheduling, bounded retries, failure tasks, and reminder route wiring
-- [ ] 07-04-PLAN.md -- Mobile WhatsApp hooks, store, and reusable components
-- [ ] 07-08-PLAN.md -- Mobile inbox/thread/config/booking-detail screens and navigation gating
-- [ ] 07-05-PLAN.md -- Cross-module send integrations, owner preference UX, invalid-number correction flow, and human verification
+- [ ] 07-01-PLAN.md -- [BLOCKING] Backfill the missing Phase 3-6 Prisma migrations (D-19) plus the Phase 7 WhatsApp data model and migration
+- [ ] 07-02-PLAN.md -- Shared contracts: @breeyo/types domain types and constant tables, socket events, @breeyo/validators Zod schemas with per-template variable caps
+- [ ] 07-03-PLAN.md -- Mobile UI library spike (D-17): React Native Paper v5 + @breeyo/ui on Expo SDK 52, or a recorded deviation
+
+**Wave 1** *(blocked on Wave 0)*
+
+- [ ] 07-04-PLAN.md -- API test infrastructure: Phase 7 factories, cleanup ordering, shared IST date module, audit events, WHATSAPP_* env vars, integration suite scaffolds
+- [ ] 07-05-PLAN.md -- WaProvider port, capability guards, phone normalizer, constraint-enforcing simulator adapter, provider registry (WHA-04)
+- [ ] 07-06-PLAN.md -- Mobile presentational components and UI store with a tested pure-formatting module
+
+**Wave 2** *(blocked on Wave 1)*
+
+- [ ] 07-07-PLAN.md -- Cloud API adapter: Meta payload mapper, error-code normalization, raw-body HMAC webhook verification, fetch-based provider (WHA-04)
+- [ ] 07-08-PLAN.md -- Template registry, repository, BullMQ queues, send authorization (consent/STOP/category), persist-then-dispatch send service
+
+**Wave 3** *(blocked on Wave 2)*
+
+- [ ] 07-09-PLAN.md -- Delivery-status funnel with monotonic ranking, inbound router, outbound and simulator workers, unauthenticated webhook plugin (WHA-05)
+
+**Wave 4** *(blocked on Wave 3)*
+
+- [ ] 07-10-PLAN.md -- Booking conversation: slot generation, auto-confirm, unique-constraint slot arbitration, staff-only move and cancel (WHA-03)
+- [ ] 07-11-PLAN.md -- Reminder scheduling: latest-record-only discovery, two-touch tasks, bounded escalation, daily 08:30 IST BullMQ sweep (WHA-01)
+
+**Wave 5** *(blocked on Wave 4)*
+
+- [ ] 07-12-PLAN.md -- API read surface: inbox filters and search, thread detail, route registration, app.ts wiring, authz and tenant-isolation tests
+
+**Wave 6** *(blocked on Wave 5)*
+
+- [ ] 07-13-PLAN.md -- API action surface: owner preferences, consent, Admin-only simulator config, booking move/cancel, mark resolved, invoice delivery proof
+- [ ] 07-14-PLAN.md -- Mobile data layer: query-key factory, thread queries, realtime socket, mutation hooks, TemplateSendSheet
+
+**Wave 7** *(blocked on Wave 6)*
+
+- [ ] 07-15-PLAN.md -- Mobile inbox and thread screens with four states each, role gating (D-20), navigation, human verification
+
+**Wave 8** *(blocked on Wave 7)*
+
+- [ ] 07-16-PLAN.md -- Admin simulator config screen, owner preference and invalid-number flows, booking detail, cross-module send launcher, end-of-phase human verification
 
 ### Phase 8: Scheduling & Calendar
 
