@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "expo start",
     "build": "echo 'mobile build handled by EAS'",
-    "test": "vitest",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "lint": "echo 'no lint configured'"
   },
   "dependencies": {
