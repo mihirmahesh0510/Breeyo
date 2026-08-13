@@ -20,7 +20,11 @@ export const createItemSchema = z.object({
   // INV-09: HSN/SAC code and GST rate are fully optional on every item regardless of
   // category, per D-62 (no category-based enforcement, unlike D-27's expiry requirement).
   hsnSacCode: z.string().regex(/^[0-9]{4,8}$/, 'HSN/SAC code must be 4-8 digits').nullable().optional(),
-  gstRate: z.number().min(0, 'GST rate cannot be negative').max(28, 'GST rate cannot exceed 28%').nullable().optional(),
+  // Ceiling is the highest current GST 2.0 slab (see GST_RATE_SLABS in
+  // @breeyo/types). It was 28 before the 56th Council notification retired that
+  // slab and introduced a higher one; leaving it there would have rejected the
+  // very rate the shared GstRatePicker now offers.
+  gstRate: z.number().min(0, 'GST rate cannot be negative').max(40, 'GST rate cannot exceed 40%').nullable().optional(),
   barcodes: z.array(barcodeEntrySchema).optional().default([]),
 });
 

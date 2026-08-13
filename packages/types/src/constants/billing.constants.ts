@@ -39,3 +39,53 @@ export const PRESET_SERVICES: readonly { name: string; price: number }[] = [
   { name: 'Grooming - Basic', price: 80000 },
   { name: 'Grooming - Full', price: 150000 },
 ] as const;
+
+/**
+ * Credit note reasons (D-22). The five options in the Credit Note Screen's
+ * reason picker; `other` requires free-text notes to be useful.
+ */
+export const CREDIT_NOTE_REASONS = [
+  'incorrect_charge',
+  'service_not_provided',
+  'product_returned',
+  'price_adjustment',
+  'other',
+] as const;
+export type CreditNoteReason = (typeof CREDIT_NOTE_REASONS)[number];
+
+export const CREDIT_NOTE_REASON_LABELS: Readonly<Record<CreditNoteReason, string>> = {
+  incorrect_charge: 'Incorrect charge',
+  service_not_provided: 'Service not provided',
+  product_returned: 'Product returned',
+  price_adjustment: 'Price adjustment',
+  other: 'Other',
+} as const;
+
+/**
+ * Billing dashboard filter chips (D-24), in display order with `all` selected
+ * by default.
+ *
+ * This is a *filter* vocabulary, not the status vocabulary: it is lowercase, it
+ * has no `finalized` chip (a finalized invoice with no payment is surfaced
+ * under `unpaid`), and `all` is not a status at all. Do not conflate it with
+ * `INVOICE_STATUSES`.
+ */
+export const INVOICE_LIST_FILTERS = [
+  'all',
+  'draft',
+  'unpaid',
+  'overdue',
+  'paid',
+  'voided',
+] as const;
+export type InvoiceListFilter = (typeof INVOICE_LIST_FILTERS)[number];
+
+/** Sort options for the billing dashboard invoice list. */
+export const INVOICE_LIST_SORTS = [
+  'newest',
+  'oldest',
+  'amount_high',
+  'amount_low',
+  'due_date',
+] as const;
+export type InvoiceListSort = (typeof INVOICE_LIST_SORTS)[number];
