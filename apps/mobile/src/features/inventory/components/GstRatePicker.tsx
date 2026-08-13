@@ -24,15 +24,17 @@ interface RateOption {
 }
 
 // "None" (no explicit rate -- Phase 6 falls back to the clinic default) plus the
-// 5 standard Indian GST slabs (INV-09, D-62: fully optional, no enforcement).
+// current Indian GST slabs (INV-09, D-62: fully optional, no enforcement). The
+// chips are derived from GST_RATE_SLABS, so a Council notification that changes
+// the slabs updates this picker without touching this file.
 const RATE_OPTIONS: RateOption[] = [
   { value: null, label: 'None' },
   ...GST_RATE_SLABS.map((rate) => ({ value: rate, label: `${rate}%` })),
 ];
 
 /**
- * GST rate slab picker (INV-09). A row of selectable chips for "None" plus the
- * 5 standard GST slabs. Used on the item create/edit form; selection can also
+ * GST rate slab picker (INV-09). A row of selectable chips for "None" plus each
+ * current GST slab. Used on the item create/edit form; selection can also
  * be driven programmatically when the user taps an HSN autocomplete suggestion
  * (its defaultGstRate auto-selects the matching chip here).
  */
