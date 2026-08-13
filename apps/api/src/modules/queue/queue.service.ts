@@ -190,6 +190,16 @@ export class QueueService {
   }
 
   /**
+   * Archives WAITING/DONE/NO_SHOW entries checked in before today, scoped
+   * to the calling clinic (the global midnight sweep calls the repository
+   * directly with no clinicId).
+   * D-23: IN_CONSULT entries persist past midnight, everything else archives.
+   */
+  async archiveOldEntries(clinicId: string) {
+    return this.repository.archiveEntries(QueueRepository.getTodayIST(), clinicId);
+  }
+
+  /**
    * Broadcasts an event to all clients in a clinic room.
    */
   private broadcast(clinicId: string, event: string, data: unknown) {

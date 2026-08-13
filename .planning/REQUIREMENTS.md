@@ -51,6 +51,10 @@ Requirements for Beta launch (20 pilot clinics, solo vets).
 - [ ] **EMR-06**: User can attach lab/imaging result files to a consultation record
 - [ ] **EMR-07**: All EMR changes are audit-trailed (who changed what, when)
 
+### Onboarding / Seed Data
+
+- [ ] **ONB-02**: System ships with seed data: common veterinary drug database (50 entries for Beta, 200-300 for production), breed lists per species, and default service catalog presets (consultation, vaccination, surgery, grooming)
+
 ### Inventory Management
 
 - [ ] **INV-01**: User can add inventory items with name, category, unit, and price
@@ -70,6 +74,11 @@ Requirements for Beta launch (20 pilot clinics, solo vets).
 - [ ] **BIL-04**: User can print or export invoice as PDF
 - [ ] **BIL-05**: User can accept payment via Razorpay (UPI and card)
 - [ ] **BIL-06**: Payment confirmation updates invoice status automatically (via webhook)
+- [ ] **BIL-07**: Full GST-compliant invoicing with CGST/SGST/IGST breakdown and HSN/SAC codes (moved into v1 scope 2026-08-12 -- see Phase 6 06-RESEARCH.md Contradiction 1; veterinary services are GST-exempt by law, and both upstream catalogs already carry the HSN/SAC + rate data needed)
+
+### Reporting
+
+- [ ] **RPT-01**: Billing dashboard shows a daily summary: patients seen today, revenue collected today, total outstanding balance (added 2026-08-12 -- previously referenced in ROADMAP.md Phase 6 but undefined here)
 
 ### WhatsApp Communication (Simulator)
 
@@ -94,6 +103,7 @@ Requirements for Beta launch (20 pilot clinics, solo vets).
 - [ ] **PLT-03**: Core mobile flows (checkin, barcode scan, note-taking) work offline with auto-sync
 - [ ] **PLT-04**: Multi-tenant architecture with data isolation (Clinic A cannot see Clinic B data)
 - [ ] **PLT-05**: All data stored in India-region data center (AWS Mumbai)
+- [ ] **PLT-07**: App meets minimum performance bar under real-world conditions -- cold start <3s, API p95 <500ms, queue action latency <2s
 
 ## v2 Requirements
 
@@ -101,7 +111,6 @@ Deferred to post-Beta. Tracked but not in current roadmap.
 
 ### Billing Enhancements
 
-- **BIL-07**: Full GST-compliant invoicing with CGST/SGST/IGST breakdown and HSN/SAC codes
 - **BIL-08**: Payment link generation shareable via WhatsApp/SMS
 - **BIL-09**: WhatsApp invoice delivery with embedded pay links (real API)
 
@@ -185,6 +194,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | BIL-04 | Phase 6 | Pending |
 | BIL-05 | Phase 6 | Pending |
 | BIL-06 | Phase 6 | Pending |
+| BIL-07 | Phase 6 | Pending |
+| RPT-01 | Phase 6 | Pending |
 | WHA-01 | Phase 7 | Pending |
 | WHA-02 | Phase 7 | Pending |
 | WHA-03 | Phase 7 | Pending |
@@ -200,12 +211,13 @@ Which phases cover which requirements. Updated during roadmap creation.
 | PLT-03 | Phase 10 | Pending |
 | PLT-04 | Phase 1 | Pending |
 | PLT-05 | Phase 1 | Pending |
+| PLT-07 | Phase 10 | Pending |
 
 **Coverage:**
-- v1 requirements: 58 total
-- Mapped to phases: 58
+- v1 requirements: 61 total
+- Mapped to phases: 61
 - Unmapped: 0
 
 ---
 *Requirements defined: 2026-04-10*
-*Last updated: 2026-04-13 after roadmap revision (Phase 2 UI/UX inserted)*
+*Last updated: 2026-08-12 -- BIL-07 moved from v2 to v1 (Phase 6), RPT-01 added (Phase 6), during /gsd-plan-phase 6 research resolution*

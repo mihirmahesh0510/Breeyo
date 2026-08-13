@@ -35,4 +35,10 @@ export default async function queueRoutes(fastify: FastifyInstance) {
     preHandler,
     handler: controller.callNextHandler,
   });
+
+  // Archive entries from before today (D-23)
+  fastify.post('/queue/archive', {
+    preHandler,
+    handler: controller.archiveEntriesHandler,
+  });
 }

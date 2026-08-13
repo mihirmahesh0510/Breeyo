@@ -4,13 +4,19 @@
   "requiresCompatibilities": ["FARGATE"],
   "cpu": "256",
   "memory": "512",
-  "executionRoleArn": "${EXECUTION_ROLE_ARN}",
-  "taskRoleArn": "${TASK_ROLE_ARN}",
+  "executionRoleArn": "arn:aws:iam::401046276988:role/breeyo-staging-ecs-execution-role",
+  "taskRoleArn": "arn:aws:iam::401046276988:role/breeyo-staging-ecs-task-role",
   "containerDefinitions": [
     {
       "name": "breeyo-api",
       "image": "PLACEHOLDER",
       "essential": true,
+      "dependsOn": [
+        {
+          "containerName": "redis",
+          "condition": "HEALTHY"
+        }
+      ],
       "portMappings": [
         {
           "containerPort": 3000,
@@ -66,6 +72,26 @@
           "awslogs-group": "/ecs/breeyo-api-staging",
           "awslogs-region": "ap-south-1",
           "awslogs-stream-prefix": "ecs"
+        }
+      }
+    },
+    {
+      "name": "redis",
+      "image": "redis:7-alpine",
+      "essential": true,
+      "healthCheck": {
+        "command": ["CMD-SHELL", "redis-cli ping || exit 1"],
+        "interval": 10,
+        "timeout": 5,
+        "retries": 3,
+        "startPeriod": 10
+      },
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/breeyo-api-staging",
+          "awslogs-region": "ap-south-1",
+          "awslogs-stream-prefix": "redis"
         }
       }
     }

@@ -109,7 +109,7 @@ Inherited from Phase 2 UI-SPEC. Phase 4 color application map:
 | `error` (#BA1A1A) | Vaccination "Overdue" badge | `errorContainer` (#FFDAD6) bg on preventive care card |
 | `error` (#BA1A1A) | Remove medication button (icon) | Trash icon on prescription card |
 | `error` (#BA1A1A) | Behavioral warning/allergy chip | `errorContainer` bg below patient banner (D-03) |
-| `error` (#BA1A1A) | Discard draft destructive button text | Confirmation dialog for abandoning consultation |
+| `error` (#BA1A1A) | "Delete Draft" destructive button text | "Leave consultation?" dialog (D-67) |
 
 Accent is NEVER used for: accordion header backgrounds (use surfaceVariant), SOAP text area backgrounds, body system checklist row backgrounds, prescription card backgrounds, form field borders (use outline), or decorative elements.
 
@@ -431,7 +431,7 @@ Tone inherited from Phase 2: warm, direct, action-oriented. Short sentences. Hin
 
 | Action | Trigger | Confirmation Approach | Confirmation Copy |
 |--------|---------|-----------------------|-------------------|
-| Discard consultation draft | Back navigation during active draft with unsaved changes | Alert dialog | Title: "Discard consultation?" Body: "All unsaved changes will be lost. Auto-saved data will be preserved." Confirm: "Discard" (error text button) Cancel: "Keep Editing" (text, neutral) |
+| Leave consultation draft | Back navigation during active draft | Alert dialog | Title: "Leave consultation?" Body: "Your consultation draft has been auto-saved." Button 1: "Save & Leave" (primary text button -- preserves draft, vet resumes later via ResumeBanner) Button 2: "Delete Draft" (error text button -- permanently deletes draft with secondary confirmation: "Are you sure? This cannot be undone.") Cancel: "Keep Editing" (text, neutral) (D-67) |
 | Remove medication from prescription list | Tap trash icon on medication card | Inline confirmation | Medication card shows "Remove [Drug Name]?" with "Remove" (error text) + "Keep" (text neutral) |
 | Delete attached file | Tap trash icon on file thumbnail | Inline confirmation | File card shows "Remove this file?" with "Remove" (error text) + "Keep" (text neutral) |
 | Override dosage warning | Continue with out-of-range dosage | No destructive confirmation (soft warning with override) | Warning banner remains visible; vet saves normally. Logged in audit trail |
@@ -1081,7 +1081,7 @@ No third-party shadcn registries. shadcn is not applicable to this React Native 
 | Copywriting: PDF | Phase 4 CONTEXT D-45-D-48 (printable documents) |
 | Copywriting: Addendum | Claude's Discretion (post-finalization editability) |
 | Copywriting: Entry/Resume | Claude's Discretion (consultation entry flow, resume flow) |
-| Copywriting: Destructive | Phase 4 CONTEXT D-04 (End Consultation), D-05 (discard), D-29 (remove medication) |
+| Copywriting: Destructive | Phase 4 CONTEXT D-04 (End Consultation), D-67 (Save & Leave / Delete Draft), D-29 (remove medication) |
 | Component Inventory | Phase 4 CONTEXT (all D-01-D-62), RESEARCH.md architecture patterns |
 | Interaction Contracts: Consultation | Phase 4 CONTEXT D-01, D-04, D-05, D-06, D-07, D-08, D-09, D-10, D-11, D-13 |
 | Interaction Contracts: SOAP | Phase 4 CONTEXT D-15-D-21 |

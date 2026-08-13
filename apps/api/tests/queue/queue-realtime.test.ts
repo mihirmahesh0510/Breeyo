@@ -75,7 +75,7 @@ describe('Queue Real-time (QUE-02)', () => {
     // Clean queue entries first (depends on Pet), then other tables
     await prisma.queueEntry.deleteMany();
     await prisma.pet.deleteMany();
-    await prisma.owner.deleteMany();
+    await prisma.petOwner.deleteMany();
     await cleanupTestData();
   });
 

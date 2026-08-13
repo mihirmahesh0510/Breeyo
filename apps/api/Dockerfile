@@ -54,6 +54,10 @@ COPY --from=builder /app/pnpm-lock.yaml ./
 # Install production dependencies only
 RUN pnpm install --frozen-lockfile --prod
 
+# Generate the Prisma client against the production dependency tree --
+# @prisma/client ships as a stub until `prisma generate` runs against it.
+RUN pnpm --filter @breeyo/api exec prisma generate
+
 EXPOSE 3000
 
 CMD ["node", "apps/api/dist/server.js"]

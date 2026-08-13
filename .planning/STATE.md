@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Phase 03 merged to main (2026-08-03)
-last_updated: "2026-08-03T17:36:33.000Z"
-last_activity: 2026-08-03 -- Phase 03 merged to main (PR #3)
+stopped_at: Phase 8 UI-SPEC approved
+last_updated: "2026-08-12T20:20:11.943Z"
+last_activity: 2026-08-12 -- Phase 8 planning complete
 progress:
   total_phases: 10
-  completed_phases: 3
-  total_plans: 67
-  completed_plans: 15
-  percent: 30
+  completed_phases: 0
+  total_plans: 98
+  completed_plans: 2
+  percent: 0
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-08-03)
 
 **Core value:** Solo vets can manage their entire practice -- walk-ins, medical records, inventory, and billing -- from their phone without spending time on admin work.
-**Current focus:** Phase 4: EMR & Clinical Records (8 plans ready, execute next)
+**Current focus:** Phase 4 complete. Phase 5: Inventory & Pharmacy next.
 
 ## Current Position
 
-Phase: 4 of 10 (EMR & Clinical Records)
-Plan: 0 of 8 in current phase
+Phase: 4 of 10 (EMR & Clinical Records) — COMPLETE
+Plan: 8 of 8 in current phase
 Status: Ready to execute
-Last activity: 2026-08-03 -- Phase 03 merged to main (PR #3)
+Last activity: 2026-08-12 -- Phase 8 planning complete
 
-Progress: [███░░░░░░░] 30%
+Progress: [█████░░░░░] 53%
 
 ## Performance Metrics
 
@@ -47,7 +47,7 @@ Progress: [███░░░░░░░] 30%
 | 01 Foundation & Auth | 3/3 | Done | 2026-08-03 |
 | 02 UI/UX Design System | 4/4 | Done | 2026-08-03 |
 | 03 Patient & Queue | 8/8 | Done | 2026-08-03 |
-| 04 EMR & Clinical | 0/8 | Next | - |
+| 04 EMR & Clinical | 8/8 | Done | pending merge |
 
 **Recent Trend:**
 
@@ -69,13 +69,16 @@ Recent decisions affecting current work:
 - Offline support designed from foundation, hardened in Phase 10
 - UI/UX Design & Design System phase inserted before feature phases to establish consistent patterns, component library, and mobile-first UX before any feature UI is built
 
-### What's Built (Phases 01-03)
+- Used plain React Native components for consultation screen (react-native-paper not in mobile dependencies)
+- Accordion implemented inline in ConsultationScreen (no external accordion library needed)
 
-- **API modules:** auth, clinic, notifications, patient, queue (5 modules)
-- **Mobile features:** patient registration, queue board with real-time updates
-- **Shared packages:** @breeyo/ui (26 components), @breeyo/validators, @breeyo/types, @breeyo/config
+### What's Built (Phases 01-04 complete)
+
+- **API modules:** auth, clinic, notifications, patient, queue, consultation, vaccination, service-catalog (8 modules)
+- **Mobile features:** patient registration, queue board, consultation SOAP screen with auto-save, prescription workflow, voice-to-text, file attachments, medical history timeline, preventive care tracking, PDF generation, consultation detail view, resume banner, vaccination/deworming forms
+- **Shared packages:** @breeyo/ui (26 components), @breeyo/validators, @breeyo/types (with EMR, drug, vaccination, attachment, billing types), @breeyo/config
 - **Infrastructure:** PostgreSQL with RLS, Redis + BullMQ, JWT auth, Socket.IO, CI/CD pipelines
-- **Database models:** User, Clinic, ClinicMember, Role, Permission, PetOwner, Pet, QueueEntry, Notification, AuditLog, ConsentRecord, RefreshToken, OtpCode
+- **Database models:** User, Clinic, ClinicMember, Role, Permission, PetOwner, Pet, QueueEntry, Notification, AuditLog, ConsentRecord, RefreshToken, OtpCode, Consultation, ConsultationDraft, VaccinationRecord, DewormingRecord, ConsultationAttachment, ServiceCatalog
 - **Tests:** ~170+ tests passing across API unit tests and integration tests
 
 ### Pending Todos
@@ -97,6 +100,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-08-03T17:36:33.000Z
-Stopped at: Phase 03 merged to main (PR #3), ready for Phase 04
-Resume file: .planning/phases/04-emr-clinical-records/04-01-PLAN.md
+Last session: 2026-08-12T18:48:46.919Z
+Stopped at: Phase 8 UI-SPEC approved
+Resume file: .planning/phases/08-scheduling-calendar/08-UI-SPEC.md

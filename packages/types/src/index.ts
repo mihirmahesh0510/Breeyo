@@ -5,3 +5,8 @@ export * from './notification.js';
 export * from './patient.js';
 export * from './queue.js';
 export * from './constants/index.js';
+export * from './emr.js';
+export * from './drug.js';
+export * from './vaccination.js';
+export * from './attachment.js';
+export * from './billing.js';

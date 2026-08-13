@@ -16,7 +16,7 @@ interface PetProfileCardProps {
  * Compute a human-readable age string from birth year/month.
  * Returns null if birth data is unavailable.
  */
-function computeAge(birthYear: number | null, birthMonth: number | null): string | null {
+export function computeAge(birthYear: number | null, birthMonth: number | null): string | null {
   if (!birthYear) return null;
 
   const now = new Date();

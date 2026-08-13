@@ -97,6 +97,38 @@ Full consultation workflow for veterinarians: SOAP notes, vitals recording, pres
 ### Audit Trail
 - **D-62:** All EMR changes audit-trailed (per EMR-07) -- who changed what and when. Follows Phase 1 immutable append-only audit trail pattern (D-35/D-36). Extends to all clinical record fields
 
+### Phase 4 Plan Review Decisions (D-63 to D-72)
+
+#### Drug Database Scope
+- **D-63:** Phase 4 ships with 50 well-chosen drugs in the seed database -- sufficient for Beta. Full 200-300 drug curation is a follow-up task before production launch, not a Phase 4 blocker. Update ROADMAP success criteria #6 accordingly
+
+#### Custom Quick-Pick Chips
+- **D-64:** Custom quick-pick chips (D-17) deferred to a later phase -- Phase 4 ships with default chips only. Custom chip persistence (server-side vs local) to be decided when the feature is planned
+
+#### Follow-Up Reminders
+- **D-65:** Follow-up reminders (D-09) stored silently in Phase 4 -- no UI surfaces upcoming follow-ups until Phase 7 WhatsApp integration. Vets set follow-up dates at finalization but don't see a "due today" view
+
+#### Orphaned Consultation Drafts
+- **D-66:** Orphaned drafts (queue entry archived but draft unfinished) show a resume banner -- "You have an unfinished consultation for [Pet]" on the home screen. Vet can resume or discard. Draft persists until explicit action
+
+#### Back-Navigation Dialog
+- **D-67:** Replace single "Discard" button with two explicit options -- "Save & Leave" (preserves auto-saved draft, vet can resume later) and "Delete Draft" (permanently removes the draft). Eliminates the contradictory "auto-saved data will be preserved" + "Discard" UX. Update UI-SPEC accordingly
+
+#### File Viewing
+- **D-68:** Tap-to-view inline for attachments -- PDFs open in a modal viewer, images open full-screen on mobile. Uses expo-file-viewer or equivalent. Not just filename + share
+
+#### Weight Sync Timing
+- **D-69:** Pet profile weight updates immediately on vitals auto-save -- not deferred to finalization. Other vets see latest weight right away. Overrides D-14's "on finalization only" approach
+
+#### Consultation Duration Tracking
+- **D-70:** Consultation start/end timestamps recorded on the consultation record -- enables Phase 3 queue wait estimation to use historical averages. Phase 4 stores the data; Phase 3 queue can query it for better wait time predictions
+
+#### Voice-to-Text Field Targeting
+- **D-71:** Voice transcription goes to the last-tapped text field -- the floating mic button tracks which TextInput was most recently focused and routes transcription output there. No field picker UI needed. Consistent with D-51
+
+#### Lock Takeover Notifications
+- **D-72:** When a vet takes over a stale consultation lock (>5 min), the original vet receives a push notification -- "[Vet Name] took over consultation for [Pet Name]". Original vet can re-open the consultation if needed. Requires push notification infrastructure from Phase 1
+
 ### Claude's Discretion
 - Consultation entry flow from queue (auto-open EMR on "Call Next" vs tap to open)
 - Resume flow when vet leaves consultation in progress (banner vs In Consult card as resume point)

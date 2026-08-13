@@ -181,14 +181,78 @@ Plans:
   4. Invoices include full GST breakdown: CGST/SGST for intra-state transactions, IGST for inter-state, with HSN/SAC codes per line item pulled from inventory/service catalog
   5. Billing dashboard shows a daily summary card: patients seen today, revenue collected today, total outstanding balance
 
-**Plans**: 4 plans
+**Plans**: 24 plans in 15 waves. Plans 06-20 through 06-23 were split out of 06-02, 06-16, 06-17 and 06-18 for context budget, so their numbers run ahead of their execution waves -- read each plan's `wave` field rather than inferring order from its number.
 
 Plans:
 
-- [ ] 06-01-PLAN.md -- Shared types, zod schemas, constants, state machine (7 statuses, 4 payment methods), Prisma schema (8 billing models with RLS + indexes), test scaffolds
-- [ ] 06-02-PLAN.md -- Billing API: invoice CRUD with state machine, sequential numbering (advisory locks), payment recording with split support, Razorpay Payment Links, webhook handler (HMAC-SHA256 + raw body), PDF generation (@react-pdf/renderer), GST calculation, overdue cron, Quick Sale endpoint, billing routes with permissions
-- [ ] 06-03-PLAN.md -- Mobile screens: Billing Dashboard (summary cards + filterable list), InvoiceBuilder (service picker + live totals), InvoiceDetail (status-aware actions), PaymentScreen (QR + auto-polling), QuickSale (POS flow), RefundScreen, CreditNoteScreen, bottom tab update (Billing replaces More), pet profile Invoices tab, clinic billing settings
-- [ ] 06-04-PLAN.md -- GST compliance upgrade (BIL-07): per-line-item CGST/SGST/IGST with HSN/SAC codes, clinic state code for intra/inter-state determination, GST-compliant PDF template, plus patients-seen-today dashboard metric (RPT-01)
+**Wave 1**
+
+- [ ] 06-00-PLAN.md -- [Wave 0a, BLOCKING] Tenant-client remediation (pooled client, transaction-scoped `set_config`), baseline migration for the 15 untracked Phase 3/4 tables, RLS ENABLE+FORCE and per-operation policies on all clinic-scoped tables, orphan RLS file deleted, cross-tenant isolation tests
+- [ ] 06-01-PLAN.md -- [Wave 0b] Dependency provisioning: `razorpay@2.9.8`, `expo-print`/`expo-sharing`/`expo-file-system`/`react-native-svg` via `expo install`, `react-native-qrcode-svg`, `react-native-paper`, `@breeyo/ui`, PaperProvider at the mobile root, billing env contract, PDF resolution smoke test
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 06-02-PLAN.md -- [Wave 0c] Migrate six clinic-scoped modules (patient, queue, emr, attachment, vaccination, drug) to the per-request tenant client, establishing the `buildService(db)` reference pattern, with HTTP-layer cross-tenant IDOR tests
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 06-03-PLAN.md -- Prisma billing schema: 10 models (Invoice, InvoiceLineItem, Payment, PaymentReceipt, Refund, CreditNote, CreditNoteLineItem, InvoiceNumberCounter, WebhookEvent, BillingAuditLog) + D-29 Clinic settings, migration with the draft partial unique index, billing RLS policies, [BLOCKING] `prisma db push`, test factories
+- [ ] 06-20-PLAN.md -- [Wave 0c, split from 06-02] Convert the remaining notifications and clinic modules, document the three admin-client exemptions inline, and add the `check-tenant-client.sh` CI gate plus the Expo dependency check
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 06-04-PLAN.md -- Shared contracts: billing entity types, invoice state machine (7 statuses), GST constants (slabs 0/5/18/40, Rule 46A document types, GSTIN regex), socket events, 11 Zod schemas that accept no client-supplied total
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
+- [ ] 06-05-PLAN.md -- [TDD] GST engine: integer-paise `money.ts` with `toPaise` boundary adapter and remainder-exact pro-rata, `gst.service.ts` with per-line exempt-aware CGST/SGST/IGST, invoice-level per-head rounding and Rule 46A document typing (BIL-07)
+- [ ] 06-06-PLAN.md -- [TDD] Cross-cutting primitives: gap-free per-clinic monthly numbering (counter-row `ON CONFLICT`), AES-256-GCM credential encryption, dedicated append-only `billing_audit_log` (D-15, D-19, D-29, D-32)
+
+**Wave 6** *(blocked on Wave 5 completion)*
+
+- [ ] 06-07-PLAN.md -- Invoice core: repository sourcing dispensed quantities from `StockMovement`, `FOR UPDATE` FIFO stock validator, single-transaction finalize (numbering + GST freeze + stock deduction), state guards, void with stock restoration (BIL-01, BIL-02, BIL-03)
+
+**Wave 7** *(blocked on Wave 6 completion)*
+
+- [ ] 06-08-PLAN.md -- Billing HTTP surface: 12 routes with three permission gates, `CREATE_INVOICES` removed from the Clinician seed (D-05) without breaking the D-03 draft hook, integration tests for quantity sourcing, concurrent finalize and draft immutability
+
+**Wave 8** *(blocked on Wave 7 completion)*
+
+- [ ] 06-09-PLAN.md -- Payments: per-clinic Razorpay client factory with credential decryption and 502 error normalisation, cash/split/Payment Link collection with a 16-minute expiry buffer, receipt records, 4 payment endpoints (BIL-05)
+
+**Wave 9** *(blocked on Wave 8 completion)*
+
+- [ ] 06-10-PLAN.md -- Webhook pipeline: raw-body rate-limit-exempt route with timing-safe HMAC and insert-based idempotency, BullMQ worker with clinic-room Socket.IO push, overdue and payment-link-expiry IST crons (BIL-06, D-11, D-23)
+- [ ] 06-11-PLAN.md -- Refunds bounded by captured-minus-pending payments with async gateway completion, credit notes with CN numbering and frozen-rate tax that leave the invoice immutable, 6 endpoints (D-12, D-19, D-22)
+
+**Wave 10** *(blocked on Wave 9 completion)*
+
+- [ ] 06-12-PLAN.md -- Dashboard aggregate (D-24's four cards + RPT-01 patients-seen-today, IST-bounded, two queries), service catalog CRUD with soft deactivation, billing settings with presence-only credential reads and a webhook health flag (RPT-01, D-02, D-29)
+- [ ] 06-13-PLAN.md -- D-03 best-effort draft-invoice hook in the consultation finalize path (ungated, non-blocking, idempotent) and the D-04 Quick Sale create-and-finalize endpoint with row-locked stock
+
+**Wave 11** *(blocked on Wave 10 completion)*
+
+- [ ] 06-14-PLAN.md -- Mobile Billing tab: five summary cards with skeletons, filterable/sortable invoice list, shared paise-only money formatter, `invoice:updated` socket subscription (RPT-01, D-24, D-28)
+
+**Wave 12** *(blocked on Wave 11 completion)*
+
+- [ ] 06-15-PLAN.md -- PDF templates: Rule 46-compliant invoice with Rule 46A heading switching and no tax artefact for unregistered clinics, 80mm payment receipt, credit note, plus the missing Print and Download actions (BIL-04)
+- [ ] 06-16-PLAN.md -- Invoice builder pieces: Zustand line-item store holding no totals, mutation and catalog hooks, eight components (line rows, discount inputs, no-arithmetic totals section, catalog sheet, stock-shortfall banner) (BIL-01, BIL-02, BIL-07)
+- [ ] 06-23-PLAN.md -- [split from 06-18] Billing settings: write-only Razorpay credential fields, GST-off default with the rate field gated on a valid GSTIN, per-clinic webhook URL with a configured indicator, `MANAGE_CLINIC_SETTINGS` gate (BIL-05, BIL-06, BIL-07)
+
+**Wave 13** *(blocked on Wave 12 completion)*
+
+- [ ] 06-17-PLAN.md -- Invoice detail foundation: the detail query and payment-mutation hooks (no polling, explicit invalidation) plus six presentation components including the `isValidInvoiceTransition`-gated action bar (BIL-03)
+- [ ] 06-18-PLAN.md -- Mobile Quick Sale cart (merges duplicate items, holds no totals) with one-tap checkout and per-row stock errors, plus the additive pet-profile Invoices section (D-04, D-25)
+- [ ] 06-21-PLAN.md -- [split from 06-16] Invoice builder screen composing the 06-16 pieces with debounced server preview and both 409 paths, plus the two entry routes including the D-06 completed-consultation picker (BIL-01, BIL-02)
+
+**Wave 14** *(blocked on Wave 13 completion)*
+
+- [ ] 06-22-PLAN.md -- [split from 06-17] Payment collection sheet with device-rendered QR and push-driven confirmation, plus the invoice detail screen, refund sheet and credit-note screen (BIL-03, BIL-04, BIL-05, BIL-06)
+
+**Wave 15** *(blocked on Wave 14 completion)*
+
+- [ ] 06-19-PLAN.md -- Phase gate: one-command requirement-to-test verification script with phase-wide money/tenancy/credential invariants, plus blocking human verification of the eight core flows and the GST/Razorpay-onboarding review
 
 ### Phase 7: WhatsApp Communication
 
@@ -202,21 +266,52 @@ Plans:
   3. WhatsApp integration uses a clean abstraction layer where the simulator can be swapped for the real Meta Business API via configuration
   4. All WhatsApp message flows are logged and viewable in the mobile inbox/log surface used by staff
 
-**Plans**: 10 plans
+**Plans**: 16 plans
 **UI hint**: yes
 
 Plans:
+**Wave 0** *(blocking prerequisites — nothing else can be verified until these land)*
 
-- [ ] 07-01-PLAN.md -- Shared WhatsApp contracts, schemas, booking state machine, and shared tests
-- [ ] 07-06-PLAN.md -- Prisma schema registration plus Wave 0 API test scaffolds
-- [ ] 07-02-PLAN.md -- Provider registry, simulator pipeline, persistence services, dispatch, consent, and template rendering
-- [ ] 07-07-PLAN.md -- Inbox/config/simulator/owner-preference controllers and authenticated route registration
-- [ ] 07-10-PLAN.md -- Delivery-status service, validated webhook pipeline, and outbound/simulator workers
-- [ ] 07-03-PLAN.md -- Booking conversation flow, booking records, provisional capture, and booking action endpoints
-- [ ] 07-09-PLAN.md -- Reminder scheduling, bounded retries, failure tasks, and reminder route wiring
-- [ ] 07-04-PLAN.md -- Mobile WhatsApp hooks, store, and reusable components
-- [ ] 07-08-PLAN.md -- Mobile inbox/thread/config/booking-detail screens and navigation gating
-- [ ] 07-05-PLAN.md -- Cross-module send integrations, owner preference UX, invalid-number correction flow, and human verification
+- [ ] 07-01-PLAN.md -- [BLOCKING] Backfill the missing Phase 3-6 Prisma migrations (D-19) plus the Phase 7 WhatsApp data model and migration
+- [ ] 07-02-PLAN.md -- Shared contracts: @breeyo/types domain types and constant tables, socket events, @breeyo/validators Zod schemas with per-template variable caps
+- [ ] 07-03-PLAN.md -- Mobile UI library spike (D-17): React Native Paper v5 + @breeyo/ui on Expo SDK 52, or a recorded deviation
+
+**Wave 1** *(blocked on Wave 0)*
+
+- [ ] 07-04-PLAN.md -- API test infrastructure: Phase 7 factories, cleanup ordering, shared IST date module, audit events, WHATSAPP_* env vars, integration suite scaffolds
+- [ ] 07-05-PLAN.md -- WaProvider port, capability guards, phone normalizer, constraint-enforcing simulator adapter, provider registry (WHA-04)
+- [ ] 07-06-PLAN.md -- Mobile presentational components and UI store with a tested pure-formatting module
+
+**Wave 2** *(blocked on Wave 1)*
+
+- [ ] 07-07-PLAN.md -- Cloud API adapter: Meta payload mapper, error-code normalization, raw-body HMAC webhook verification, fetch-based provider (WHA-04)
+- [ ] 07-08-PLAN.md -- Template registry, repository, BullMQ queues, send authorization (consent/STOP/category), persist-then-dispatch send service
+
+**Wave 3** *(blocked on Wave 2)*
+
+- [ ] 07-09-PLAN.md -- Delivery-status funnel with monotonic ranking, inbound router, outbound and simulator workers, unauthenticated webhook plugin (WHA-05)
+
+**Wave 4** *(blocked on Wave 3)*
+
+- [ ] 07-10-PLAN.md -- Booking conversation: slot generation, auto-confirm, unique-constraint slot arbitration, staff-only move and cancel (WHA-03)
+- [ ] 07-11-PLAN.md -- Reminder scheduling: latest-record-only discovery, two-touch tasks, bounded escalation, daily 08:30 IST BullMQ sweep (WHA-01)
+
+**Wave 5** *(blocked on Wave 4)*
+
+- [ ] 07-12-PLAN.md -- API read surface: inbox filters and search, thread detail, route registration, app.ts wiring, authz and tenant-isolation tests
+
+**Wave 6** *(blocked on Wave 5)*
+
+- [ ] 07-13-PLAN.md -- API action surface: owner preferences, consent, Admin-only simulator config, booking move/cancel, mark resolved, invoice delivery proof
+- [ ] 07-14-PLAN.md -- Mobile data layer: query-key factory, thread queries, realtime socket, mutation hooks, TemplateSendSheet
+
+**Wave 7** *(blocked on Wave 6)*
+
+- [ ] 07-15-PLAN.md -- Mobile inbox and thread screens with four states each, role gating (D-20), navigation, human verification
+
+**Wave 8** *(blocked on Wave 7)*
+
+- [ ] 07-16-PLAN.md -- Admin simulator config screen, owner preference and invalid-number flows, booking detail, cross-module send launcher, end-of-phase human verification
 
 ### Phase 8: Scheduling & Calendar
 
@@ -229,34 +324,51 @@ Plans:
   2. User can view a calendar in day and week views, with real-time sync across mobile and web
   3. User receives push notifications for upcoming appointments and queue changes
 
-**Plans**: 7 plans
+**Plans**: 15 plans
 **UI hint**: yes
 
 Plans:
 
 - **Wave 1**
-- [ ] 08-01-PLAN.md -- Shared scheduling contracts, Wave 0 tests, Prisma appointment schema, and blocking schema push
+- [ ] 08-01-PLAN.md -- Shared scheduling contracts: appointment lifecycle table, EXPECTED queue status, socket events, tunable constants, Zod validators
+- [ ] 08-02-PLAN.md -- Design-system additions (vet hues, StatusBadge variants, scheduling i18n) and the [BLOCKING] mobile/web dependency manifest fix
+- [ ] 08-03-PLAN.md -- Prisma persistence: five scheduling tables, ServiceCatalog.durationMinutes, QueueEntry.queuePriorityAt, and the [BLOCKING] migration
 
 - **Wave 2** *(blocked on Wave 1 completion)*
-- [ ] 08-02-PLAN.md -- Availability engine, schedule templates/overrides, blocked periods, reason catalog, and settings API
-- [ ] 08-03-PLAN.md -- Appointment lifecycle, provisional booking, queue handoff, queue expected-arrival support, and audit-trail API
+- [ ] 08-04-PLAN.md -- IST date module plus queue integration: queuePriorityAt ordering and full EXPECTED support across every queue query
+- [ ] 08-05-PLAN.md -- Availability engine: pure slot generator, template/override/blocked-period repository and service, AuditEvent extension
+- [ ] 08-06-PLAN.md -- Minimal web staff login, bearer-token API client, session-scoped auth context and route guard
 
 - **Wave 3** *(blocked on Wave 2 completion)*
-- [ ] 08-04-PLAN.md -- Reminder producer, owner-action bridge, push/socket notifications, workers, and scheduling route registration
+- [ ] 08-07-PLAN.md -- Appointment lifecycle: booking with per-service duration, horizon, double-book warning, multi-pet, recurrence, reschedule/cancel with marker resets
+- [ ] 08-08-PLAN.md -- Mobile queue board EXPECTED section, expected-row card treatment and quick-action sheet
 
 - **Wave 4** *(blocked on Wave 3 completion)*
-- [ ] 08-05-PLAN.md -- Mobile day agenda, quick-action bottom sheet, queue scheduled badges, and WhatsApp-linked mobile state
-- [ ] 08-06-PLAN.md -- Web 7-day staff-first week grid, quick drawer, realtime hook, and browser-notification prompt
+- [ ] 08-09-PLAN.md -- BullMQ sweep: queue handoff, no-show auto-flip, and the three staff push triggers with a durable backlog debounce
 
 - **Wave 5** *(blocked on Wave 4 completion)*
-- [ ] 08-07-PLAN.md -- Mobile/web shell wiring, dashboard/sidebar schedule entry points, and human end-to-end verification
+- [ ] 08-10-PLAN.md -- [GATE on Phase 7] Appointment reminders on Phase 7's pipeline, owner KEEP/MOVE/CANCEL bridge, WhatsApp booking formalization
+
+- **Wave 6** *(blocked on Wave 5 completion)*
+- [ ] 08-11-PLAN.md -- Scheduling HTTP surface, permission-guarded routes, app wiring, and the integration test suite
+
+- **Wave 7** *(blocked on Wave 6 completion)*
+- [ ] 08-12-PLAN.md -- Mobile scheduling data layer, day agenda, booking sheet and appointment quick sheet
+- [ ] 08-13-PLAN.md -- Mobile availability settings, blocked-period sheet and the scheduling wireframe stories
+- [ ] 08-14-PLAN.md -- Web 7-day week grid, first Socket.IO client, appointment and booking drawers, foreground notification opt-in
+
+- **Wave 8** *(blocked on Wave 7 completion)*
+- [ ] 08-15-PLAN.md -- Full-suite green, completed validation document, and three human end-to-end verifications
 
 Cross-cutting constraints:
 
-- Queue remains the mobile home surface; Scheduling is linked but separate (D-09 + project walk-in-first rule)
-- Scheduled patients enter Queue as `EXPECTED` first, then become true waiting entries only after check-in (D-21, D-22)
-- Mobile defaults to day agenda; dense 7-day week planning belongs to larger screens (D-02, D-03)
-- Reminder timing is clinic-configurable, with shipped same-day-only defaults and `KEEP / MOVE / CANCEL` owner actions (D-25 to D-27)
+- Queue remains the mobile home surface; Scheduling is a linked but separate tab (project walk-in-first rule)
+- Scheduled patients enter Queue as `EXPECTED` first and become true waiting entries only on check-in (D-08, D-11, D-13)
+- Mobile defaults to a day agenda; the dense 7-day week grid belongs to the web surface (D-24, D-25)
+- Appointment reminders reuse Phase 7's WhatsApp pipeline with `KEEP / MOVE / CANCEL` owner actions; no parallel messaging mechanism (D-15 to D-18)
+- Double-booking is allowed with a warning and an explicit override, never hard-blocked (D-14)
+- Push notifications are staff-only for Beta; no owner-facing push and no background web push (D-26)
+- The scheduling sweep is a Redis-coordinated BullMQ `upsertJobScheduler` job, never `node-cron` and never a per-appointment delayed job
 
 ### Phase 9: Web Dashboard & Owner Portal
 
@@ -350,7 +462,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9 -> 10
 | 4. EMR & Clinical Records | 8/8 | Next | - |
 | 5. Inventory Management | 8/8 | Planned | - |
 | 6. Invoicing & Payments | 4/4 | Planned | - |
-| 7. WhatsApp Communication | 10/10 | Planned | - |
+| 7. WhatsApp Communication | 16/16 | Planned | - |
 | 8. Scheduling & Calendar | 7/7 | Planned | - |
 | 9. Web Dashboard & Owner Portal | 7/7 | Planned | - |
 | 10. Offline Hardening & Integration Polish | 7/7 | Planned | - |
@@ -366,7 +478,7 @@ This table tracks planning-packet readiness by phase.
 | 4. EMR & Clinical Records | 8/8 | Context, research, research addendum, discussion log, UI spec, validation, plans present | Ready |
 | 5. Inventory Management | 8/8 | Context, research, discussion log, UI spec, validation, plans present | Ready |
 | 6. Invoicing & Payments | 4/4 | Context, research, discussion log, UI spec, validation, plans present | Ready |
-| 7. WhatsApp Communication | 10/10 | Context, research, discussion log, UI spec, validation, plans present | Ready |
+| 7. WhatsApp Communication | 16/16 | Context, research, discussion log, UI spec, validation, plans present | Ready |
 | 8. Scheduling & Calendar | 7/7 | Context, research, discussion log, UI spec, validation, and full plan set present | Ready |
 | 9. Web Dashboard & Owner Portal | 7/7 | Context, research, discussion log, UI spec, validation, plans present | Ready |
 | 10. Offline Hardening & Integration Polish | 7/7 | Context, research, discussion log, validation, and full plan set present | Ready |

@@ -1,4 +1,9 @@
 import { beforeAll, afterAll } from 'vitest';
+import { config } from 'dotenv';
+import { resolve } from 'path';
+
+// Load .env before anything else
+config({ path: resolve(import.meta.dirname, '../../.env') });
 
 // Global test setup
 beforeAll(async () => {
