@@ -43,13 +43,14 @@ decisions:
   - "FIFO ordering is expiry ASC NULLS LAST, received_at ASC — expiry-first per the plan, with Phase 5's received_at as the deterministic tiebreak"
   - "Transaction handles typed TenantTransactionClient, not Prisma.TransactionClient, following 06-06's precedent"
   - "Task order swapped: the stock validator ships before the repository that imports it"
-  - "D-34 overrides the plan's narrower void rule — void restores every dispensed movement tied to the invoice, including consultation-sourced ones"
+  - "D-34 (refined 2026-08-14): void restores only the movements the invoice itself created; a consultation-dispensed drug stays deducted because it was administered"
+  - "restoreToStock uses the same stockMovementId discriminator as the stock plan, making deduct and restore exact mirrors"
   - "error-handler.ts extended to forward 4xx `details`, without which the BIL-02 shortfall list never reaches the client"
 metrics:
-  duration: ~80 min
+  duration: ~95 min
   tasks: 3
-  commits: 8
-  tests-added: 72
+  commits: 10
+  tests-added: 76
   completed: 2026-08-14
 ---
 
@@ -59,7 +60,7 @@ Invoice repository, stock validator and service: dispensed quantities and prices
 
 ## What Was Built
 
-**`stock-validator.service.ts` (BIL-02).** `reserveAndDeduct(tx, clinicId, lines, context)` never opens a transaction of its own — the lock, the check and the deduction share the caller's, which is the whole of the BIL-02 guarantee. It runs in two passes: pass one locks every candidate batch `FOR UPDATE` and plans the deduction without writing, pass two applies it. A shortfall on the last item therefore aborts with nothing to undo, and all shortfalls are reported in a single 409. Lines are aggregated per item and locked in ascending item order so two concurrent multi-item finalizes cannot deadlock. `restoreToStock` is the D-34 reverse.
+**`stock-validator.service.ts` (BIL-02).** `reserveAndDeduct(tx, clinicId, lines, context)` never opens a transaction of its own — the lock, the check and the deduction share the caller's, which is the whole of the BIL-02 guarantee. It runs in two passes: pass one locks every candidate batch `FOR UPDATE` and plans the deduction without writing, pass two applies it. A shortfall on the last item therefore aborts with nothing to undo, and all shortfalls are reported in a single 409. Lines are aggregated per item and locked in ascending item order so two concurrent multi-item finalizes cannot deadlock. `restoreToStock` is its exact mirror for the D-34 void: it reverses what this invoice deducted and nothing else, excluding movements that Phase 5 made before the invoice existed.
 
 **`invoice.repository.ts` (BIL-01, BIL-02, BIL-03, BIL-07).** `findUninvoicedDispensedMovements` is the BIL-01 join. `finalizeInvoice` is the single transaction. `voidInvoice` locks, cancels pending links, restores stock and audits. `recomputePaymentState` derives status from the rows. Draft mutations are scoped to `status: 'DRAFT'` in the WHERE clause.
 
@@ -128,7 +129,15 @@ Defence in depth: `reserveAndDeduct` throws `STOCK_PLAN_CONTRACT_VIOLATION` if a
 
 ## Carry-Forward Decisions Applied
 
-- **D-34 (amends D-26)** — void restores stock with **no age gate anywhere**. `restoreToStock` reverses every `dispensed` movement stamped with the invoice, however old. This is broader than the plan's text, which would have restored only the movements the invoice itself created; D-34 and the shipped `voidInvoiceSchema` comment both say "every stock movement tied to the invoice", and CONTEXT postdates the plan. Idempotency comes from `voidRestoredStock` plus the `@unique reversedMovementId`, not from a time window.
+- **D-34 (amends D-26, refined 2026-08-14)** — two independent halves, both implemented.
+
+  **Scope:** a void restores stock **only for the movements the invoice itself created** — a Quick Sale counter item, or a product line added by hand in the builder, both deducted by `reserveAndDeduct` at finalize. A drug dispensed during a consultation is **not** restored: it was physically administered to the animal and consumed, so crediting it back would inflate inventory by an item that no longer exists.
+
+  The discriminator is the same one that governs deduction. A line built from an already-dispensed movement carries that movement's id in `stockMovementId`; a line the invoice deducted for itself has `stockMovementId` null and its movement is reachable only through the movement's own `invoiceId`. So the movements referenced by this invoice's line items are exactly the pre-existing ones, and `restoreToStock` excludes them — the mirror image of them being excluded from the stock plan at finalize. **Deduct and restore are exact mirrors: `restoreToStock` reverses precisely what `reserveAndDeduct` did for this invoice, and nothing else.**
+
+  **Age:** within that scope, restoration is unconditional however old the invoice. There is no age gate anywhere in the code. The 24-hour window in D-26/D-51/D-57 governs Phase 5's separate manual per-dispense "Return to stock" action, not an invoice void.
+
+  Idempotency comes from `voidRestoredStock` plus the `@unique reversedMovementId`, not from a time window.
 - **D-35** — `voidInvoice` marks pending Razorpay payments `cancelled` inside the void transaction and returns `cancelledPaymentLinkIds` for the gateway call, which belongs to 06-09/06-10. A late payment on a voided invoice sets `exceptionFlag = 'payment_after_void'` and does **not** reopen the invoice: `VOIDED` has no outgoing edges and `recomputePaymentState` short-circuits on it.
 - **D-36** — overpayment lets `balancePaise` go negative and sets `exceptionFlag = 'overpayment'`. Nothing clamps it. `isInvoiceActionBlocked` is checked *before* the transition table on every status-changing method, so a flagged invoice is frozen until staff resolve it.
 - **Grand total / rounding** — `grandTotalPaise` is taken from `computeInvoiceTax` as-is and `roundOffPaise` is persisted beside it as a disclosure field. It is never added into the total, the balance, or any payment amount. Two tests pin this: one asserts `grandTotal === taxable + cgst + sgst + igst`, the other asserts a `roundOffPaise: -40` case where the heads round down from 720 to 700 each.
@@ -172,7 +181,12 @@ Defence in depth: `reserveAndDeduct` throws `STOCK_PLAN_CONTRACT_VIOLATION` if a
 - **Issue:** I wrote fixtures at 12% (the slabs are `[0, 5, 18, 40]`) and a test that voided a `PAID` invoice (`PAID` has no outgoing edges — corrections are a refund or credit note, per 06-04). In both cases the implementation was right and the test was wrong.
 - **Fix:** Fixtures moved to 18%; the D-34 no-age-gate test now voids an `OVERDUE` invoice with an old `finalizedAt`, which exercises the same point on a legal edge.
 
-**9. [Rule 1 — Rounding expectation] Tax heads round per head at invoice level**
+**9. [Rule 4 — Product decision, escalated and resolved] Void restoration scope**
+- **Found during:** Task 2, escalated to the coordinator at plan completion.
+- **Issue:** The plan's Task 3 said restoration should cover only the movements the invoice itself created; D-34 as written at the time said "every stock movement tied to that invoice", which would also credit back a drug already administered during the consultation. The two readings disagree on real stock, so I implemented the broader one and flagged it rather than deciding it silently.
+- **Resolution:** The coordinator confirmed the narrower rule and updated D-34 (refined 2026-08-14). Corrected in commit `61bbd45`: `restoreToStock` now excludes movements referenced by this invoice's line items' `stockMovementId`, restoring only what the invoice deducted itself. Four tests added covering the consultation line, the billing-time line, a mixed invoice and an already-reversed movement.
+
+**10. [Rule 1 — Rounding expectation] Tax heads round per head at invoice level**
 - **Issue:** A discount test expected `cgst + sgst = 1440` (18% of 8000). The engine rounds each head once to the nearest rupee (Section 170 / Rule 51), giving 700 + 700 = 1400 with `roundOffPaise: -40`.
 - **Fix:** Corrected the expectation and made it assert the round-off explicitly, which turns the test into a guard on the "never re-add round-off" invariant.
 
@@ -182,8 +196,8 @@ The worktree branched from `origin/main` (Phase 05 merge) and had no `node_modul
 
 ## Verification
 
-- `pnpm --filter @breeyo/api exec vitest run src/modules/billing/__tests__/` — **173 passed** (72 new across four files).
-- `pnpm --filter @breeyo/api exec vitest run src/` — **465 passed / 29 files**, no regressions.
+- `pnpm --filter @breeyo/api exec vitest run src/modules/billing/__tests__/` — **177 passed** (76 new across four files).
+- `pnpm --filter @breeyo/api exec vitest run src/` — **469 passed / 29 files**, no regressions.
 - `pnpm --filter @breeyo/api exec tsc --noEmit` — exits 0.
 - `-t "stock plan"` matches 2 and passes; `-t "no double deduction"` and `-t "ignores client total"` match 1 each and pass.
 - `grep -rn '\$transaction' stock-validator.service.ts` — no output.
@@ -213,6 +227,8 @@ None. No new network endpoint, auth path or trust boundary was introduced — HT
 | `0ca22ef` | feat(06-07): invoice service — draft assembly, finalize, state guards (GREEN) |
 | `98c5503` | refactor(06-07): replace the loose `as never` widening in checkStock |
 | `bd6b38e` | docs(06-07): log deferred items |
+| `854324e` | docs(06-07): complete invoice domain plan |
+| `61bbd45` | fix(06-07): scope void stock restoration to billing-time lines only (D-34 refined) |
 
 ## TDD Gate Compliance
 
@@ -228,4 +244,4 @@ All seven created files and the one modified source file exist on disk; all eigh
 - `StockValidatorService` needs `StockMovementService`, which also takes `request.db`.
 - `createDraftFromConsultation` must stay ungated (D-03 vs D-05). Every other route carries the D-05 Front Desk + Admin check.
 - Map the error table above; `details.shortfalls` now survives to the client.
-- Integration tests still owed: `-t "concurrent"` (two finalizes for the last unit), `-t "does not deduct"` (`current_qty` unchanged for a consultation-sourced line), draft idempotency under retry, and expired-batch exclusion.
+- Integration tests still owed: `-t "concurrent"` (two finalizes for the last unit), `-t "does not deduct"` (`current_qty` unchanged for a consultation-sourced line), draft idempotency under retry, expired-batch exclusion, and the D-34 void round trip (`current_qty` unchanged for a consultation line, restored for a Quick Sale line).
