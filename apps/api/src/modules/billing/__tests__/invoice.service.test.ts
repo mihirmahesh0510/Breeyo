@@ -31,7 +31,7 @@ function movement(overrides: Record<string, unknown> = {}) {
     quantity: 12,
     unitPrice: new Prisma.Decimal('45.50'),
     hsnSacCode: '3004',
-    gstRate: new Prisma.Decimal('12'),
+    gstRate: new Prisma.Decimal('18'),
     ...overrides,
   };
 }
@@ -62,7 +62,7 @@ function lineItem(overrides: Record<string, unknown> = {}) {
     unitPricePaise: 5000,
     lineDiscountPaise: 0,
     taxTreatment: 'taxable',
-    gstRatePercent: new Prisma.Decimal('12'),
+    gstRatePercent: new Prisma.Decimal('18'),
     ...overrides,
   };
 }
@@ -157,13 +157,13 @@ describe('InvoiceService.createDraftFromConsultation — BIL-01 sourcing', () =>
 
   it('takes the GST rate from the item when it has one', async () => {
     const { service, repository } = build({
-      movements: [movement({ gstRate: new Prisma.Decimal('12') })],
+      movements: [movement({ gstRate: new Prisma.Decimal('18') })],
     });
 
     await service.createDraftFromConsultation(CLINIC, CONSULT, ACTOR);
 
     const draft = (repository.createDraft.mock.calls[0] as any[])[1];
-    expect(draft.lineItems[0].gstRatePercent).toBe(12);
+    expect(draft.lineItems[0].gstRatePercent).toBe(18);
     expect(draft.lineItems[0].taxTreatment).toBe('taxable');
   });
 
@@ -311,7 +311,7 @@ describe('InvoiceService.finalize', () => {
   it('ignores client totals entirely and recomputes from the persisted line items', async () => {
     const { service, repository } = build({
       invoice: draftInvoice,
-      lineItems: [lineItem({ quantity: 2, unitPricePaise: 5000, gstRatePercent: new Prisma.Decimal('12') })],
+      lineItems: [lineItem({ quantity: 2, unitPricePaise: 5000, gstRatePercent: new Prisma.Decimal('18') })],
     });
 
     await service.finalize(CLINIC, INVOICE, ACTOR, {
@@ -321,10 +321,10 @@ describe('InvoiceService.finalize', () => {
     } as any);
 
     const computed = (repository.finalizeInvoice.mock.calls[0] as any[])[2];
-    // 2 x 5000 = 10000 taxable, 12% = 1200 split 600/600, total 11200.
+    // 2 x 5000 = 10000 taxable, 18% = 1800 split 900/900, total 11800.
     expect(computed.taxableValuePaise).toBe(10000);
-    expect(computed.cgstPaise).toBe(600);
-    expect(computed.grandTotalPaise).toBe(11200);
+    expect(computed.cgstPaise).toBe(900);
+    expect(computed.grandTotalPaise).toBe(11800);
   });
 
   it('never adds the round-off back into the grand total', async () => {
@@ -381,7 +381,7 @@ describe('InvoiceService.finalize', () => {
 
     const c = (repository.finalizeInvoice.mock.calls[0] as any[])[2];
     expect(c.isInterState).toBe(true);
-    expect(c.igstPaise).toBe(1200);
+    expect(c.igstPaise).toBe(1800);
     expect(c.cgstPaise).toBe(0);
   });
 
@@ -411,8 +411,14 @@ describe('InvoiceService.finalize', () => {
     const c = (repository.finalizeInvoice.mock.calls[0] as any[])[2];
     expect(c.invoiceDiscountPaise).toBe(2000);
     expect(c.taxableValuePaise).toBe(8000);
-    // Tax on the discounted base, not on the pre-discount amount.
-    expect(c.cgstPaise + c.sgstPaise).toBe(960);
+    // Tax on the discounted base (8000), not on the pre-discount 10000. 18% of
+    // 8000 is 1440 exact, split 720/720, and each head is then rounded once to
+    // the nearest whole rupee at invoice level (Section 170 / Rule 51): 700 and
+    // 700. The 40-paise delta is disclosed as roundOff, never added back.
+    expect(c.cgstPaise).toBe(700);
+    expect(c.sgstPaise).toBe(700);
+    expect(c.roundOffPaise).toBe(-40);
+    expect(c.grandTotalPaise).toBe(9400);
   });
 });
 
@@ -425,7 +431,7 @@ describe('InvoiceService.previewTotals', () => {
 
     const preview = await service.previewTotals(CLINIC, INVOICE);
 
-    expect(preview.grandTotalPaise).toBe(11200);
+    expect(preview.grandTotalPaise).toBe(11800);
     expect(repository.finalizeInvoice).not.toHaveBeenCalled();
     expect(repository.updateDraft).not.toHaveBeenCalled();
   });
