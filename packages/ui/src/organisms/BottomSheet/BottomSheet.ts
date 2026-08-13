@@ -38,6 +38,15 @@ export function BottomSheet({
 }: BottomSheetProps) {
   const theme = useAppTheme();
   const colors = theme.colors as Record<string, string>;
+  // Defensive fallbacks: on some render paths (observed via web preview,
+  // where this component's backdrop escapes the themed tree) `useAppTheme()`
+  // resolves to Paper's bare MD3LightTheme rather than the custom breeyoTheme,
+  // so `theme.borderRadius`/`theme.spacing` (Breeyo-specific additions, not
+  // part of Paper's own theme shape) come back undefined and crash the
+  // `StyleSheet.create` call below. Values match this file's own
+  // BOTTOM_SHEET_DEFAULTS comment and the project's 8px spacing scale.
+  const borderRadius = theme.borderRadius ?? { lg: 12, full: 9999 };
+  const spacing = theme.spacing ?? { sm: 8, md: 16 };
 
   if (!visible) {
     return null;
@@ -55,21 +64,21 @@ export function BottomSheet({
     },
     sheet: {
       backgroundColor: colors[BOTTOM_SHEET_DEFAULTS.backgroundColor] || colors.surface,
-      borderTopLeftRadius: theme.borderRadius.lg,
-      borderTopRightRadius: theme.borderRadius.lg,
+      borderTopLeftRadius: borderRadius.lg,
+      borderTopRightRadius: borderRadius.lg,
       minHeight: 200,
-      padding: theme.spacing.md,
+      padding: spacing.md,
     },
     handle: {
       width: 32,
       height: 4,
-      borderRadius: theme.borderRadius.full,
+      borderRadius: borderRadius.full,
       backgroundColor: colors.onSurfaceVariant || '#49454F',
       alignSelf: 'center' as const,
-      marginBottom: theme.spacing.sm,
+      marginBottom: spacing.sm,
     },
     title: {
-      marginBottom: theme.spacing.md,
+      marginBottom: spacing.md,
     },
   });
 

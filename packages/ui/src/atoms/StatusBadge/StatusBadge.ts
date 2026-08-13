@@ -84,13 +84,17 @@ export function StatusBadge({ status, label, testID }: StatusBadgeProps) {
   const config = STATUS_CONFIG[status];
   const displayLabel = getStatusLabel(status, label);
   const colors = theme.colors as Record<string, string>;
+  // See BottomSheet.ts: useAppTheme() can resolve to Paper's bare theme on
+  // some web render paths, where these Breeyo-specific tokens are undefined.
+  const spacing = theme.spacing ?? { sm: 8, xxs: 2 };
+  const borderRadius = theme.borderRadius ?? { full: 9999 };
 
   const styles = StyleSheet.create({
     badge: {
       backgroundColor: colors[config.bgColor] || config.bgColor,
-      paddingHorizontal: theme.spacing.sm,
-      paddingVertical: theme.spacing.xxs,
-      borderRadius: theme.borderRadius.full,
+      paddingHorizontal: spacing.sm,
+      paddingVertical: spacing.xxs,
+      borderRadius: borderRadius.full,
       alignSelf: 'flex-start' as const,
     },
   });

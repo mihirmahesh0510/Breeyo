@@ -24,7 +24,12 @@ interface LoginResponse {
     accessToken: string;
     refreshToken: string;
     user: StoredUserSummary;
-    clinicId: string;
+    // Real API shape (apps/api/src/modules/auth/auth.service.ts `login()`) returns
+    // `clinic: { id, name }`, not a top-level `clinicId` -- found via live E2E
+    // testing: the old `clinicId` field here was always undefined, so every login
+    // persisted the literal string "undefined" as the stored active clinic id,
+    // breaking tenant context for every authenticated write in the app.
+    clinic: { id: string; name: string };
   };
 }
 
@@ -82,7 +87,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const handleLoginResponse = useCallback(async (response: LoginResponse) => {
-    const { accessToken, refreshToken, user, clinicId } = response.data;
+    const { accessToken, refreshToken, user, clinic } = response.data;
+    const clinicId = clinic.id;
     await storeAuthTokens(accessToken, refreshToken, clinicId, user);
     const wizardCompleted = await fetchWizardStatus(accessToken);
     setState({

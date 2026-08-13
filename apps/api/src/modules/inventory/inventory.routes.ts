@@ -4,6 +4,7 @@ import { InventoryItemService } from './inventory-item.service.js';
 import { StockReceiptService } from './stock-receipt.service.js';
 import { BarcodeLookupService } from './barcode-lookup.service.js';
 import { InventoryController } from './inventory-item.controller.js';
+import { PermissionService } from '../auth/permission.service.js';
 import { authenticate } from '../../middleware/authenticate.js';
 import { tenantContext } from '../../middleware/tenant-context.js';
 import { requireInventoryPermission } from './middleware/inventory-permissions.middleware.js';
@@ -14,6 +15,16 @@ export default async function inventoryRoutes(fastify: FastifyInstance) {
   const stockReceiptService = new StockReceiptService(fastify.prisma);
   const barcodeLookupService = new BarcodeLookupService(repository);
   const controller = new InventoryController(service, stockReceiptService, barcodeLookupService);
+
+  // Fastify's plugin encapsulation means auth.routes.ts's own
+  // `fastify.decorate('permissionService', ...)` never reaches this sibling
+  // plugin's scope, so `requireInventoryPermission`'s `request.server.permissionService`
+  // read was always undefined here. Decorate locally, matching clinic.routes.ts's
+  // real working pattern (bug found via live E2E testing, not caught by unit tests
+  // since those mock the permission check itself).
+  if (!fastify.hasDecorator('permissionService')) {
+    fastify.decorate('permissionService', new PermissionService(fastify.prisma, fastify.redis));
+  }
 
   const base = [authenticate, tenantContext];
   const viewInventory = [...base, requireInventoryPermission('viewInventory')];

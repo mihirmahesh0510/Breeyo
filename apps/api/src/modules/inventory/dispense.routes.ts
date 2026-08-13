@@ -31,12 +31,23 @@ export default async function dispenseRoutes(fastify: FastifyInstance) {
     wantListService,
   );
 
-  // D-53: generic sync dispatcher. Own PermissionService instance built
-  // directly from fastify.prisma/fastify.redis (same construction the auth
-  // module itself uses) rather than relying on cross-plugin decoration of
-  // `request.server.permissionService`, which is only reliably populated
-  // within the plugin encapsulation context that set it.
+  // D-53: generic sync dispatcher's own PermissionService instance, built
+  // directly from fastify.prisma/fastify.redis.
+  //
+  // CORRECTED (found via live E2E testing): the comment this replaced claimed
+  // building the instance locally was sufficient instead of decorating it --
+  // it wasn't. `requireInventoryPermission` (used as a preHandler on every
+  // route below) reads `request.server.permissionService` regardless of which
+  // file registers the route, so without decorating it here, every dispense/
+  // adjust/stock-take/alert/want-list request 500'd with "Cannot read
+  // properties of undefined (reading 'getUserPermissions')". Fastify's plugin
+  // encapsulation means auth.routes.ts's own decoration never reaches this
+  // sibling plugin's scope -- decorate locally, matching inventory.routes.ts
+  // and clinic.routes.ts's real working pattern.
   const permissionService = new PermissionService(fastify.prisma, fastify.redis);
+  if (!fastify.hasDecorator('permissionService')) {
+    fastify.decorate('permissionService', permissionService);
+  }
   const syncOperationService = new SyncOperationService(
     fifoDispenseService,
     stockAdjustmentService,

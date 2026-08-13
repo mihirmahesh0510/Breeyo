@@ -43,6 +43,12 @@ export async function buildApp(
       process.env.WEB_URL || 'http://localhost:3001',
       process.env.MOBILE_URL || 'exp://localhost:8081',
     ],
+    // Explicit rather than relying on @fastify/cors's own default (found via live
+    // E2E testing: preflight responses only ever returned "GET,HEAD,POST" in this
+    // app, blocking every PUT/PATCH/DELETE request from a browser origin -- native
+    // apps never preflight, so this was invisible until tested through an actual
+    // browser).
+    methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     credentials: true,
   });
 
