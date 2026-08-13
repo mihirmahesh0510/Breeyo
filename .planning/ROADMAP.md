@@ -210,7 +210,7 @@ Plans:
 
 **Wave 6** *(blocked on Wave 5 completion)*
 
-- [ ] 06-07-PLAN.md -- Invoice core: repository sourcing dispensed quantities from `StockMovement`, `FOR UPDATE` FIFO stock validator, single-transaction finalize (numbering + GST freeze + stock deduction), state guards, void with stock restoration (BIL-01, BIL-02, BIL-03)
+- [x] 06-07-PLAN.md -- Invoice core: repository sourcing dispensed quantities from `StockMovement`, `FOR UPDATE` FIFO stock validator, single-transaction finalize (numbering + GST freeze + stock deduction), state guards, void with stock restoration (BIL-01, BIL-02, BIL-03)
 
 **Wave 7** *(blocked on Wave 6 completion)*
 
@@ -461,7 +461,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9 -> 10
 | 3. Patient Registration & Walk-in Queue | 8/8 | **Done** | 2026-08-03 (PR #3) |
 | 4. EMR & Clinical Records | 8/8 | Next | - |
 | 5. Inventory Management | 8/8 | Planned | - |
-| 6. Invoicing & Payments | 8/24 | In Progress|  |
+| 6. Invoicing & Payments | 9/24 | In Progress|  |
 | 7. WhatsApp Communication | 16/16 | Planned | - |
 | 8. Scheduling & Calendar | 7/7 | Planned | - |
 | 9. Web Dashboard & Owner Portal | 7/7 | Planned | - |
