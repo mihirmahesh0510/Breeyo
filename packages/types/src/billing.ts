@@ -91,8 +91,14 @@ export interface Invoice {
   cgstPaise: number; // paise
   sgstPaise: number; // paise
   igstPaise: number; // paise
-  /** Section 170 / Rule 51 delta keeping taxable + taxes + roundOff exact. */
+  /**
+   * Section 170 / Rule 51 disclosure field: `Σ (rounded − exact)` across the
+   * three heads, persisted for GSTR-1 reconciliation against the exact
+   * pre-rounding figures. NOT a component of {@link Invoice.grandTotalPaise} —
+   * the heads above are already rounded.
+   */
   roundOffPaise: number; // paise
+  /** `taxableValuePaise + cgst + sgst + igst`, i.e. the printed figures. */
   grandTotalPaise: number; // paise
   amountPaidPaise: number; // paise
   creditedPaise: number; // paise
@@ -250,7 +256,9 @@ export interface CreditNote {
   cgstPaise: number; // paise
   sgstPaise: number; // paise
   igstPaise: number; // paise
+  /** Disclosure only, exactly as on {@link Invoice} — excluded from `totalPaise`. */
   roundOffPaise: number; // paise
+  /** `taxableValuePaise + cgstPaise + sgstPaise + igstPaise`. */
   totalPaise: number; // paise
 
   issuedById: string;
@@ -442,13 +450,28 @@ export interface BillingExceptionListItem {
   ownerName: string | null;
 }
 
-/** The return shape of plan 06-05's `computeInvoiceTax`. */
+/**
+ * The return shape of plan 06-05's `computeInvoiceTax`.
+ *
+ * The three tax heads are already rounded to whole rupees, once, at invoice
+ * level (Section 170 / Rule 51).
+ */
 export interface TaxBreakdown {
   taxableValuePaise: number; // paise
+  /** Rounded to a whole rupee at invoice level. */
   cgstPaise: number; // paise
+  /** Rounded to a whole rupee at invoice level. */
   sgstPaise: number; // paise
+  /** Rounded to a whole rupee at invoice level. */
   igstPaise: number; // paise
+  /**
+   * `Σ (rounded − exact)` across the three heads — a disclosure figure for
+   * GSTR-1 reconciliation. Deliberately excluded from
+   * {@link TaxBreakdown.grandTotalPaise}; adding it would double-count the
+   * rounding already applied to the heads.
+   */
   roundOffPaise: number; // paise
+  /** `taxableValuePaise + cgstPaise + sgstPaise + igstPaise`. */
   grandTotalPaise: number; // paise
   documentType: InvoiceDocumentType;
 }

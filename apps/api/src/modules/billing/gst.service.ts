@@ -8,9 +8,18 @@
  * Rounding is applied **once per tax head, at invoice level**, to the nearest
  * whole rupee, per CGST Act Section 170 and Rule 51. Per-line rounding is
  * forbidden: it accumulates a rounding error per line and produces an invoice
- * whose heads do not reconcile with GSTR-1. The difference between the rounded
- * and exact heads is carried explicitly as `roundOffPaise` so the invoice
- * arithmetic closes.
+ * whose heads do not reconcile with GSTR-1.
+ *
+ * Two figures come out of that rounding and they must not be confused:
+ *
+ *   * `grandTotalPaise` = `taxableValue + cgst + sgst + igst`, using the
+ *     **rounded** heads. This is the sum of the numbers actually printed on the
+ *     document, so an owner adding the lines up by hand gets the stated total.
+ *   * `roundOffPaise` = `Σ (rounded − exact)` per head. This is a **disclosure
+ *     field**, persisted for GSTR-1 reconciliation against the exact
+ *     pre-rounding figures. It is NOT a component of the grand total: the heads
+ *     are already rounded, so adding it back in would apply the same delta
+ *     twice and produce a total nobody can reproduce from the printed lines.
  *
  * Every function here is pure — no database handle appears in any signature, no
  * I/O is performed, no input is mutated, and the same arguments always produce
@@ -142,9 +151,10 @@ export function allocateInvoiceDiscount<T extends { taxableValuePaise: number }>
  *  3. Tax is computed per line, in exact paise, with no intermediate rounding.
  *  4. The heads are summed across lines.
  *  5. Each head is rounded once, here, to the nearest rupee.
- *  6. `roundOffPaise` carries the rounding deltas.
+ *  6. `roundOffPaise` records the rounding deltas for disclosure only.
  *  7. The document type follows from the exempt/taxable mix.
- *  8. The grand total closes the arithmetic exactly.
+ *  8. The grand total sums the taxable value and the rounded heads — the
+ *     figures printed on the document — and does not re-apply the round-off.
  *
  * @throws if any line carries a rate that is not a current GST slab.
  */
@@ -226,7 +236,9 @@ export function computeInvoiceTax(
   const sgstPaise = roundToNearestRupeePaise(sgstExactPaise);
   const igstPaise = roundToNearestRupeePaise(igstExactPaise);
 
-  // (6) The delta the rounding introduced, carried explicitly.
+  // (6) The delta the rounding introduced, disclosed so the invoice can be
+  // reconciled back to the exact pre-rounding figures during GSTR-1 filing.
+  // It is not part of the grand total — see step (8).
   const roundOffPaise =
     cgstPaise -
     cgstExactPaise +
@@ -245,9 +257,13 @@ export function computeInvoiceTax(
         ? 'tax_invoice'
         : 'bill_of_supply';
 
-  // (8) Closes exactly, by construction.
+  // (8) The grand total is the sum of the figures actually PRINTED on the
+  // document: the taxable value plus the rounded heads. `roundOffPaise` is
+  // deliberately NOT added here — the heads have already been rounded, so
+  // adding the delta again would apply it twice and produce a total that a vet
+  // or an owner adding up the printed lines by hand could not reproduce.
   const grandTotalPaise =
-    taxableValuePaise + cgstPaise + sgstPaise + igstPaise + roundOffPaise;
+    taxableValuePaise + cgstPaise + sgstPaise + igstPaise;
 
   return {
     lines: perLine,

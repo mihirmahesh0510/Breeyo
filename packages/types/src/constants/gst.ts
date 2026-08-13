@@ -150,7 +150,15 @@ export const B2C_ADDRESS_REQUIRED_ABOVE_PAISE = 5_000_000;
 /**
  * Finding G6 / Section 170 + Rule 51: tax is rounded to the nearest rupee per
  * tax head, at invoice level — never per line, which accumulates error and will
- * not reconcile with GSTR-1. The persisted round-off delta keeps
- * `taxable + taxes + roundOff = grandTotal` exact.
+ * not reconcile with GSTR-1.
+ *
+ * The grand total is `taxableValue + cgst + sgst + igst` using the **rounded**
+ * heads — the figures actually printed on the document — so an owner adding the
+ * printed lines up by hand reproduces the stated total exactly.
+ *
+ * `roundOffPaise` is `Σ (rounded − exact)` and is a **disclosure field only**,
+ * persisted so a filed return can be reconciled against the exact pre-rounding
+ * figures. It must never be added into the grand total: the heads are already
+ * rounded, so re-applying the delta would double-count it.
  */
 export const PAISE_PER_RUPEE = 100;

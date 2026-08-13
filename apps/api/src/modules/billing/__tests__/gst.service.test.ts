@@ -164,6 +164,22 @@ describe('computeInvoiceTax — invoice-level rounding (Section 170 / Rule 51)',
     expect(result.roundOffPaise).toBe(-40);
   });
 
+  it('excludes roundOffPaise from the grand total so the printed lines add up', () => {
+    // Worked example: taxable 78.56 + CGST 4.00 + SGST 4.00 = 86.56. Adding the
+    // -0.40 round-off on top of heads that are ALREADY rounded would apply the
+    // same delta twice and state 86.16 — a total nobody could reproduce by
+    // adding up the figures printed on the invoice.
+    const result = computeInvoiceTax(threeRateInvoice, INTRA_STATE);
+
+    expect(result.taxableValuePaise).toBe(7_856);
+    expect(result.grandTotalPaise).toBe(8_656);
+    expect(result.grandTotalPaise).not.toBe(8_616);
+
+    // The round-off is still disclosed for GSTR-1 reconciliation against the
+    // exact pre-rounding heads, it is simply not a term in the total.
+    expect(result.roundOffPaise).toBe(-40);
+  });
+
   it('is zero when every head already lands on a whole rupee', () => {
     const result = computeInvoiceTax([taxableLine()], INTRA_STATE);
     expect(result.roundOffPaise).toBe(0);
@@ -181,13 +197,38 @@ describe('computeInvoiceTax — invoice-level rounding (Section 170 / Rule 51)',
 
     for (const shape of shapes) {
       const result = computeInvoiceTax(shape.lines, INTRA_STATE);
+
+      // The grand total is exactly the sum of the figures printed on the
+      // document: taxable value plus the three rounded heads.
       expect(
         result.taxableValuePaise +
           result.cgstPaise +
           result.sgstPaise +
-          result.igstPaise +
-          result.roundOffPaise,
+          result.igstPaise,
       ).toBe(result.grandTotalPaise);
+    }
+  });
+
+  it('keeps the exact pre-rounding tax recoverable from roundOffPaise for GSTR-1', () => {
+    // The disclosure field has to be sufficient to reconstruct what was rounded
+    // away, otherwise it serves no reconciliation purpose.
+    const shapes: TaxableLine[][] = [
+      threeRateInvoice,
+      [exemptLine()],
+      [exemptLine(), taxableLine({ taxableValuePaise: 33_333, gstRatePercent: 5 })],
+    ];
+
+    for (const lines of shapes) {
+      const result = computeInvoiceTax(lines, INTRA_STATE);
+
+      const exactTaxPaise = result.lines.reduce(
+        (acc, line) => acc + line.cgstPaise + line.sgstPaise + line.igstPaise,
+        0,
+      );
+      const roundedTaxPaise =
+        result.cgstPaise + result.sgstPaise + result.igstPaise;
+
+      expect(roundedTaxPaise - result.roundOffPaise).toBe(exactTaxPaise);
     }
   });
 });
