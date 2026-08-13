@@ -15,6 +15,7 @@ import {
   prisma,
 } from './helpers/factories.js';
 import { getBasePrisma, createTenantClient } from '../src/lib/prisma-rls.js';
+import { QueueRepository } from '../src/modules/queue/queue.repository.js';
 import type { FastifyInstance } from 'fastify';
 
 let app: FastifyInstance;
@@ -527,6 +528,163 @@ describe('Tenant Isolation', () => {
 
       const seenByB = await createTenantClient(clinicB.id).prescription.findMany();
       expect(seenByB.map((p) => p.id)).toContain(rxB.id);
+    });
+  });
+
+  // ----------------------------------------------------------------
+  // HTTP-layer tenant scoping (D-30, plan 06-02)
+  // ----------------------------------------------------------------
+  // The block above proves the *tenant handle* isolates rows. These prove the
+  // shipped HTTP routes actually go through that handle: before plan 06-02
+  // every module built its repository from `fastify.prisma` (breeyo_admin,
+  // which bypasses RLS by design), so the isolation above protected nothing
+  // that a real request could reach.
+  describe('HTTP-layer tenant scoping (D-30)', () => {
+    const authFor = (token: string) => ({ authorization: `Bearer ${token}` });
+
+    /** Checks a pet into its own clinic's queue over HTTP. */
+    async function checkIn(token: string, petId: string) {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/v1/queue/check-in',
+        headers: authFor(token),
+        payload: { petId, visitReason: 'Scoping fixture' },
+      });
+      expect(response.statusCode).toBe(201);
+      return response.json().data;
+    }
+
+    it('HTTP pets scoping -- /patients/recent never crosses clinics', async () => {
+      const ownerA = await createTestPetOwner(clinicA.id);
+      const ownerB = await createTestPetOwner(clinicB.id);
+      const petA = await createTestPet(clinicA.id, ownerA.id, { name: 'Recent A' });
+      const petB = await createTestPet(clinicB.id, ownerB.id, { name: 'Recent B' });
+
+      // /patients/recent joins queue_entries, so each pet needs a visit.
+      await checkIn(tokenA, petA.id);
+      await checkIn(tokenB, petB.id);
+
+      const responseA = await app.inject({
+        method: 'GET',
+        url: '/api/v1/patients/recent',
+        headers: authFor(tokenA),
+      });
+      expect(responseA.statusCode).toBe(200);
+      const petIdsA = responseA.json().data.map((r: { petId: string }) => r.petId);
+      expect(petIdsA).toContain(petA.id);
+      expect(petIdsA).not.toContain(petB.id);
+
+      // Mirror direction, so a policy that hides everything cannot pass.
+      const responseB = await app.inject({
+        method: 'GET',
+        url: '/api/v1/patients/recent',
+        headers: authFor(tokenB),
+      });
+      expect(responseB.statusCode).toBe(200);
+      const petIdsB = responseB.json().data.map((r: { petId: string }) => r.petId);
+      expect(petIdsB).toContain(petB.id);
+      expect(petIdsB).not.toContain(petA.id);
+    });
+
+    it('HTTP pet IDOR -- GET /pets/:petId on another clinic pet is 404, not 200 or 500', async () => {
+      const ownerB = await createTestPetOwner(clinicB.id);
+      const petB = await createTestPet(clinicB.id, ownerB.id, { name: 'IDOR target' });
+
+      const response = await app.inject({
+        method: 'GET',
+        url: `/api/v1/pets/${petB.id}`,
+        headers: authFor(tokenA),
+      });
+
+      expect(response.statusCode).toBe(404);
+      expect(response.json().error.code).toBe('PET_NOT_FOUND');
+
+      // Clinic B still reaches its own pet -- the route is not simply broken.
+      const ownResponse = await app.inject({
+        method: 'GET',
+        url: `/api/v1/pets/${petB.id}`,
+        headers: authFor(tokenB),
+      });
+      expect(ownResponse.statusCode).toBe(200);
+    });
+
+    it('HTTP queue scoping -- GET /queue returns only the caller clinic entries', async () => {
+      const ownerA = await createTestPetOwner(clinicA.id);
+      const ownerB = await createTestPetOwner(clinicB.id);
+      const petA = await createTestPet(clinicA.id, ownerA.id, { name: 'Queue A' });
+      const petB = await createTestPet(clinicB.id, ownerB.id, { name: 'Queue B' });
+
+      const entryA = await checkIn(tokenA, petA.id);
+      const entryB = await checkIn(tokenB, petB.id);
+
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/v1/queue',
+        headers: authFor(tokenA),
+      });
+      expect(response.statusCode).toBe(200);
+
+      const board = response.json().data;
+      const allEntries = [...board.waiting, ...board.inConsult, ...board.done];
+      const entryIds = allEntries.map((e: { id: string }) => e.id);
+
+      expect(entryIds).toContain(entryA.id);
+      expect(entryIds).not.toContain(entryB.id);
+      for (const entry of allEntries) {
+        expect(entry.clinicId).toBe(clinicA.id);
+      }
+    });
+
+    // This is the case that actually discriminates `request.db` from
+    // `fastify.prisma`. Every other test in this block passes on the admin
+    // client too, because each repository method already carries an explicit
+    // `clinicId` WHERE clause. `QueueService.checkIn` never verifies that the
+    // pet belongs to the calling clinic, so the explicit-filter layer does not
+    // cover it -- only the RLS layer does, and RLS only applies if the route
+    // actually holds the tenant handle.
+    it('HTTP cross-tenant pull -- clinic A cannot pull clinic B pet onto its queue board', async () => {
+      const ownerB = await createTestPetOwner(clinicB.id, { name: 'Owner B Secret' });
+      const petB = await createTestPet(clinicB.id, ownerB.id, { name: 'PetB Secret' });
+
+      // Clinic A checks in a pet id it does not own. Whether this is rejected
+      // outright or accepted is an implementation detail; what must never
+      // happen is clinic B's pet data surfacing on clinic A's board.
+      await app.inject({
+        method: 'POST',
+        url: '/api/v1/queue/check-in',
+        headers: authFor(tokenA),
+        payload: { petId: petB.id, visitReason: 'Cross-tenant attempt' },
+      });
+
+      const board = await app.inject({
+        method: 'GET',
+        url: '/api/v1/queue',
+        headers: authFor(tokenA),
+      });
+      expect(board.statusCode).toBe(200);
+
+      const serialized = JSON.stringify(board.json().data);
+      expect(serialized).not.toContain('PetB Secret');
+      expect(serialized).not.toContain('Owner B Secret');
+      expect(serialized).not.toContain(petB.id);
+    });
+
+    it('static helper preserved -- QueueRepository.getTodayIST() stays callable without an instance', () => {
+      // The per-request refactor must not turn this into an instance method:
+      // the midnight-archive cron job calls it with no repository in scope.
+      const today = QueueRepository.getTodayIST();
+
+      expect(today).toBeInstanceOf(Date);
+
+      // Midnight IST == 18:30 UTC the previous day.
+      expect(today.getUTCHours()).toBe(18);
+      expect(today.getUTCMinutes()).toBe(30);
+      expect(today.getUTCSeconds()).toBe(0);
+      expect(today.getUTCMilliseconds()).toBe(0);
+
+      // Deterministic for a fixed input.
+      const fixed = QueueRepository.getTodayIST(new Date('2026-08-14T09:00:00Z'));
+      expect(fixed.toISOString()).toBe('2026-08-13T18:30:00.000Z');
     });
   });
 });
