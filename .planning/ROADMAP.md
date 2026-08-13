@@ -201,7 +201,7 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 06-04-PLAN.md -- Shared contracts: billing entity types, invoice state machine (7 statuses), GST constants (slabs 0/5/18/40, Rule 46A document types, GSTIN regex), socket events, 11 Zod schemas that accept no client-supplied total
+- [x] 06-04-PLAN.md -- Shared contracts: billing entity types, invoice state machine (7 statuses), GST constants (slabs 0/5/18/40, Rule 46A document types, GSTIN regex), socket events, 11 Zod schemas that accept no client-supplied total
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
@@ -461,7 +461,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9 -> 10
 | 3. Patient Registration & Walk-in Queue | 8/8 | **Done** | 2026-08-03 (PR #3) |
 | 4. EMR & Clinical Records | 8/8 | Next | - |
 | 5. Inventory Management | 8/8 | Planned | - |
-| 6. Invoicing & Payments | 5/24 | In Progress|  |
+| 6. Invoicing & Payments | 6/24 | In Progress|  |
 | 7. WhatsApp Communication | 16/16 | Planned | - |
 | 8. Scheduling & Calendar | 7/7 | Planned | - |
 | 9. Web Dashboard & Owner Portal | 7/7 | Planned | - |
