@@ -52,5 +52,16 @@ export function errorHandler(
     errorResponse.clinics = (error as any).clinics;
   }
 
+  // Forward a structured `details` payload on 4xx domain errors. BIL-02's
+  // INSUFFICIENT_STOCK 409 carries `details.shortfalls` — one row per short
+  // item with its requested and available quantities — and the mobile
+  // StockValidationBanner renders exactly that. Without this the 409 would
+  // arrive as an opaque message and the requirement ("names each short item")
+  // could not be met. Note the >= 500 branch above returns before reaching
+  // here, so no internal detail can leak through this path.
+  if ((error as any).details) {
+    errorResponse.details = (error as any).details;
+  }
+
   reply.status(statusCode).send({ error: errorResponse });
 }
