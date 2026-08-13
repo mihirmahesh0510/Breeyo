@@ -83,6 +83,14 @@ jobs:
           psql "$DATABASE_URL" -f apps/api/prisma/init-rls-roles.sql
           psql "$DATABASE_URL" -f apps/api/prisma/post-migrate.sql
 
+      # D-30: RLS policies only protect queries that go through the tenant
+      # handle. This fails the build if a route or controller builds a
+      # repository from the RLS-bypassing admin client without a documented
+      # exemption. Runs before the test step so the failure is unambiguous --
+      # a tenancy regression reads as a tenancy failure, not a flaky test.
+      - name: Tenant client gate
+        run: bash scripts/check-tenant-client.sh
+
       - name: Build
         run: pnpm build
 
@@ -91,3 +99,36 @@ jobs:
 
       - name: Run tests
         run: pnpm test
+
+  # Expo's native modules are pinned to the installed SDK. When one drifts, the
+  # JS build and the test suite both still pass -- the failure only surfaces at
+  # native build time, on EAS, long after the offending commit merged
+  # (06-RESEARCH.md Pitfall 8). `expo install --check` compares every Expo
+  # package against the SDK's expected range and exits non-zero on a mismatch,
+  # which moves that failure onto the PR that causes it.
+  #
+  # Separate job rather than a step in `test`: it needs neither Postgres nor
+  # Redis, so it runs in parallel and reports independently.
+  mobile:
+    name: Mobile Dependency Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Expo dependency check
+        working-directory: apps/mobile
+        run: npx expo install --check
