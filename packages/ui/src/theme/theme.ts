@@ -64,7 +64,13 @@ export const breeyoTheme = {
   spacing,
   customElevation: elevation,
   borderRadius,
-  animation: { duration: animationDurations },
+  // `animation` is a reserved MD3 theme key: react-native-paper reads
+  // `theme.animation.scale` internally (ripples, FAB, Snackbar). Spread
+  // MD3LightTheme.animation first so that scale survives, then add the Breeyo
+  // duration tokens alongside it. Replacing the whole object - as this did
+  // before - left Paper with `animation.scale === undefined` once the app was
+  // actually wrapped in a PaperProvider (Phase 6 plan 06-01).
+  animation: { ...MD3LightTheme.animation, duration: animationDurations },
   customTypography: typography,
 } as const;
 
