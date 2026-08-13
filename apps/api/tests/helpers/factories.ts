@@ -196,6 +196,212 @@ export async function createTestPrescription(
   });
 }
 
+// ─── Phase 6 billing factories (plan 06-03) ─────────────────────────────
+//
+// Money defaults are in PAISE (D-31), matching the columns. 50000 paise = ₹500.
+
+export async function createTestInvoice(
+  clinicId: string,
+  createdById: string,
+  overrides: Partial<{
+    invoiceNumber: string;
+    status: string;
+    source: string;
+    consultationId: string;
+    petId: string;
+    ownerId: string;
+    notes: string;
+    dueDate: Date;
+    subtotalPaise: number;
+    taxableValuePaise: number;
+    grandTotalPaise: number;
+    amountPaidPaise: number;
+    balancePaise: number;
+  }> = {},
+) {
+  return prisma.invoice.create({
+    data: {
+      clinicId,
+      createdById,
+      // Null while DRAFT (D-15): a number is only assigned at finalize.
+      invoiceNumber: overrides.invoiceNumber,
+      status: overrides.status || 'DRAFT',
+      source: overrides.source || 'manual',
+      consultationId: overrides.consultationId,
+      petId: overrides.petId,
+      ownerId: overrides.ownerId,
+      notes: overrides.notes,
+      dueDate: overrides.dueDate,
+      subtotalPaise: overrides.subtotalPaise ?? 0,
+      taxableValuePaise: overrides.taxableValuePaise ?? 0,
+      grandTotalPaise: overrides.grandTotalPaise ?? 0,
+      amountPaidPaise: overrides.amountPaidPaise ?? 0,
+      balancePaise: overrides.balancePaise ?? 0,
+    },
+  });
+}
+
+export async function createTestInvoiceLineItem(
+  clinicId: string,
+  invoiceId: string,
+  overrides: Partial<{
+    lineType: string;
+    description: string;
+    sortOrder: number;
+    quantity: number;
+    unitPricePaise: number;
+    taxTreatment: string;
+    gstRatePercent: number;
+    hsnSacCode: string;
+    serviceCatalogId: string;
+    inventoryItemId: string;
+    stockMovementId: string;
+    taxableValuePaise: number;
+    lineTotalPaise: number;
+  }> = {},
+) {
+  return prisma.invoiceLineItem.create({
+    data: {
+      clinicId,
+      invoiceId,
+      lineType: overrides.lineType || 'service',
+      description:
+        overrides.description || `Test Line ${randomUUID().slice(0, 6)}`,
+      sortOrder: overrides.sortOrder ?? 0,
+      quantity: overrides.quantity ?? 1,
+      unitPricePaise: overrides.unitPricePaise ?? 50000,
+      // Exempt by default: veterinary healthcare is GST-exempt by law
+      // (Notification 12/2017-CT(R) Entry 46), so a taxable default would
+      // quietly bake an incorrect tax charge into every fixture.
+      taxTreatment: overrides.taxTreatment || 'exempt',
+      gstRatePercent: overrides.gstRatePercent ?? 0,
+      hsnSacCode: overrides.hsnSacCode,
+      serviceCatalogId: overrides.serviceCatalogId,
+      inventoryItemId: overrides.inventoryItemId,
+      stockMovementId: overrides.stockMovementId,
+      taxableValuePaise: overrides.taxableValuePaise ?? 0,
+      lineTotalPaise: overrides.lineTotalPaise ?? 0,
+    },
+  });
+}
+
+export async function createTestPayment(
+  clinicId: string,
+  invoiceId: string,
+  overrides: Partial<{
+    method: string;
+    channel: string;
+    status: string;
+    amountPaise: number;
+    paidAt: Date | null;
+    razorpayPaymentLinkId: string;
+    razorpayPaymentId: string;
+    expiresAt: Date;
+    recordedById: string;
+  }> = {},
+) {
+  return prisma.payment.create({
+    data: {
+      clinicId,
+      invoiceId,
+      method: overrides.method || 'cash',
+      channel: overrides.channel || 'manual',
+      status: overrides.status || 'captured',
+      amountPaise: overrides.amountPaise ?? 50000,
+      paidAt: overrides.paidAt === undefined ? new Date() : overrides.paidAt,
+      razorpayPaymentLinkId: overrides.razorpayPaymentLinkId,
+      razorpayPaymentId: overrides.razorpayPaymentId,
+      expiresAt: overrides.expiresAt,
+      recordedById: overrides.recordedById,
+    },
+  });
+}
+
+export async function createTestRefund(
+  clinicId: string,
+  invoiceId: string,
+  createdById: string,
+  overrides: Partial<{
+    method: string;
+    status: string;
+    amountPaise: number;
+    paymentId: string;
+    razorpayRefundId: string;
+    reason: string;
+    processedAt: Date;
+  }> = {},
+) {
+  return prisma.refund.create({
+    data: {
+      clinicId,
+      invoiceId,
+      createdById,
+      method: overrides.method || 'cash',
+      status: overrides.status || 'pending',
+      amountPaise: overrides.amountPaise ?? 50000,
+      paymentId: overrides.paymentId,
+      razorpayRefundId: overrides.razorpayRefundId,
+      reason: overrides.reason || 'Test refund',
+      processedAt: overrides.processedAt,
+    },
+  });
+}
+
+export async function createTestCreditNote(
+  clinicId: string,
+  invoiceId: string,
+  issuedById: string,
+  overrides: Partial<{
+    creditNoteNumber: string;
+    reason: string;
+    notes: string;
+    subtotalPaise: number;
+    taxableValuePaise: number;
+    totalPaise: number;
+    issuedAt: Date;
+  }> = {},
+) {
+  return prisma.creditNote.create({
+    data: {
+      clinicId,
+      invoiceId,
+      issuedById,
+      creditNoteNumber:
+        overrides.creditNoteNumber || `CN-TEST-${randomUUID().slice(0, 6)}`,
+      reason: overrides.reason || 'Test credit note',
+      notes: overrides.notes,
+      subtotalPaise: overrides.subtotalPaise ?? 0,
+      taxableValuePaise: overrides.taxableValuePaise ?? 0,
+      totalPaise: overrides.totalPaise ?? 0,
+      issuedAt: overrides.issuedAt,
+    },
+  });
+}
+
+export async function createTestWebhookEvent(
+  clinicId: string,
+  overrides: Partial<{
+    eventId: string;
+    eventType: string;
+    rawPayload: string;
+    signatureVerified: boolean;
+    processedAt: Date;
+  }> = {},
+) {
+  return prisma.webhookEvent.create({
+    data: {
+      clinicId,
+      // The x-razorpay-event-id header; UNIQUE, which is what makes duplicate
+      // delivery a no-op.
+      eventId: overrides.eventId || randomUUID(),
+      eventType: overrides.eventType || 'payment_link.paid',
+      rawPayload: overrides.rawPayload || '{}',
+      signatureVerified: overrides.signatureVerified ?? true,
+      processedAt: overrides.processedAt,
+    },
+  });
+}
+
 export async function createTestTokens(
   app: any,
   userId: string,
@@ -224,6 +430,20 @@ export async function cleanupTestData() {
   // Delete in reverse dependency order inside an interactive transaction
   // to avoid FK violations from parallel test file execution
   await prisma.$transaction(async (tx) => {
+    // Phase 6 billing tables must go FIRST: invoices reference pets, pet_owners,
+    // consultations and users with ON DELETE RESTRICT, so leaving them behind
+    // makes every Phase 3/4 deletion below fail on an FK violation.
+    await tx.creditNoteLineItem.deleteMany();
+    await tx.creditNote.deleteMany();
+    await tx.paymentReceipt.deleteMany();
+    await tx.refund.deleteMany();
+    await tx.payment.deleteMany();
+    await tx.invoiceLineItem.deleteMany();
+    await tx.invoice.deleteMany();
+    await tx.invoiceNumberCounter.deleteMany();
+    await tx.webhookEvent.deleteMany();
+    await tx.billingAuditLog.deleteMany();
+
     await tx.authAuditLog.deleteMany();
     await tx.notification.deleteMany();
     await tx.deviceToken.deleteMany();
