@@ -196,6 +196,136 @@ export async function createTestPrescription(
   });
 }
 
+// ─── Phase 5 inventory factories (added by plan 06-08) ──────────────────
+//
+// Phase 5 shipped no test factories of its own, so these were added here rather
+// than defining a second set elsewhere. `sellingPrice` and `unitPrice` are
+// RUPEES (Decimal(10,2)) — Phase 5's unit — not paise. The single conversion to
+// paise is `toPaise` inside the billing service (D-31).
+
+export async function createTestInventoryItem(
+  clinicId: string,
+  overrides: Partial<{
+    name: string;
+    category: string;
+    unit: string;
+    /** RUPEES, matching Phase 5's Decimal(10,2) column. */
+    sellingPrice: number;
+    hsnSacCode: string;
+    gstRate: number;
+    currentStock: number;
+  }> = {},
+) {
+  return prisma.inventoryItem.create({
+    data: {
+      clinicId,
+      name: overrides.name || `Test Item ${randomUUID().slice(0, 6)}`,
+      category: overrides.category || 'medicine',
+      unit: overrides.unit || 'tablets',
+      sellingPrice: overrides.sellingPrice ?? 25.5,
+      hsnSacCode: overrides.hsnSacCode ?? '3004',
+      gstRate: overrides.gstRate ?? 5,
+      currentStock: overrides.currentStock ?? 0,
+    },
+  });
+}
+
+/**
+ * A receivable batch. `currentQty` defaults equal to `initialQty` because a
+ * freshly received batch has had nothing taken from it yet; a fixture that
+ * silently disagreed would make every later before/after stock assertion
+ * meaningless.
+ *
+ * `expiryDate` defaults a year out. Pass a past date to build the
+ * expired-batch-is-not-drawn-from fixture — note `isExpired` must be set too
+ * only if the intent is Phase 5's flagged-expired state; the FIFO query also
+ * excludes any batch whose `expiryDate` is in the past regardless of the flag.
+ */
+export async function createTestStockBatch(
+  clinicId: string,
+  itemId: string,
+  overrides: Partial<{
+    initialQty: number;
+    currentQty: number;
+    expiryDate: Date | null;
+    isExpired: boolean;
+    lotNumber: string;
+    receivedAt: Date;
+    purchasePrice: number;
+  }> = {},
+) {
+  const initialQty = overrides.initialQty ?? 10;
+  const batch = await prisma.stockBatch.create({
+    data: {
+      clinicId,
+      itemId,
+      lotNumber: overrides.lotNumber || `LOT-${randomUUID().slice(0, 6)}`,
+      initialQty,
+      currentQty: overrides.currentQty ?? initialQty,
+      expiryDate:
+        overrides.expiryDate === undefined
+          ? new Date(Date.now() + 365 * 24 * 60 * 60 * 1000)
+          : overrides.expiryDate,
+      isExpired: overrides.isExpired ?? false,
+      receivedAt: overrides.receivedAt ?? new Date(),
+      purchasePrice: overrides.purchasePrice ?? 10,
+    },
+  });
+
+  // Keep the item's denormalised running total consistent with the batches it
+  // owns, exactly as Phase 5's receive flow does.
+  await prisma.inventoryItem.update({
+    where: { id: itemId },
+    data: { currentStock: { increment: batch.currentQty } },
+  });
+
+  return batch;
+}
+
+/**
+ * Reproduces Phase 5's POST-DISPENSE state by running Phase 5's own
+ * `FifoDispenseService`, not by hand-writing rows.
+ *
+ * This matters for the double-deduction tests in `finalize-stock.test.ts`. A
+ * fixture that inserted the `dispensed` movement WITHOUT decrementing the batch
+ * would leave the batch sitting on exactly the number a buggy second deduction
+ * produces, and the bug would be invisible. Delegating to the real service means
+ * the fixture cannot drift from real Phase 5 behaviour at all.
+ *
+ * Returns the movement rows the dispense produced (one per batch touched), so a
+ * caller can assert on `stockMovementId` provenance directly.
+ */
+export async function dispenseForTest(
+  clinicId: string,
+  itemId: string,
+  quantity: number,
+  opts: {
+    userId: string;
+    userName?: string;
+    consultationId?: string | null;
+    ownerId?: string | null;
+    overrideBatchId?: string;
+  },
+) {
+  const { createTenantClient } = await import('../../src/lib/prisma-rls.js');
+  const { FifoDispenseService } = await import(
+    '../../src/modules/inventory/fifo-dispense.service.js'
+  );
+  const { StockMovementService } = await import(
+    '../../src/modules/inventory/stock-movement.service.js'
+  );
+
+  const db = createTenantClient(clinicId);
+  const service = new FifoDispenseService(db, new StockMovementService(db));
+
+  return service.dispense(clinicId, itemId, opts.userId, opts.userName ?? 'Test Vet', {
+    quantity,
+    consultationId: opts.consultationId ?? null,
+    ownerId: opts.ownerId ?? null,
+    overrideBatchId: opts.overrideBatchId,
+  });
+}
+
 // ─── Phase 6 billing factories (plan 06-03) ─────────────────────────────
 //
 // Money defaults are in PAISE (D-31), matching the columns. 50000 paise = ₹500.
