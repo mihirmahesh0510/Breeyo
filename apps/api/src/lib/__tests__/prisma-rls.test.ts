@@ -90,12 +90,14 @@ describe('prisma-rls tenant handle (D-30)', () => {
     // No syntax error, and the value round-trips verbatim (bound, not interpolated).
     expect(await readGuc(db)).toBe(injected);
 
-    // The statement was not altered: users is still there.
-    const admin = getAppPrisma();
-    const [{ exists }] = await admin.$queryRaw<Array<{ exists: boolean }>>`
+    // The statement was not altered: users is still there. Probe pg_catalog
+    // rather than information_schema — the latter is privilege-filtered and
+    // would report "absent" for a table breeyo_app merely lacks grants on.
+    const app = getAppPrisma();
+    const [{ exists }] = await app.$queryRaw<Array<{ exists: boolean }>>`
       SELECT EXISTS (
-        SELECT 1 FROM information_schema.tables
-        WHERE table_schema = 'public' AND table_name = 'users'
+        SELECT 1 FROM pg_catalog.pg_tables
+        WHERE schemaname = 'public' AND tablename = 'users'
       ) AS exists
     `;
     expect(exists).toBe(true);
