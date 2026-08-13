@@ -79,5 +79,11 @@ export function createQueueController(queueService: QueueService) {
 
       return reply.status(200).send({ data: board });
     },
+
+    async archiveEntriesHandler(_request: FastifyRequest, reply: FastifyReply) {
+      const result = await queueService.archiveOldEntries();
+
+      return reply.status(200).send({ data: { archivedCount: result.count } });
+    },
   };
 }

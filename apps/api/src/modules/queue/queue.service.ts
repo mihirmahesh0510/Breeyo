@@ -190,6 +190,14 @@ export class QueueService {
   }
 
   /**
+   * Archives WAITING/DONE/NO_SHOW entries checked in before today.
+   * D-23: IN_CONSULT entries persist past midnight, everything else archives.
+   */
+  async archiveOldEntries() {
+    return this.repository.archiveEntries(QueueRepository.getTodayIST());
+  }
+
+  /**
    * Broadcasts an event to all clients in a clinic room.
    */
   private broadcast(clinicId: string, event: string, data: unknown) {
