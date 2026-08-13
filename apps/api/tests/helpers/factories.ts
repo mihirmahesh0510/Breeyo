@@ -76,6 +76,126 @@ export async function createTestClinicMember(
   return member;
 }
 
+// ─── Phase 3/4 factories (added by Phase 6 plan 06-00 for D-30 isolation tests)
+
+export async function createTestPetOwner(
+  clinicId: string,
+  overrides: Partial<{
+    mobile: string;
+    name: string;
+    email: string;
+    address: string;
+    altPhone: string;
+  }> = {},
+) {
+  return prisma.petOwner.create({
+    data: {
+      clinicId,
+      // [clinicId, mobile] is unique -- keep the random suffix
+      mobile: overrides.mobile || `+91${Math.floor(7000000000 + Math.random() * 2999999999)}`,
+      name: overrides.name || `Test Owner ${randomUUID().slice(0, 6)}`,
+      email: overrides.email,
+      address: overrides.address,
+      altPhone: overrides.altPhone,
+    },
+  });
+}
+
+export async function createTestPet(
+  clinicId: string,
+  ownerId: string,
+  overrides: Partial<{
+    name: string;
+    species: 'DOG' | 'CAT' | 'BIRD' | 'RABBIT' | 'FISH' | 'REPTILE' | 'OTHER';
+    breed: string;
+    weight: number;
+  }> = {},
+) {
+  return prisma.pet.create({
+    data: {
+      clinicId,
+      ownerId,
+      name: overrides.name || `Test Pet ${randomUUID().slice(0, 6)}`,
+      species: overrides.species || 'DOG',
+      breed: overrides.breed,
+      weight: overrides.weight,
+    },
+  });
+}
+
+export async function createTestConsultation(
+  clinicId: string,
+  petId: string,
+  vetId: string,
+  overrides: Partial<{
+    visitType: string;
+    status: string;
+    assessment: string;
+  }> = {},
+) {
+  return prisma.consultation.create({
+    data: {
+      clinicId,
+      petId,
+      vetId,
+      visitType: overrides.visitType || 'general',
+      status: overrides.status || 'draft',
+      assessment: overrides.assessment,
+    },
+  });
+}
+
+export async function createTestServiceCatalogEntry(
+  clinicId: string,
+  overrides: Partial<{
+    name: string;
+    category: string;
+    price: number;
+    sacCode: string;
+    gstRateOverride: number;
+    isActive: boolean;
+  }> = {},
+) {
+  return prisma.serviceCatalog.create({
+    data: {
+      clinicId,
+      name: overrides.name || `Test Service ${randomUUID().slice(0, 6)}`,
+      category: overrides.category || 'other',
+      // price in paise
+      price: overrides.price ?? 50000,
+      sacCode: overrides.sacCode || '998351',
+      gstRateOverride: overrides.gstRateOverride ?? 0,
+      isActive: overrides.isActive ?? true,
+    },
+  });
+}
+
+export async function createTestPrescription(
+  consultationId: string,
+  overrides: Partial<{
+    drugName: string;
+    formulation: string;
+    strength: string;
+    dosage: string;
+    route: string;
+    frequency: string;
+    duration: string;
+  }> = {},
+) {
+  return prisma.prescription.create({
+    data: {
+      consultationId,
+      drugName: overrides.drugName || `Test Drug ${randomUUID().slice(0, 6)}`,
+      formulation: overrides.formulation || 'tablet',
+      strength: overrides.strength || '500mg',
+      dosage: overrides.dosage || '1 tablet',
+      route: overrides.route || 'oral',
+      frequency: overrides.frequency || 'BID',
+      duration: overrides.duration || '5 days',
+    },
+  });
+}
+
 export async function createTestTokens(
   app: any,
   userId: string,

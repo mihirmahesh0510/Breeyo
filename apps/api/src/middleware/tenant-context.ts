@@ -1,11 +1,13 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
-import type { PrismaClient } from '@prisma/client';
 import { createTenantClient } from '../lib/prisma-rls.js';
+import type { TenantPrismaClient } from '../lib/prisma-rls.js';
 import { AUTH_ERRORS } from '@breeyo/types';
 
 declare module 'fastify' {
   interface FastifyRequest {
-    db: PrismaClient;
+    // Typed against the extended client, not the raw PrismaClient: casting the
+    // extension away would hide the very wrapper that binds app.clinic_id.
+    db: TenantPrismaClient;
   }
 }
 

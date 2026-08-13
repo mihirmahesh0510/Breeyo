@@ -1,6 +1,7 @@
 import fp from 'fastify-plugin';
 import { PrismaClient } from '@prisma/client';
 import type { FastifyInstance } from 'fastify';
+import { disconnectAppPrisma } from '../lib/prisma-rls.js';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -16,6 +17,8 @@ export default fp(async function prismaPlugin(fastify: FastifyInstance) {
   fastify.decorate('prisma', prisma);
 
   fastify.addHook('onClose', async () => {
-    await prisma.$disconnect();
+    // Both pooled clients must be closed: the admin client decorated above and
+    // the app-role singleton that backs every request.db tenant handle.
+    await Promise.all([prisma.$disconnect(), disconnectAppPrisma()]);
   });
 });
