@@ -131,6 +131,10 @@ describe('FifoDispenseService', () => {
       const sqlArg = tx.$queryRaw.mock.calls[0][0];
       expect(sqlArg.sql).toContain('FOR UPDATE');
       expect(sqlArg.values).toContain(mockBatch2.id);
+      // Guards against a stale/crafted overrideBatchId from another item in
+      // the clinic being locked and decremented instead of the requested item's.
+      expect(sqlArg.sql).toContain('item_id');
+      expect(sqlArg.values).toContain(mockItem.id);
     });
 
     it('creates a movement for each batch deducted', async () => {
@@ -219,13 +223,14 @@ describe('FifoDispenseService', () => {
 
   describe('returnToStock', () => {
     it('restores batch currentQty and increments InventoryItem.currentStock (D-51)', async () => {
-      prisma.stockMovement.findFirst.mockResolvedValue({
+      tx.stockMovement.findFirst.mockResolvedValue({
         id: 'mov_1',
         clinicId: mockClinic.id,
         itemId: mockItem.id,
         batchId: mockBatch1.id,
         type: 'dispensed',
         quantity: -10,
+        reversal: null,
       });
 
       const returnMovement = await service.returnToStock(mockClinic.id, 'mov_1', mockUser.id, mockUser.name);
@@ -243,13 +248,14 @@ describe('FifoDispenseService', () => {
     });
 
     it('rejects returning a movement that is not a negative dispensed movement', async () => {
-      prisma.stockMovement.findFirst.mockResolvedValue({
+      tx.stockMovement.findFirst.mockResolvedValue({
         id: 'mov_2',
         clinicId: mockClinic.id,
         itemId: mockItem.id,
         batchId: mockBatch1.id,
         type: 'received',
         quantity: 10,
+        reversal: null,
       });
 
       await expect(
@@ -258,11 +264,27 @@ describe('FifoDispenseService', () => {
     });
 
     it('throws when the movement does not exist', async () => {
-      prisma.stockMovement.findFirst.mockResolvedValue(null);
+      tx.stockMovement.findFirst.mockResolvedValue(null);
 
       await expect(
         service.returnToStock(mockClinic.id, 'unknown-mov', mockUser.id, mockUser.name),
       ).rejects.toMatchObject({ statusCode: 404 });
+    });
+
+    it('rejects returning a movement that has already been returned (double-return)', async () => {
+      tx.stockMovement.findFirst.mockResolvedValue({
+        id: 'mov_1',
+        clinicId: mockClinic.id,
+        itemId: mockItem.id,
+        batchId: mockBatch1.id,
+        type: 'dispensed',
+        quantity: -10,
+        reversal: { id: 'mov_3' },
+      });
+
+      await expect(
+        service.returnToStock(mockClinic.id, 'mov_1', mockUser.id, mockUser.name),
+      ).rejects.toMatchObject({ code: 'VALIDATION_ERROR' });
     });
   });
 });

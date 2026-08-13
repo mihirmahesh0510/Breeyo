@@ -20,6 +20,7 @@ export interface RecordMovementInput {
   ownerId?: string | null; // D-60
   unitPrice?: number | null; // D-60
   notes?: string | null;
+  reversedMovementId?: string | null;
 }
 
 export interface GetHistoryOptions {
@@ -67,6 +68,7 @@ export class StockMovementService {
         ownerId: data.ownerId ?? null,
         unitPrice: data.unitPrice ?? null,
         notes: data.notes ?? null,
+        reversedMovementId: data.reversedMovementId ?? null,
       },
     });
   }

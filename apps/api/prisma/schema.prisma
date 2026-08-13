@@ -645,6 +645,14 @@ model StockMovement {
   notes          String?
   createdAt      DateTime @default(now()) @map("created_at")
 
+  // Set on a 'returned' movement to the id of the 'dispensed' movement it
+  // reverses. @unique enforces at the DB level that a dispensed movement
+  // can be returned at most once (CodeRabbit-flagged: without this, a
+  // repeated return request would double-credit stock).
+  reversedMovementId String?        @unique @map("reversed_movement_id") @db.Uuid
+  reversedMovement   StockMovement? @relation("MovementReversal", fields: [reversedMovementId], references: [id])
+  reversal           StockMovement? @relation("MovementReversal")
+
   item  InventoryItem @relation(fields: [itemId], references: [id])
   batch StockBatch?   @relation(fields: [batchId], references: [id])
   owner PetOwner?     @relation(fields: [ownerId], references: [id])

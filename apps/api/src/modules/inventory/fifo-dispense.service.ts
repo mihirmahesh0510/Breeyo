@@ -90,6 +90,7 @@ export class FifoDispenseService {
               received_at AS "receivedAt", is_expired AS "isExpired"
             FROM stock_batches
             WHERE id = ${parsed.overrideBatchId}::uuid
+              AND item_id = ${itemId}::uuid
               AND clinic_id = ${clinicId}::uuid
               AND current_qty > 0
               AND is_expired = false
@@ -167,17 +168,21 @@ export class FifoDispenseService {
    * is never edited or deleted, per D-45).
    */
   async returnToStock(clinicId: string, movementId: string, userId: string, userName: string) {
-    const movement = await this.prisma.stockMovement.findFirst({
-      where: { id: movementId, clinicId },
-    });
-    if (!movement) throw notFoundError('Stock movement not found', 'MOVEMENT_NOT_FOUND');
-    if (movement.type !== 'dispensed' || movement.quantity >= 0) {
-      throw validationError('Only dispensed movements can be returned to stock');
-    }
-
-    const restoreQty = Math.abs(movement.quantity);
-
     return this.prisma.$transaction(async (tx) => {
+      const movement = await tx.stockMovement.findFirst({
+        where: { id: movementId, clinicId },
+        include: { reversal: true },
+      });
+      if (!movement) throw notFoundError('Stock movement not found', 'MOVEMENT_NOT_FOUND');
+      if (movement.type !== 'dispensed' || movement.quantity >= 0) {
+        throw validationError('Only dispensed movements can be returned to stock');
+      }
+      if (movement.reversal) {
+        throw validationError('This movement has already been returned to stock');
+      }
+
+      const restoreQty = Math.abs(movement.quantity);
+
       if (movement.batchId) {
         await tx.stockBatch.update({
           where: { id: movement.batchId },
@@ -185,6 +190,8 @@ export class FifoDispenseService {
         });
       }
 
+      // reversedMovementId is @unique, so a concurrent duplicate return
+      // racing past the check above still fails atomically here.
       const returnMovement = await this.stockMovementService.recordMovement(tx, {
         clinicId,
         itemId: movement.itemId,
@@ -194,6 +201,7 @@ export class FifoDispenseService {
         userId,
         userName,
         notes: `Returned from movement ${movement.id}`,
+        reversedMovementId: movement.id,
       });
 
       await tx.inventoryItem.update({
