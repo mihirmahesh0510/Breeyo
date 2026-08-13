@@ -70,12 +70,18 @@ jobs:
       - name: Run database migrations
         run: pnpm --filter @breeyo/api db:migrate
 
+      # Must run BEFORE post-migrate.sql: that script adds pg_trgm GIN indexes
+      # which are deliberately not modelled in schema.prisma, and would be
+      # reported here as drift. This gate asserts the narrower, correct claim --
+      # that the migration set ALONE reproduces schema.prisma from empty.
+      - name: Verify schema reproducibility
+        working-directory: apps/api
+        run: pnpm exec prisma migrate diff --from-schema-datasource prisma/schema.prisma --to-schema-datamodel prisma/schema.prisma --exit-code
+
       - name: Setup RLS roles and permissions
         run: |
           psql "$DATABASE_URL" -f apps/api/prisma/init-rls-roles.sql
           psql "$DATABASE_URL" -f apps/api/prisma/post-migrate.sql
-          psql "$DATABASE_URL" -f apps/api/prisma/rls/phase-03-patient-queue-rls.sql
-          psql "$DATABASE_URL" -f apps/api/prisma/rls/phase-05-inventory-rls.sql
 
       - name: Build
         run: pnpm build
