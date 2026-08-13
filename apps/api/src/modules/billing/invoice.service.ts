@@ -33,7 +33,11 @@ import type {
   InvoiceListQuery,
   InvoiceRepository,
 } from './invoice.repository.js';
-import type { StockPlanLine, StockValidatorService } from './stock-validator.service.js';
+import type {
+  StockAvailabilityClient,
+  StockPlanLine,
+  StockValidatorService,
+} from './stock-validator.service.js';
 
 /**
  * The invoice domain (BIL-01, BIL-02, BIL-03, and the invoice half of BIL-07).
@@ -533,8 +537,12 @@ export class InvoiceService {
       clinicId,
       invoiceId,
     )) as unknown as PersistedLineItem[];
+    // The narrow `StockAvailabilityClient` shape is a structural subset of the
+    // tenant client's `stockBatch.findMany`, but Prisma's delegate signature is
+    // generic over its args and does not assign to a hand-written one, so the
+    // widening is explicit here rather than papered over with `any`.
     return this.stockValidator.checkAvailability(
-      this.prisma as never,
+      this.prisma as unknown as StockAvailabilityClient,
       clinicId,
       this.buildProductLineStockPlan(lineItems),
     );
