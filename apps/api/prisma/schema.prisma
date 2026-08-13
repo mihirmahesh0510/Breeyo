@@ -823,9 +823,14 @@ model Invoice {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   clinic       Clinic        @relation(fields: [clinicId], references: [id])
-  pet          Pet?          @relation(fields: [petId], references: [id])
-  owner        PetOwner?     @relation(fields: [ownerId], references: [id])
-  consultation Consultation? @relation(fields: [consultationId], references: [id])
+  // Restrict, not the Prisma default SET NULL for an optional relation: an
+  // invoice is a record of account with a 6-year retention obligation (GST
+  // Section 36), so silently severing it from its patient/owner on a delete
+  // would destroy audit context. D-47's "settle, then delete or merge" flow
+  // must repoint these columns explicitly before the parent row can go.
+  pet          Pet?          @relation(fields: [petId], references: [id], onDelete: Restrict)
+  owner        PetOwner?     @relation(fields: [ownerId], references: [id], onDelete: Restrict)
+  consultation Consultation? @relation(fields: [consultationId], references: [id], onDelete: Restrict)
   createdBy    User          @relation("InvoiceCreatedBy", fields: [createdById], references: [id])
 
   lineItems   InvoiceLineItem[]
@@ -849,7 +854,7 @@ model InvoiceLineItem {
   clinicId  String @map("clinic_id") @db.Uuid
   invoiceId String @map("invoice_id") @db.Uuid
 
-  lineType  String // service | product
+  lineType  String @map("line_type") // service | product
   sortOrder Int    @default(0) @map("sort_order")
 
   serviceCatalogId String? @map("service_catalog_id") @db.Uuid

@@ -558,7 +558,232 @@ CREATE POLICY clinic_inventory_units_delete ON clinic_inventory_units
   FOR DELETE USING (clinic_id = current_setting('app.clinic_id', true)::uuid);
 
 -- ============================================================
--- 8. Tables deliberately left WITHOUT clinic RLS policies
+-- 8. Phase 6 billing tables (plan 06-03, D-30 + PLT-04)
+-- ============================================================
+-- T-06-06: these ten tables hold a clinic's entire revenue picture -- invoice
+-- totals, payment records, refunds and the financial audit trail. A
+-- cross-tenant read here is not a privacy nuisance, it is one clinic reading
+-- another's books. Every table gets ENABLE *and* FORCE (FORCE is what makes
+-- the policies apply to the table owner too), keyed on the same
+-- `app.clinic_id` GUC that `lib/prisma-rls.ts` binds inside the transaction.
+--
+-- No new GRANTs are needed: section 1 above already grants on ALL TABLES IN
+-- SCHEMA public, and CI runs this file after `prisma migrate deploy`, so the
+-- billing tables are covered automatically.
+
+-- invoices
+ALTER TABLE invoices ENABLE ROW LEVEL SECURITY;
+ALTER TABLE invoices FORCE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS invoices_select ON invoices;
+CREATE POLICY invoices_select ON invoices
+  FOR SELECT USING (clinic_id = current_setting('app.clinic_id', true)::uuid);
+
+DROP POLICY IF EXISTS invoices_insert ON invoices;
+CREATE POLICY invoices_insert ON invoices
+  FOR INSERT WITH CHECK (clinic_id = current_setting('app.clinic_id', true)::uuid);
+
+DROP POLICY IF EXISTS invoices_update ON invoices;
+CREATE POLICY invoices_update ON invoices
+  FOR UPDATE USING (clinic_id = current_setting('app.clinic_id', true)::uuid);
+
+DROP POLICY IF EXISTS invoices_delete ON invoices;
+CREATE POLICY invoices_delete ON invoices
+  FOR DELETE USING (clinic_id = current_setting('app.clinic_id', true)::uuid);
+
+-- invoice_line_items
+ALTER TABLE invoice_line_items ENABLE ROW LEVEL SECURITY;
+ALTER TABLE invoice_line_items FORCE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS invoice_line_items_select ON invoice_line_items;
+CREATE POLICY invoice_line_items_select ON invoice_line_items
+  FOR SELECT USING (clinic_id = current_setting('app.clinic_id', true)::uuid);
+
+DROP POLICY IF EXISTS invoice_line_items_insert ON invoice_line_items;
+CREATE POLICY invoice_line_items_insert ON invoice_line_items
+  FOR INSERT WITH CHECK (clinic_id = current_setting('app.clinic_id', true)::uuid);
+
+DROP POLICY IF EXISTS invoice_line_items_update ON invoice_line_items;
+CREATE POLICY invoice_line_items_update ON invoice_line_items
+  FOR UPDATE USING (clinic_id = current_setting('app.clinic_id', true)::uuid);
+
+DROP POLICY IF EXISTS invoice_line_items_delete ON invoice_line_items;
+CREATE POLICY invoice_line_items_delete ON invoice_line_items
+  FOR DELETE USING (clinic_id = current_setting('app.clinic_id', true)::uuid);
+
+-- payments
+ALTER TABLE payments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE payments FORCE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS payments_select ON payments;
+CREATE POLICY payments_select ON payments
+  FOR SELECT USING (clinic_id = current_setting('app.clinic_id', true)::uuid);
+
+DROP POLICY IF EXISTS payments_insert ON payments;
+CREATE POLICY payments_insert ON payments
+  FOR INSERT WITH CHECK (clinic_id = current_setting('app.clinic_id', true)::uuid);
+
+DROP POLICY IF EXISTS payments_update ON payments;
+CREATE POLICY payments_update ON payments
+  FOR UPDATE USING (clinic_id = current_setting('app.clinic_id', true)::uuid);
+
+DROP POLICY IF EXISTS payments_delete ON payments;
+CREATE POLICY payments_delete ON payments
+  FOR DELETE USING (clinic_id = current_setting('app.clinic_id', true)::uuid);
+
+-- payment_receipts
+ALTER TABLE payment_receipts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE payment_receipts FORCE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS payment_receipts_select ON payment_receipts;
+CREATE POLICY payment_receipts_select ON payment_receipts
+  FOR SELECT USING (clinic_id = current_setting('app.clinic_id', true)::uuid);
+
+DROP POLICY IF EXISTS payment_receipts_insert ON payment_receipts;
+CREATE POLICY payment_receipts_insert ON payment_receipts
+  FOR INSERT WITH CHECK (clinic_id = current_setting('app.clinic_id', true)::uuid);
+
+DROP POLICY IF EXISTS payment_receipts_update ON payment_receipts;
+CREATE POLICY payment_receipts_update ON payment_receipts
+  FOR UPDATE USING (clinic_id = current_setting('app.clinic_id', true)::uuid);
+
+DROP POLICY IF EXISTS payment_receipts_delete ON payment_receipts;
+CREATE POLICY payment_receipts_delete ON payment_receipts
+  FOR DELETE USING (clinic_id = current_setting('app.clinic_id', true)::uuid);
+
+-- refunds
+ALTER TABLE refunds ENABLE ROW LEVEL SECURITY;
+ALTER TABLE refunds FORCE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS refunds_select ON refunds;
+CREATE POLICY refunds_select ON refunds
+  FOR SELECT USING (clinic_id = current_setting('app.clinic_id', true)::uuid);
+
+DROP POLICY IF EXISTS refunds_insert ON refunds;
+CREATE POLICY refunds_insert ON refunds
+  FOR INSERT WITH CHECK (clinic_id = current_setting('app.clinic_id', true)::uuid);
+
+DROP POLICY IF EXISTS refunds_update ON refunds;
+CREATE POLICY refunds_update ON refunds
+  FOR UPDATE USING (clinic_id = current_setting('app.clinic_id', true)::uuid);
+
+DROP POLICY IF EXISTS refunds_delete ON refunds;
+CREATE POLICY refunds_delete ON refunds
+  FOR DELETE USING (clinic_id = current_setting('app.clinic_id', true)::uuid);
+
+-- credit_notes
+ALTER TABLE credit_notes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE credit_notes FORCE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS credit_notes_select ON credit_notes;
+CREATE POLICY credit_notes_select ON credit_notes
+  FOR SELECT USING (clinic_id = current_setting('app.clinic_id', true)::uuid);
+
+DROP POLICY IF EXISTS credit_notes_insert ON credit_notes;
+CREATE POLICY credit_notes_insert ON credit_notes
+  FOR INSERT WITH CHECK (clinic_id = current_setting('app.clinic_id', true)::uuid);
+
+DROP POLICY IF EXISTS credit_notes_update ON credit_notes;
+CREATE POLICY credit_notes_update ON credit_notes
+  FOR UPDATE USING (clinic_id = current_setting('app.clinic_id', true)::uuid);
+
+DROP POLICY IF EXISTS credit_notes_delete ON credit_notes;
+CREATE POLICY credit_notes_delete ON credit_notes
+  FOR DELETE USING (clinic_id = current_setting('app.clinic_id', true)::uuid);
+
+-- credit_note_line_items
+ALTER TABLE credit_note_line_items ENABLE ROW LEVEL SECURITY;
+ALTER TABLE credit_note_line_items FORCE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS credit_note_line_items_select ON credit_note_line_items;
+CREATE POLICY credit_note_line_items_select ON credit_note_line_items
+  FOR SELECT USING (clinic_id = current_setting('app.clinic_id', true)::uuid);
+
+DROP POLICY IF EXISTS credit_note_line_items_insert ON credit_note_line_items;
+CREATE POLICY credit_note_line_items_insert ON credit_note_line_items
+  FOR INSERT WITH CHECK (clinic_id = current_setting('app.clinic_id', true)::uuid);
+
+DROP POLICY IF EXISTS credit_note_line_items_update ON credit_note_line_items;
+CREATE POLICY credit_note_line_items_update ON credit_note_line_items
+  FOR UPDATE USING (clinic_id = current_setting('app.clinic_id', true)::uuid);
+
+DROP POLICY IF EXISTS credit_note_line_items_delete ON credit_note_line_items;
+CREATE POLICY credit_note_line_items_delete ON credit_note_line_items
+  FOR DELETE USING (clinic_id = current_setting('app.clinic_id', true)::uuid);
+
+-- invoice_number_counters
+-- RESEARCH Pattern 3 states the reason explicitly: the finalize transaction
+-- issues an `INSERT ... ON CONFLICT DO UPDATE ... RETURNING last_number`
+-- against this table. Without a policy, a bug in one clinic's finalize could
+-- increment ANOTHER clinic's counter, tearing a hole in that clinic's Rule
+-- 46(b) consecutive numbering that no application-layer fix could repair.
+ALTER TABLE invoice_number_counters ENABLE ROW LEVEL SECURITY;
+ALTER TABLE invoice_number_counters FORCE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS invoice_number_counters_select ON invoice_number_counters;
+CREATE POLICY invoice_number_counters_select ON invoice_number_counters
+  FOR SELECT USING (clinic_id = current_setting('app.clinic_id', true)::uuid);
+
+DROP POLICY IF EXISTS invoice_number_counters_insert ON invoice_number_counters;
+CREATE POLICY invoice_number_counters_insert ON invoice_number_counters
+  FOR INSERT WITH CHECK (clinic_id = current_setting('app.clinic_id', true)::uuid);
+
+DROP POLICY IF EXISTS invoice_number_counters_update ON invoice_number_counters;
+CREATE POLICY invoice_number_counters_update ON invoice_number_counters
+  FOR UPDATE USING (clinic_id = current_setting('app.clinic_id', true)::uuid);
+
+DROP POLICY IF EXISTS invoice_number_counters_delete ON invoice_number_counters;
+CREATE POLICY invoice_number_counters_delete ON invoice_number_counters
+  FOR DELETE USING (clinic_id = current_setting('app.clinic_id', true)::uuid);
+
+-- webhook_events
+-- Deliberate divergence: SELECT/INSERT/UPDATE but NO DELETE policy. The
+-- BullMQ worker stamps `processed_at` (hence UPDATE), but a received Razorpay
+-- event is the evidence that a payment was claimed; deleting it would destroy
+-- the only durable record of an external money event.
+ALTER TABLE webhook_events ENABLE ROW LEVEL SECURITY;
+ALTER TABLE webhook_events FORCE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS webhook_events_select ON webhook_events;
+CREATE POLICY webhook_events_select ON webhook_events
+  FOR SELECT USING (clinic_id = current_setting('app.clinic_id', true)::uuid);
+
+DROP POLICY IF EXISTS webhook_events_insert ON webhook_events;
+CREATE POLICY webhook_events_insert ON webhook_events
+  FOR INSERT WITH CHECK (clinic_id = current_setting('app.clinic_id', true)::uuid);
+
+DROP POLICY IF EXISTS webhook_events_update ON webhook_events;
+CREATE POLICY webhook_events_update ON webhook_events
+  FOR UPDATE USING (clinic_id = current_setting('app.clinic_id', true)::uuid);
+
+DROP POLICY IF EXISTS webhook_events_delete ON webhook_events;
+-- (no DELETE policy by design -- see note above)
+
+-- billing_audit_log
+-- append-only: no UPDATE/DELETE policy by design (D-32).
+-- T-06-08: a financial audit row that can be edited or removed proves nothing.
+-- Phase 1 (D-34 to D-36) established immutable append-only logs, and GST
+-- Section 36 requires 6 years of retention for records of account -- which is
+-- precisely why this is a separate table from auth_audit_log rather than more
+-- rows in it. Omitting the policies (rather than relying on service-layer
+-- discipline) means even a compromised application role cannot rewrite history.
+ALTER TABLE billing_audit_log ENABLE ROW LEVEL SECURITY;
+ALTER TABLE billing_audit_log FORCE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS billing_audit_log_select ON billing_audit_log;
+CREATE POLICY billing_audit_log_select ON billing_audit_log
+  FOR SELECT USING (clinic_id = current_setting('app.clinic_id', true)::uuid);
+
+DROP POLICY IF EXISTS billing_audit_log_insert ON billing_audit_log;
+CREATE POLICY billing_audit_log_insert ON billing_audit_log
+  FOR INSERT WITH CHECK (clinic_id = current_setting('app.clinic_id', true)::uuid);
+
+DROP POLICY IF EXISTS billing_audit_log_update ON billing_audit_log;
+DROP POLICY IF EXISTS billing_audit_log_delete ON billing_audit_log;
+-- (no UPDATE and no DELETE policy by design -- append-only, see note above)
+
+-- ============================================================
+-- 9. Tables deliberately left WITHOUT clinic RLS policies
 -- ============================================================
 -- Each line states why. Revisit if any of these gains a clinic_id column.
 --   users                     -- global identity; a person exists across clinics and is
