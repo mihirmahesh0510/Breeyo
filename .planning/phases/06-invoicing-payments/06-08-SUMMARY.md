@@ -3,8 +3,8 @@ phase: 06-invoicing-payments
 plan: "08"
 subsystem: billing
 tags: [http, authorization, rbac, integration-tests, bil-01, bil-02, bil-03, bil-07]
-status: blocked
-requires: ["06-02", "06-03", "06-04", "06-05", "06-06", "06-07"]
+status: complete
+requires: ["06-00b", "06-02", "06-03", "06-04", "06-05", "06-06", "06-07"]
 provides:
   - "/api/v1/billing/* HTTP surface for the invoice domain (12 routes, 3 permission gates)"
   - "billing.schema.ts local param/query/body schemas"
@@ -35,9 +35,9 @@ decisions:
   - "mark-paid uses a local narrow body schema, not recordPaymentSchema, so the client never computes a money figure"
   - "seed.ts now reconciles role permissions (deletes grants no longer in the map)"
 metrics:
-  duration: ~55m
+  duration: ~70m
   tasks: 3
-  commits: 5
+  commits: 8
   tests_added: 25
   completed: 2026-08-14
 ---
@@ -45,16 +45,19 @@ metrics:
 # Phase 6 Plan 08: Invoice HTTP Surface & BIL-01/02/03 Integration Tests Summary
 
 Exposed the invoice domain over `/api/v1/billing/*` with three permission gates and
-proved BIL-01, BIL-03 and most of BIL-02 against a real database — and in doing so
-uncovered a pre-existing defect that makes tenant-client transactions non-atomic,
-which blocks the concurrency half of BIL-02.
+proved BIL-01, BIL-02 and BIL-03 against a real database — and in doing so uncovered
+a pre-existing defect that made tenant-client transactions non-atomic, which was
+fixed separately as hotfix 06-00b.
 
-## Status: BLOCKED — architectural decision required
+## Status: COMPLETE
 
-24 of 25 new tests pass. The full API suite is **751 passed, 1 failed**. The single
-failure is `finalize-stock.test.ts -t "concurrent"`, and it is failing because of a
-real overselling bug, not a flaky test. See "Blocker" below and
-`deferred-items.md` (BLOCKER-06-08-01).
+All 25 new tests pass. Full API suite: **759 passed, 0 failed**, 80 todo.
+
+`finalize-stock.test.ts -t "concurrent"` failed on first delivery, exposing a real
+overselling defect in the shared tenant handle rather than a flaky test. That
+defect was fixed in **hotfix 06-00b** (`apps/api/src/lib/prisma-rls.ts`) and the
+test now passes with **no change to any code delivered by this plan** — the fix was
+entirely in the shared primitive. See "Blocker, resolved" below.
 
 ## What was built
 
@@ -81,9 +84,10 @@ and mark-unpaid (money state, not document state).
 integration tests in this phase should use supertest. `app.inject` in
 `tenant-isolation.test.ts` is legacy, not a constraint.
 
-**Observed outcome pair from the concurrent-finalize test:** `[200, 200]` — both
-finalizes succeeded and the batch's `current_qty` ended at **-1**. The expected
-pair is one 2xx and one 409. This is the blocker.
+**Observed outcome pair from the concurrent-finalize test:** on first delivery
+`[200, 200]` — both finalizes succeeded and the batch's `current_qty` ended at
+**-1**. After hotfix 06-00b the pair is the expected **one 2xx and one 409**, with
+`current_qty` landing on 0 and exactly one invoice carrying a number.
 
 **How the post-dispense fixture is produced:** `dispenseForTest` in `factories.ts`
 delegates to Phase 5's own `FifoDispenseService`, so the fixture is whatever Phase 5
@@ -158,7 +162,12 @@ movements". The shipped `voidInvoiceSchema` (06-04, D-34) validates
 `z.literal(true)`, so `false` is a 400. The test asserts the rejection **and** that
 nothing moved and the invoice did not become VOIDED, which preserves the intent.
 
-## Blocker — BLOCKER-06-08-01 (Rule 4, architectural)
+## Blocker, resolved — BLOCKER-06-08-01 (Rule 4, architectural)
+
+**Status: RESOLVED by hotfix 06-00b.** Escalated rather than patched around;
+fixed as a separate change to the shared primitive, then re-verified here. The
+account below is retained because it explains why the defect survived five phases
+and what future plans can now rely on.
 
 `createTenantClient` in `apps/api/src/lib/prisma-rls.ts` (plan 06-02) binds the RLS
 GUC by wrapping every operation in `$allOperations` with its own
@@ -181,17 +190,29 @@ writes on the HTTP path. It went unnoticed because every earlier transactional t
 `PrismaClient`, whose `$transaction` is genuine. This plan is the first to run a
 transactional write through `request.db`.
 
-**Not auto-fixed** because a correct fix changes the tenancy primitive all five
-completed phases run on, and must simultaneously preserve T-06-01 (GUC provably
+**Not auto-fixed here** because a correct fix changes the tenancy primitive all five
+completed phases run on, and had to simultaneously preserve T-06-01 (GUC provably
 transaction-local, on the same connection as the guarded query) and 06-02's
-deliberate `TenantPrismaClient` / `TenantTransactionClient` typing. Candidate
-approaches — overriding `$transaction` in a client extension and yielding the raw
-`tx`, or tracking depth in `AsyncLocalStorage` and short-circuiting
-`$allOperations` — each carry correctness and typing consequences well beyond a
-plan scoped to "expose the invoice domain over HTTP".
+deliberate `TenantPrismaClient` / `TenantTransactionClient` typing. The `concurrent`
+test was left failing deliberately rather than skipped, so the defect could not be
+mistaken for a flaky test.
 
-The `concurrent` test is **left failing deliberately**. It encodes a stated success
-criterion and threat T-06-132; skipping it would hide a live overselling defect.
+**How it was fixed (06-00b).** `createTenantClient` now overrides `$transaction`
+itself: it opens one real `base.$transaction`, sets the RLS GUC once on that
+connection, and hands the callback the raw unextended `tx`. Statements inside an
+interactive transaction are therefore no longer re-wrapped into transactions of
+their own, so rollback rolls back and `FOR UPDATE` holds for the transaction's full
+duration. `TenantPrismaClient.$transaction` is narrowed to the interactive overload
+and `TenantTransactionClient` keeps the same removed-key set, so 06-02's typing
+invariant is intact.
+
+**Re-verified in this plan after merging the hotfix**, with no change to any file
+delivered by 06-08: `finalize-stock.test.ts` 7/7, all 25 plan tests, and the full
+API suite at 759 passed / 0 failed.
+
+**What later plans can now rely on:** an interactive `$transaction` on `request.db`
+is genuinely atomic. `invoice.repository.ts`'s "Finalize atomicity" invariant #3
+holds at runtime, and row locks taken inside a finalize are held to commit.
 
 ## Verification
 
@@ -200,11 +221,14 @@ criterion and threat T-06-132; skipping it would hide a live overselling defect.
 | `pnpm --filter @breeyo/api exec tsc --noEmit` | passes |
 | `bash scripts/check-tenant-client.sh` | passes, 24 files scanned |
 | `tests/billing/invoice-create.test.ts` | 10/10 pass |
-| `tests/billing/finalize-stock.test.ts` | 6/7 pass (`concurrent` fails — blocker) |
+| `tests/billing/finalize-stock.test.ts` | 7/7 pass (`concurrent` green after 06-00b) |
 | `tests/billing/invoice-lock.test.ts` | 8/8 pass |
 | `tests/tenant-isolation.test.ts` after the seed change | 20/20 pass |
-| Full API suite | 751 passed, **1 failed**, 80 todo |
+| Full API suite | **759 passed, 0 failed**, 80 todo |
 | 401 without a token / 403 without the permission | both asserted |
+
+All figures above are post-merge of hotfix 06-00b. Before the hotfix the suite stood
+at 751 passed / 1 failed, the single failure being the `concurrent` case.
 
 ## Success criteria
 
@@ -214,7 +238,7 @@ criterion and threat T-06-132; skipping it would hide a live overselling defect.
 | Clinician denied interactive creation; End-Consultation path stays open | yes |
 | Insufficient stock returns 409 with every shortfall, mutates nothing | yes |
 | Consultation-sourced finalize leaves batches untouched; mixed provenance deducts only manual lines | yes |
-| Concurrent finalizes produce exactly one success | **NO — blocked** |
+| Concurrent finalizes produce exactly one success | yes (after hotfix 06-00b) |
 | Finalized invoices reject PATCH and DELETE | yes |
 | Cross-tenant invoice access returns 404 | yes |
 

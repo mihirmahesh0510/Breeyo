@@ -183,9 +183,14 @@ The `>= 500` branch returns before that point, so nothing internal can leak.
 
 ### BLOCKER-06-08-01 — `createTenantClient` interactive transactions are not atomic
 
-**Severity: blocker.** Escalated under deviation Rule 4 (architectural). NOT fixed
-by plan 06-08. Owning file `apps/api/src/lib/prisma-rls.ts` (plan 06-02), outside
-06-08's scope.
+**STATUS: RESOLVED** by hotfix **06-00b** (`apps/api/src/lib/prisma-rls.ts`).
+Re-verified from plan 06-08 after merging: `finalize-stock.test.ts` 7/7, all 25
+plan tests, full API suite **759 passed / 0 failed** — with no change to any file
+delivered by 06-08. Retained here as a record of the defect and its resolution.
+
+**Originally:** severity blocker, escalated under deviation Rule 4 (architectural),
+NOT fixed by plan 06-08. Owning file `apps/api/src/lib/prisma-rls.ts` (plan 06-02),
+outside 06-08's scope.
 
 **What was observed.** Two concurrent `POST /billing/invoices/:id/finalize`
 requests, each claiming the last unit of the same `StockBatch`, BOTH returned 200
@@ -226,20 +231,31 @@ transactional test — including `tests/billing/numbering-concurrency.test.ts` �
 drives the plain admin `PrismaClient`, whose `$transaction` is genuine. Plan 06-08
 is the first to run a transactional write through the HTTP tenant handle.
 
-**Why not auto-fixed.** A correct fix changes the tenancy primitive all five
-completed phases run on, and must simultaneously preserve T-06-01 (GUC provably
-transaction-local and on the same connection as the guarded query) and 06-02's
-deliberate `TenantPrismaClient` / `TenantTransactionClient` typing that exists to
-prevent casting between extended and raw handles. Candidate approaches —
-overriding `$transaction` in a client extension and yielding the raw `tx`, or
-tracking depth in `AsyncLocalStorage` and short-circuiting `$allOperations` — each
-carry correctness and typing consequences well beyond a plan scoped to "expose the
-invoice domain over HTTP".
+**Why it was not auto-fixed in 06-08.** A correct fix changes the tenancy primitive
+all five completed phases run on, and had to simultaneously preserve T-06-01 (GUC
+provably transaction-local and on the same connection as the guarded query) and
+06-02's deliberate `TenantPrismaClient` / `TenantTransactionClient` typing that
+exists to prevent casting between extended and raw handles. That is well beyond a
+plan scoped to "expose the invoice domain over HTTP", so it was escalated rather
+than patched around, and the failing test was left failing rather than skipped so
+the defect could not be mistaken for flakiness.
 
-**Current state.** `tests/billing/finalize-stock.test.ts -t "concurrent"` is left
-**failing on purpose**. It encodes a stated success criterion of plan 06-08 and
-threat T-06-132; silencing it would hide a live overselling defect. Rest of the API
-suite is green: 751 passed, 1 failed.
+**Resolution (hotfix 06-00b).** `createTenantClient` now overrides `$transaction`
+itself: one real `base.$transaction` is opened, the RLS GUC is set once on that
+connection, and the callback receives the raw unextended `tx`. Statements inside an
+interactive transaction are no longer re-wrapped into separate transactions, so
+rollback rolls back and `FOR UPDATE` holds for the full transaction.
+`TenantPrismaClient.$transaction` is narrowed to the interactive overload and
+`TenantTransactionClient` keeps the same removed-key set, so 06-02's typing
+invariant survives intact. Direct (non-transactional) calls on the handle still go
+through the `$allOperations` extension exactly as before.
+
+**Current state.** Resolved and re-verified. `tests/billing/finalize-stock.test.ts`
+is 7/7 including the `concurrent` case; full API suite 759 passed / 0 failed.
+
+**What later plans can rely on.** An interactive `$transaction` on `request.db` is
+genuinely atomic. `invoice.repository.ts`'s "Finalize atomicity" invariant #3 holds
+at runtime, and row locks taken inside a finalize are held to commit.
 
 ### 12. `seed.ts` could not revoke a permission (fixed in this plan)
 
