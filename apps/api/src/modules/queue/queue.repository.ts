@@ -1,4 +1,5 @@
-import type { PrismaClient, QueueEntryStatus } from '@prisma/client';
+import type { QueueEntryStatus } from '@prisma/client';
+import type { DbClient } from '../../lib/prisma-rls.js';
 
 const PET_OWNER_INCLUDE = {
   pet: {
@@ -9,7 +10,7 @@ const PET_OWNER_INCLUDE = {
 } as const;
 
 export class QueueRepository {
-  constructor(private readonly prisma: PrismaClient) {}
+  constructor(private readonly prisma: DbClient) {}
 
   /**
    * Gets start of today in IST (Asia/Kolkata, UTC+5:30).

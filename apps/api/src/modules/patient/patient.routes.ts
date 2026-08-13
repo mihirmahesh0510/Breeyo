@@ -4,11 +4,18 @@ import { PatientService } from './patient.service.js';
 import { createPatientController } from './patient.controller.js';
 import { authenticate } from '../../middleware/authenticate.js';
 import { tenantContext } from '../../middleware/tenant-context.js';
+import type { TenantPrismaClient } from '../../lib/prisma-rls.js';
 
 export default async function patientRoutes(fastify: FastifyInstance) {
-  const repository = new PatientRepository(fastify.prisma);
-  const service = new PatientService(repository);
-  const controller = createPatientController(service);
+  // D-30: the service is built per request from `request.db`, the
+  // tenant-scoped handle `tenantContext` installs, rather than once at plugin
+  // scope from the breeyo_admin client, which bypasses RLS by design. This is
+  // the reference factory shape for every clinic-scoped module; plans 06-08
+  // and 06-20 copy it verbatim.
+  const buildService = (db: TenantPrismaClient) =>
+    new PatientService(new PatientRepository(db));
+
+  const controller = createPatientController(buildService);
 
   const preHandler = [authenticate, tenantContext];
 

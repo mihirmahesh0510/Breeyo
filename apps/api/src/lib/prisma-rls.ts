@@ -83,6 +83,26 @@ export function createTenantClient(clinicId: string) {
 export type TenantPrismaClient = ReturnType<typeof createTenantClient>;
 
 /**
+ * The Prisma handle a repository or service may be constructed with.
+ *
+ * On the HTTP path this is always the tenant-scoped `TenantPrismaClient`
+ * (`request.db`), so RLS applies. The raw `PrismaClient` arm exists only for
+ * the documented callers that have no request context and are cross-clinic by
+ * design — currently the midnight-archive cron job (`jobs/midnight-archive.ts`)
+ * and unit-test mocks.
+ *
+ * This union is deliberately NOT the type of `request.db`: widening there
+ * would let a handler silently fall back to the RLS-bypassing admin client,
+ * which is exactly the D-30 defect this phase is closing. Prefer
+ * `TenantPrismaClient` in new code.
+ *
+ * Note: the interactive `$transaction(async (tx) => ...)` overload does not
+ * resolve through this union. Modules that need it (currently `emr`) type
+ * their collaborator as `TenantPrismaClient` directly.
+ */
+export type DbClient = TenantPrismaClient | PrismaClient;
+
+/**
  * Base Prisma client for operations that don't need RLS
  * (e.g., user lookup by email during login, token refresh).
  * Uses DATABASE_URL (breeyo_admin role) — no RLS enforcement.
