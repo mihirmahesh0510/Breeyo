@@ -14,7 +14,8 @@ provides:
   - "apps/api/src/modules/billing/money.ts — toPaise / fromPaise / formatPaiseINR / allocateProRata, pure integer-paise arithmetic and the single Decimal-rupee boundary (D-31)"
   - "apps/api/src/modules/billing/gst.service.ts — computeInvoiceTax and allocateInvoiceDiscount, a pure I/O-free per-line exempt-aware GST engine (BIL-07)"
   - "Exact pro-rata allocator reusable for D-42 split-payment refund math (negative totals allocate exactly)"
-  - "65 unit tests with no database dependency covering BIL-07, D-07, D-31 and threats T-06-19 / T-06-27 / T-06-28 / T-06-29 / T-06-30"
+  - "Corrected grand-total formula: grandTotal = taxable + rounded heads; roundOffPaise is a GSTR-1 disclosure field, not a term in the total"
+  - "67 unit tests with no database dependency covering BIL-07, D-07, D-31 and threats T-06-19 / T-06-27 / T-06-28 / T-06-29 / T-06-30"
 affects: [06-06-invoice-finalize, 06-07-payments, 06-08-refunds-credit-notes, 06-pdf-templates, 07-whatsapp]
 
 # Tech tracking
@@ -31,9 +32,12 @@ key-files:
     - apps/api/src/modules/billing/gst.service.ts
     - apps/api/src/modules/billing/__tests__/money.test.ts
     - apps/api/src/modules/billing/__tests__/gst.service.test.ts
-  modified: []
+  modified:
+    - packages/types/src/constants/gst.ts
+    - packages/types/src/billing.ts
 
 key-decisions:
+  - "grandTotalPaise = taxableValue + the three ROUNDED heads. roundOffPaise is computed and persisted as a GSTR-1 disclosure field but is deliberately NOT a term in the total — the heads are already rounded, so re-adding the delta would double-count it (corrected pre-merge after coordinator review)"
   - "Odd-paise convention: when a line's total tax is an odd number of paise, the extra paise is assigned to CGST and SGST takes the floor, so the two heads always sum to the exact line tax"
   - "allocateProRata truncates toward zero rather than using Math.floor, so a negative total (D-42 split-payment refund) allocates exactly and sign-symmetrically instead of over-allocating every element"
   - "Rate validation runs after the gstEnabled early return, so an unregistered clinic with stale catalog rate data still produces a clean invoice (Section 122 / Pitfall 12)"
@@ -45,25 +49,27 @@ patterns-established:
   - "Money boundary (D-31): Decimal rupees are converted to integer paise at exactly one place, toPaise, with a dedicated 100x-error guard test"
   - "Discount-before-tax (Section 15(3)(a)): allocateInvoiceDiscount runs before computeInvoiceTax so per-line taxable values always sum to the invoice taxable value"
   - "Invoice-level rounding: tax heads are summed exactly across lines and rounded once; per-line rounding is proven absent by a three-rate test whose invoice head differs from the sum of per-line rounded values"
+  - "Printed-figures invariant: the grand total is the sum of the amounts printed on the document, so adding up the invoice lines by hand always reproduces the stated total; the round-off is disclosed alongside, never folded in"
 
 requirements-completed: [BIL-07]
 
 # Metrics
-duration: 42min
-completed: 2026-08-13
+duration: 60min
+completed: 2026-08-14
 ---
 
 # Phase 06 Plan 05: GST Engine & Money Boundary Summary
 
-**Pure, I/O-free integer-paise money arithmetic plus a per-line exempt-aware Indian GST engine — CGST/SGST or IGST by place of supply, one rounding per tax head at invoice level, CGST Rule 46A document typing, and a remainder-exact pro-rata discount allocator — 65 tests, no database.**
+**Pure, I/O-free integer-paise money arithmetic plus a per-line exempt-aware Indian GST engine — CGST/SGST or IGST by place of supply, one rounding per tax head at invoice level, CGST Rule 46A document typing, and a remainder-exact pro-rata discount allocator — 67 tests, no database.**
 
 ## Performance
 
-- **Duration:** ~42 min
+- **Duration:** ~60 min (including the pre-merge round-off correction)
 - **Started:** 2026-08-13T20:27:00Z
-- **Completed:** 2026-08-13T21:09:17Z
-- **Tasks:** 2 (both TDD, 4 gate commits)
+- **Completed:** 2026-08-13T21:16:00Z
+- **Tasks:** 2 (both TDD, 4 gate commits) + 1 review fix
 - **Files created:** 4
+- **Files modified:** 2 (shared-type docstrings)
 
 ## Accomplishments
 
@@ -73,6 +79,7 @@ completed: 2026-08-13
 - Each tax head is rounded once at invoice level; a three-rate test proves the invoice head (400 paise) differs from the sum of per-line rounded values (300 paise), which is the only way to demonstrate that per-line rounding did not occur (T-06-29).
 - `allocateInvoiceDiscount` pushes the invoice-level discount down onto every line — exempt lines included — before tax is computed, and `Σ line.taxableValuePaise === invoice.taxableValuePaise` holds exactly (T-06-30, D-07, Section 15(3)(a)).
 - `allocateProRata` is exact for negative totals too, so D-42's per-leg split-payment refund allocation can reuse it unchanged.
+- The grand total is the sum of the figures actually printed on the invoice, so a vet or owner adding the lines up by hand reproduces the stated total exactly — a double-count of the round-off delta was caught in coordinator review and fixed before merge (see below).
 
 ## Task Commits
 
@@ -85,7 +92,11 @@ Each task followed the RED → GREEN TDD gate sequence. Both RED commits were ru
    - RED: `9f24db7` — `test(06-05): add failing GST computation tests`
    - GREEN: `4a843b1` — `feat(06-05): implement per-line exempt-aware GST engine`
 
-No REFACTOR commit was needed for either task — both implementations were written directly against the passing shape with no cleanup pass required.
+**Review fix:** `3cba47a` — `fix(06-05): stop double-counting roundOffPaise in the invoice grand total`
+
+**Plan metadata:** `e51c6ac` — `docs(06-05): complete GST engine and money boundary plan` (superseded by this revision)
+
+No REFACTOR commit was needed for either task — both implementations were written directly against the passing shape with no cleanup pass required. The review fix was committed as a follow-up rather than amended into `4a843b1`, so that the RED→GREEN pairing stays intact and the defect and its correction are both legible in the history of a financially load-bearing module.
 
 ## TDD Gate Compliance
 
@@ -102,14 +113,19 @@ Sequence verified in `git log`: `test → feat → test → feat`. No implementa
 - `apps/api/src/modules/billing/money.ts` — `toPaise` (the D-31 Decimal-rupee → paise boundary), `fromPaise`, `formatPaiseINR` (cached `en-IN` `Intl.NumberFormat`), `allocateProRata` (remainder-exact integer allocator).
 - `apps/api/src/modules/billing/gst.service.ts` — `computeInvoiceTax` (per-line, exempt-aware, invoice-level rounding, Rule 46A typing) and `allocateInvoiceDiscount` (pro-rata, pre-tax). Exports `TaxableLine`, `PerLineTax`, `DiscountedLine`, `InvoiceTaxResult`.
 - `apps/api/src/modules/billing/__tests__/money.test.ts` — 31 tests.
-- `apps/api/src/modules/billing/__tests__/gst.service.test.ts` — 34 tests.
+- `apps/api/src/modules/billing/__tests__/gst.service.test.ts` — 36 tests.
+- `packages/types/src/constants/gst.ts` — MODIFIED: corrected the `PAISE_PER_RUPEE` docstring, which stated the double-counting grand-total formula.
+- `packages/types/src/billing.ts` — MODIFIED: corrected and expanded the `roundOffPaise` / `grandTotalPaise` docstrings on `Invoice`, `CreditNote` and `TaxBreakdown` to state the disclosure-field semantic explicitly.
 
 ## Verification
 
 | Check | Result |
 |-------|--------|
-| `vitest run src/modules/billing` | 3 files, **76 tests passed** (65 new + 11 pre-existing service-catalog-seed) |
+| `vitest run src/modules/billing` | 3 files, **78 tests passed** (67 new + 11 pre-existing service-catalog-seed) |
 | `tsc --noEmit` (@breeyo/api) | exit 0 |
+| `tsc --noEmit` (@breeyo/types) | exit 0 |
+| `pnpm --filter @breeyo/types test` | 52 passed |
+| `pnpm --filter @breeyo/validators test` | 142 passed (4 files) |
 | `grep -c 'PrismaClient\|await \|async ' money.ts` | `0` |
 | `grep -c 'Math.round(.*\* 100)\|\* 100)' money.ts` | `0` |
 | test named `guards the 100x conversion error` present | `1` |
@@ -126,6 +142,10 @@ Sequence verified in `git log`: `test → feat → test → feat`. No implementa
 The `node -e` dist assertion in the acceptance criteria was satisfied by its documented alternative — `allocateProRata(100, [1, 1, 1])` is asserted to equal `[34, 33, 33]` and to sum to exactly `100` inside the vitest file, alongside an exhaustive 8-totals × 9-weight-sets exactness sweep.
 
 ## Decisions Made
+
+### Grand total sums the printed figures; round-off is disclosed, not added
+
+`grandTotalPaise = taxableValuePaise + cgstPaise + sgstPaise + igstPaise` using the rounded heads. `roundOffPaise` is persisted as a GSTR-1 disclosure figure and excluded from the total. This supersedes the plan's action step 8, which double-applied the rounding delta — see the dedicated section below for the worked example and the coordinator's ruling.
 
 ### Odd-paise assignment convention: CGST
 
@@ -180,15 +200,54 @@ The naive Rule 46A branch (`hasTaxable && hasExempt` → mixed, `hasTaxable` →
 **Total deviations:** 4 auto-fixed (3 missing critical, 1 blocking)
 **Impact on plan:** All four are correctness or environment fixes on the money path. No scope creep — no function, export or behaviour outside the plan's two artifacts was added.
 
-## Flagged for Review Before 06-06 Persists It
+## Corrected Pre-Merge: the `roundOffPaise` double-count
 
-**`roundOffPaise` sign convention.** The plan's action step 6 specifies `roundOffPaise = Σ(rounded − exact)` and step 8 specifies `grandTotal = taxable + roundedHeads + roundOff`. Both were implemented literally and the identity asserted in the plan's acceptance criteria holds exactly, across three invoice shapes.
+**Status: found during execution, raised to the coordinator, confirmed as a real defect, and fixed before merge in `3cba47a`. Not deferred.**
 
-Substituting step 6 into step 8 gives `grandTotal = taxable + exact + 2 × (rounded − exact)`, i.e. the rounding delta is applied twice. Worked example from the three-rate test: taxable ₹78.56, exact CGST ₹4.20 and SGST ₹4.20, rounded heads ₹4.00 and ₹4.00, `roundOff` −₹0.40, grand total ₹86.16 — where taxable plus the printed heads is ₹86.56.
+### The defect
 
-This is **not a compliance defect**: the reported per-head figures (₹4.00 / ₹4.00) are the Section 170-rounded amounts and reconcile with GSTR-1 exactly, which is what T-06-29 protects. It is at worst a sub-₹1.50-per-head under-collection the clinic absorbs, and the printed invoice still adds up on the page. The plan's formula was implemented as written rather than silently sign-flipped, because `roundOffPaise` is a persisted financial field whose semantics are stated identically in three already-shipped places (`packages/types/src/constants/gst.ts`, the `Invoice` and `TaxBreakdown` docstrings in `packages/types/src/billing.ts`, and this plan), and 06-06's finalize transaction was planned against it.
+The plan's action step 6 specified `roundOffPaise = Σ(rounded − exact)` and step 8 specified `grandTotal = taxable + roundedHeads + roundOff`. Implemented literally, those substitute to:
 
-If the intended semantic is instead "the round-off line reconciles the printed heads to the collectable total", the single change is `roundOffPaise = Σ(exact − rounded)`, which yields `grandTotal = taxable + exact tax`. If the intended semantic is the more common "round the grand total to a whole rupee", the change is `grandTotal = roundToNearestRupeePaise(taxable + heads)` with `roundOff` as that delta. Either is a two-line change in `gst.service.ts` plus three test expectations; **none of the eleven plan behaviours or the compliance threat mitigations change**. Raising this before 06-06 writes the value to `invoices.round_off_paise`.
+```
+grandTotal = taxable + exact + 2 × (rounded − exact)
+```
+
+— the rounding delta applied twice. Worked example from the three-rate test invoice:
+
+| Line | Taxable | Exact CGST | Exact SGST |
+|------|---------|-----------|-----------|
+| 5% | ₹56.00 | ₹1.40 | ₹1.40 |
+| 18% | ₹15.56 | ₹1.40 | ₹1.40 |
+| 40% | ₹7.00 | ₹1.40 | ₹1.40 |
+| **Invoice** | **₹78.56** | exact ₹4.20 → printed **₹4.00** | exact ₹4.20 → printed **₹4.00** |
+
+The document prints ₹78.56 + ₹4.00 + ₹4.00. The old formula stated a grand total of **₹86.16**; adding up the printed figures gives **₹86.56**. A vet or an owner totalling the invoice by hand could not reproduce the stated amount, which is not acceptable on a tax document regardless of how small the discrepancy is.
+
+### The fix
+
+`grandTotalPaise = taxableValuePaise + cgstPaise + sgstPaise + igstPaise`, using the already-rounded heads — exactly the figures printed on the document.
+
+`roundOffPaise` is still computed, returned and persisted, but its role is now stated explicitly everywhere it appears: it is a **GSTR-1 disclosure field** that lets a filed return be reconciled against the exact pre-rounding heads. It is never a term in the total.
+
+Two tests were added rather than merely adjusting the old assertion:
+
+- `excludes roundOffPaise from the grand total so the printed lines add up` — asserts `grandTotalPaise === 8_656` **and** `!== 8_616`, pinning the specific wrong value so a regression cannot pass silently.
+- `keeps the exact pre-rounding tax recoverable from roundOffPaise for GSTR-1` — asserts `roundedTax − roundOff === exactTax` across three invoice shapes, proving the disclosure figure is sufficient to reconstruct what the rounding removed. Without this, dropping the term from the total could have been "fixed" by dropping the field entirely, losing the reconciliation capability.
+
+The `closes the arithmetic exactly across three distinct invoice shapes` test now asserts the printed-figures identity (`taxable + heads === grandTotal`) instead of the old one.
+
+### Docstrings corrected
+
+The same double-counting formula was written into the shared types by plan 06-04 and would have propagated into 06-06/06-07's finalize logic. All four sites were corrected in the same commit:
+
+- `packages/types/src/constants/gst.ts` — the `PAISE_PER_RUPEE` docstring ("The persisted round-off delta keeps `taxable + taxes + roundOff = grandTotal` exact")
+- `packages/types/src/billing.ts` — `Invoice.roundOffPaise`, `CreditNote.roundOffPaise` / `totalPaise`, and `TaxBreakdown`
+
+`CreditNote` was included because it carries the identical head/round-off/total field set and would otherwise have been the next place the defect reappeared.
+
+### What did not change
+
+None of the eleven plan behaviours, none of the five threat mitigations, and no per-head figure. The Section 170 per-head rounding, the GSTR-1 reconciliation property protected by T-06-29, and the exempt/unregistered/Rule 46A behaviours are all untouched — this was purely how the rounded heads were summed into the customer-facing total.
 
 ## GST Behaviour Deliberately Not Covered
 
@@ -215,13 +274,14 @@ Ready for 06-06 (invoice finalize):
 - `InvoiceTaxResult` is `TaxBreakdown & { lines: PerLineTax[] }`, so the invoice header fields and the per-line `cgst/sgst/igst/taxableValue` columns are both populated from one call.
 - `toPaise` is the only place an `InventoryItem.sellingPrice` or `StockMovement.unitPrice` should be converted; the line-item builder must call it exactly once per line and never re-multiply.
 - `allocateProRata` is ready for D-42 per-leg refund allocation with no changes.
-- **Blocker for 06-06:** the `roundOffPaise` semantic flagged above should be confirmed before the value is persisted.
+- **`roundOffPaise` is a disclosure field, not a total component.** Persist it to `invoices.round_off_paise` and show it on the PDF as its own line, but do not add it into `grand_total_paise`, and do not add it into `balance_paise` or any payment amount derived from the total. The corrected docstrings in `@breeyo/types` now say so at every field.
+- No blockers.
 
 ## Self-Check: PASSED
 
-All four created files verified present on disk (`money.ts`, `gst.service.ts`, `money.test.ts`, `gst.service.test.ts`) and all four commit hashes (`f9e2ede`, `971758f`, `9f24db7`, `4a843b1`) verified present in `git log`. No claimed artifact is missing.
+All four created files verified present on disk (`money.ts`, `gst.service.ts`, `money.test.ts`, `gst.service.test.ts`), both modified shared-type files verified present, and all five commit hashes (`f9e2ede`, `971758f`, `9f24db7`, `4a843b1`, `3cba47a`) verified present in `git log`. No claimed artifact is missing.
 
 ---
 *Phase: 06-invoicing-payments*
 *Plan: 05*
-*Completed: 2026-08-13*
+*Completed: 2026-08-13 (round-off correction 2026-08-14, pre-merge)*
