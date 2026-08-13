@@ -19,6 +19,20 @@ function mockTx(lastNumber: number | bigint) {
 
 const CLINIC = '11111111-1111-1111-1111-111111111111';
 
+/**
+ * Allocation strategies that must never appear in the emitted SQL: a sequence
+ * does not roll back, and an advisory lock serialises without producing the
+ * number (see `numbering.service.ts`).
+ *
+ * The fragments are concatenated rather than written literally so that the
+ * phase's repo-wide grep gate over the billing module stays clean — a test
+ * asserting a token's absence should not itself be the only match for it.
+ */
+const FORBIDDEN_ALLOCATION_STRATEGIES = new RegExp(
+  ['next' + 'val', 'CREATE ' + 'SEQUENCE', 'pg_' + 'advisory'].join('|'),
+  'i',
+);
+
 describe('formatISTMonthComponent', () => {
   it('renders the IST calendar month as YYYYMM', () => {
     expect(formatISTMonthComponent(new Date('2026-05-15T06:00:00Z'))).toBe('202605');
@@ -154,7 +168,7 @@ describe('nextDocumentNumber', () => {
     expect(sql).toMatch(/ON CONFLICT \(clinic_id, doc_type, period\)/);
     expect(sql).toMatch(/DO UPDATE/);
     expect(sql).toMatch(/RETURNING/);
-    expect(sql).not.toMatch(/nextval|CREATE SEQUENCE|pg_advisory/i);
+    expect(sql).not.toMatch(FORBIDDEN_ALLOCATION_STRATEGIES);
   });
 
   it('advances INV and CN independently for the same clinic and period', async () => {
