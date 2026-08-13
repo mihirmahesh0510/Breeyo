@@ -28,7 +28,7 @@ function validationError(reply: FastifyReply, issues: { message: string }[]) {
 export function createDrugController(drugService: DrugService) {
   return {
     async getAllDrugsHandler(request: FastifyRequest, reply: FastifyReply) {
-      const drugs = await drugService.getAllDrugs();
+      const drugs = await drugService.getAllDrugs(request.user.activeClinicId);
       return reply.status(200).send({ data: drugs });
     },
 
@@ -38,7 +38,11 @@ export function createDrugController(drugService: DrugService) {
         return validationError(reply, query.error.errors);
       }
 
-      const drugs = await drugService.searchDrugs(query.data.q, query.data.limit);
+      const drugs = await drugService.searchDrugs(
+        request.user.activeClinicId,
+        query.data.q,
+        query.data.limit,
+      );
       return reply.status(200).send({ data: drugs });
     },
 
@@ -48,7 +52,11 @@ export function createDrugController(drugService: DrugService) {
         return validationError(reply, params.error.errors);
       }
 
-      const drug = await drugService.getDosageRange(params.data.drugId, params.data.species);
+      const drug = await drugService.getDosageRange(
+        request.user.activeClinicId,
+        params.data.drugId,
+        params.data.species,
+      );
       if (!drug) {
         return reply.status(404).send({
           error: { code: 'DRUG_NOT_FOUND', message: 'Drug not found' },
