@@ -205,8 +205,8 @@ Plans:
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
-- [ ] 06-05-PLAN.md -- [TDD] GST engine: integer-paise `money.ts` with `toPaise` boundary adapter and remainder-exact pro-rata, `gst.service.ts` with per-line exempt-aware CGST/SGST/IGST, invoice-level per-head rounding and Rule 46A document typing (BIL-07)
-- [ ] 06-06-PLAN.md -- [TDD] Cross-cutting primitives: gap-free per-clinic monthly numbering (counter-row `ON CONFLICT`), AES-256-GCM credential encryption, dedicated append-only `billing_audit_log` (D-15, D-19, D-29, D-32)
+- [x] 06-05-PLAN.md -- [TDD] GST engine: integer-paise `money.ts` with `toPaise` boundary adapter and remainder-exact pro-rata, `gst.service.ts` with per-line exempt-aware CGST/SGST/IGST, invoice-level per-head rounding and Rule 46A document typing (BIL-07)
+- [x] 06-06-PLAN.md -- [TDD] Cross-cutting primitives: gap-free per-clinic monthly numbering (counter-row `ON CONFLICT`), AES-256-GCM credential encryption, dedicated append-only `billing_audit_log` (D-15, D-19, D-29, D-32)
 
 **Wave 6** *(blocked on Wave 5 completion)*
 
@@ -461,7 +461,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9 -> 10
 | 3. Patient Registration & Walk-in Queue | 8/8 | **Done** | 2026-08-03 (PR #3) |
 | 4. EMR & Clinical Records | 8/8 | Next | - |
 | 5. Inventory Management | 8/8 | Planned | - |
-| 6. Invoicing & Payments | 6/24 | In Progress|  |
+| 6. Invoicing & Payments | 8/24 | In Progress|  |
 | 7. WhatsApp Communication | 16/16 | Planned | - |
 | 8. Scheduling & Calendar | 7/7 | Planned | - |
 | 9. Web Dashboard & Owner Portal | 7/7 | Planned | - |
