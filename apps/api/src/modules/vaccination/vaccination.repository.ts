@@ -1,7 +1,7 @@
-import type { PrismaClient } from '@prisma/client';
+import type { DbClient } from '../../lib/prisma-rls.js';
 
 export class VaccinationRepository {
-  constructor(private readonly prisma: PrismaClient) {}
+  constructor(private readonly prisma: DbClient) {}
 
   async createVaccination(
     clinicId: string,

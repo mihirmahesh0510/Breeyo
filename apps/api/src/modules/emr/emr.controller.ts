@@ -2,6 +2,7 @@ import type { FastifyRequest, FastifyReply } from 'fastify';
 import type { EmrService } from './emr.service.js';
 import type { ConsultationLockService } from './consultation-lock.service.js';
 import type { NotificationBus } from '../notifications/notification-bus.js';
+import type { TenantPrismaClient } from '../../lib/prisma-rls.js';
 import { NotificationType, NotificationModule } from '@breeyo/types';
 import {
   createConsultationSchema,
@@ -25,9 +26,16 @@ function validationError(reply: FastifyReply, issues: { message: string }[]) {
   });
 }
 
+/**
+ * D-30: takes a factory rather than prebuilt services, so every handler
+ * resolves its Prisma handle from `request.db` (the tenant-scoped, RLS-bound
+ * client) instead of sharing a plugin-scope admin client across all clinics.
+ */
 export function createEmrController(
-  emrService: EmrService,
-  lockService: ConsultationLockService,
+  buildServices: (db: TenantPrismaClient) => {
+    emrService: EmrService;
+    lockService: ConsultationLockService;
+  },
   notificationBus?: NotificationBus,
 ) {
   return {
@@ -35,6 +43,8 @@ export function createEmrController(
      * POST /consultations — Create a new consultation.
      */
     async createHandler(request: FastifyRequest, reply: FastifyReply) {
+      const { emrService, lockService } = buildServices(request.db);
+
       const body = createConsultationSchema.safeParse(request.body);
       if (!body.success) {
         return validationError(reply, body.error.errors);
@@ -55,6 +65,8 @@ export function createEmrController(
      * GET /consultations/:consultationId — Get full consultation.
      */
     async getConsultationHandler(request: FastifyRequest, reply: FastifyReply) {
+      const { emrService, lockService } = buildServices(request.db);
+
       const params = consultationParamsSchema.safeParse(request.params);
       if (!params.success) {
         return validationError(reply, params.error.errors);
@@ -78,6 +90,8 @@ export function createEmrController(
      * GET /consultations/:consultationId/draft — Get draft data.
      */
     async getDraftHandler(request: FastifyRequest, reply: FastifyReply) {
+      const { emrService, lockService } = buildServices(request.db);
+
       const params = consultationParamsSchema.safeParse(request.params);
       if (!params.success) {
         return validationError(reply, params.error.errors);
@@ -95,6 +109,8 @@ export function createEmrController(
      * PATCH /consultations/:consultationId/draft — Save draft data.
      */
     async saveDraftHandler(request: FastifyRequest, reply: FastifyReply) {
+      const { emrService, lockService } = buildServices(request.db);
+
       const params = consultationParamsSchema.safeParse(request.params);
       if (!params.success) {
         return validationError(reply, params.error.errors);
@@ -119,6 +135,8 @@ export function createEmrController(
      * POST /consultations/:consultationId/finalize — Finalize consultation.
      */
     async finalizeHandler(request: FastifyRequest, reply: FastifyReply) {
+      const { emrService, lockService } = buildServices(request.db);
+
       const params = consultationParamsSchema.safeParse(request.params);
       if (!params.success) {
         return validationError(reply, params.error.errors);
@@ -143,6 +161,8 @@ export function createEmrController(
      * POST /consultations/:consultationId/addendum — Add addendum.
      */
     async addAddendumHandler(request: FastifyRequest, reply: FastifyReply) {
+      const { emrService, lockService } = buildServices(request.db);
+
       const params = consultationParamsSchema.safeParse(request.params);
       if (!params.success) {
         return validationError(reply, params.error.errors);
@@ -168,6 +188,8 @@ export function createEmrController(
      * POST /consultations/:consultationId/heartbeat — Renew lock.
      */
     async heartbeatHandler(request: FastifyRequest, reply: FastifyReply) {
+      const { emrService, lockService } = buildServices(request.db);
+
       const params = consultationParamsSchema.safeParse(request.params);
       if (!params.success) {
         return validationError(reply, params.error.errors);
@@ -185,6 +207,8 @@ export function createEmrController(
      * GET /consultations/:consultationId/lock — Check lock status.
      */
     async checkLockHandler(request: FastifyRequest, reply: FastifyReply) {
+      const { emrService, lockService } = buildServices(request.db);
+
       const params = consultationParamsSchema.safeParse(request.params);
       if (!params.success) {
         return validationError(reply, params.error.errors);
@@ -200,6 +224,8 @@ export function createEmrController(
      * D-72: Notifies the original vet by push when a stale lock is taken over.
      */
     async acquireLockHandler(request: FastifyRequest, reply: FastifyReply) {
+      const { emrService, lockService } = buildServices(request.db);
+
       const params = consultationParamsSchema.safeParse(request.params);
       if (!params.success) {
         return validationError(reply, params.error.errors);
@@ -240,6 +266,8 @@ export function createEmrController(
      * DELETE /consultations/:consultationId/lock — Release the lock.
      */
     async releaseLockHandler(request: FastifyRequest, reply: FastifyReply) {
+      const { emrService, lockService } = buildServices(request.db);
+
       const params = consultationParamsSchema.safeParse(request.params);
       if (!params.success) {
         return validationError(reply, params.error.errors);
@@ -254,13 +282,15 @@ export function createEmrController(
      * POST /consultations/validate-dosage — Validate prescription dosage.
      */
     async validateDosageHandler(request: FastifyRequest, reply: FastifyReply) {
+      const { emrService, lockService } = buildServices(request.db);
+
       const body = validateDosageBodySchema.safeParse(request.body);
       if (!body.success) {
         return validationError(reply, body.error.errors);
       }
 
       // Look up species dosage from the drug database
-      const dosage = await request.server.prisma.speciesDosage.findFirst({
+      const dosage = await request.db.speciesDosage.findFirst({
         where: { drugId: body.data.drugId, species: body.data.species },
       });
 
@@ -291,6 +321,8 @@ export function createEmrController(
      * GET /pets/:petId/history — Get medical history timeline.
      */
     async getHistoryHandler(request: FastifyRequest, reply: FastifyReply) {
+      const { emrService, lockService } = buildServices(request.db);
+
       const params = petParamsSchema.safeParse(request.params);
       if (!params.success) {
         return validationError(reply, params.error.errors);

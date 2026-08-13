@@ -1,4 +1,4 @@
-import type { PrismaClient } from '@prisma/client';
+import type { DbClient } from '../../lib/prisma-rls.js';
 import type { PreventiveCareStatus } from '@breeyo/types';
 import { calculateNextDueDate, DEWORMING_INTERVALS } from '@breeyo/types';
 import type { VaccinationRepository } from './vaccination.repository.js';
@@ -26,7 +26,7 @@ function calculateAgeDays(birthYear: number, birthMonth: number): number {
 export class VaccinationService {
   constructor(
     private readonly repository: VaccinationRepository,
-    private readonly prisma: PrismaClient,
+    private readonly prisma: DbClient,
   ) {}
 
   /**

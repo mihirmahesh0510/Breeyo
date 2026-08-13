@@ -1,4 +1,4 @@
-import type { PrismaClient } from '@prisma/client';
+import type { DbClient } from './prisma-rls.js';
 
 export enum AuditEvent {
   SIGNUP = 'SIGNUP',
@@ -42,7 +42,11 @@ export interface AuditLogData {
 }
 
 export async function writeAuditLog(
-  prisma: PrismaClient,
+  // Accepts either handle: the auth module writes through the admin client
+  // (it runs before a clinic is selected), while the clinic-scoped modules
+  // write through the tenant handle. The auth_audit_log insert policy admits
+  // rows whose clinic_id matches the bound clinic or is NULL.
+  prisma: DbClient,
   event: AuditEvent,
   data: AuditLogData,
 ): Promise<void> {

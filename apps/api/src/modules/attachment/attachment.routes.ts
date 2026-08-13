@@ -3,10 +3,14 @@ import { AttachmentService } from './attachment.service.js';
 import { createAttachmentController } from './attachment.controller.js';
 import { authenticate } from '../../middleware/authenticate.js';
 import { tenantContext } from '../../middleware/tenant-context.js';
+import type { TenantPrismaClient } from '../../lib/prisma-rls.js';
 
 export default async function attachmentRoutes(fastify: FastifyInstance) {
-  const service = new AttachmentService(fastify.prisma);
-  const controller = createAttachmentController(service);
+  // D-30: consultation_attachments is scoped through its parent consultation,
+  // so it is only isolated when reached via the tenant handle.
+  const buildService = (db: TenantPrismaClient) => new AttachmentService(db);
+
+  const controller = createAttachmentController(buildService);
 
   const preHandler = [authenticate, tenantContext];
 

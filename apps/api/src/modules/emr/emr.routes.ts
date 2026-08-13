@@ -7,21 +7,36 @@ import { createEmrController } from './emr.controller.js';
 import { createNotificationBus } from '../notifications/notification-bus.js';
 import { authenticate } from '../../middleware/authenticate.js';
 import { tenantContext } from '../../middleware/tenant-context.js';
+import type { TenantPrismaClient } from '../../lib/prisma-rls.js';
 
 export default async function emrRoutes(fastify: FastifyInstance) {
-  const repository = new EmrRepository(fastify.prisma);
-  const lockService = new ConsultationLockService(fastify.prisma);
+  // Stateless and I/O-free -- pure dosage arithmetic, no tenant dimension.
+  // Stays a plugin-scope singleton.
   const dosageService = new DosageService();
-  const service = new EmrService(repository, lockService, dosageService, fastify.prisma);
 
   // D-72: bus for lock takeover push notifications (same BullMQ queue/worker
-  // pattern already used by the notifications module).
+  // pattern already used by the notifications module). A BullMQ producer, not
+  // tenant data, so it stays plugin-scope with its teardown hook intact.
   const notificationBus = createNotificationBus(fastify.redis);
   fastify.addHook('onClose', async () => {
     await notificationBus.close();
   });
 
-  const controller = createEmrController(service, lockService, notificationBus);
+  // D-30: everything that touches clinic rows is built per request from the
+  // tenant-scoped handle. `lockService` is constructed once per request and
+  // shared with `EmrService` so both observe the same lock state.
+  const buildServices = (db: TenantPrismaClient) => {
+    const lockService = new ConsultationLockService(db);
+    const emrService = new EmrService(
+      new EmrRepository(db),
+      lockService,
+      dosageService,
+      db,
+    );
+    return { emrService, lockService };
+  };
+
+  const controller = createEmrController(buildServices, notificationBus);
 
   const preHandler = [authenticate, tenantContext];
 

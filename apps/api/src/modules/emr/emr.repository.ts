@@ -1,8 +1,11 @@
-import type { PrismaClient } from '@prisma/client';
+import type { TenantPrismaClient } from '../../lib/prisma-rls.js';
 import type { SaveDraftInput, AddendumEntry } from '@breeyo/types';
 
 export class EmrRepository {
-  constructor(private readonly prisma: PrismaClient) {}
+  // TenantPrismaClient rather than the `DbClient` union: this repository uses
+  // the interactive `$transaction(async (tx) => ...)` overload, which does not
+  // resolve through a union. It is only ever constructed per request.
+  constructor(private readonly prisma: TenantPrismaClient) {}
 
   /**
    * Creates a new consultation in draft state.

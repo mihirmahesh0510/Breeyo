@@ -1,4 +1,4 @@
-import type { PrismaClient } from '@prisma/client';
+import type { TenantPrismaClient } from '../../lib/prisma-rls.js';
 import {
   createConsultationSchema,
   saveDraftSchema,
@@ -22,7 +22,7 @@ export class EmrService {
     private readonly repository: EmrRepository,
     private readonly lockService: ConsultationLockService,
     private readonly dosageService: DosageService,
-    private readonly prisma: PrismaClient,
+    private readonly prisma: TenantPrismaClient,
   ) {}
 
   /**

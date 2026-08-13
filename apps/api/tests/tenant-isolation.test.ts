@@ -529,6 +529,48 @@ describe('Tenant Isolation', () => {
       const seenByB = await createTenantClient(clinicB.id).prescription.findMany();
       expect(seenByB.map((p) => p.id)).toContain(rxB.id);
     });
+
+    // The tenant handle wraps every operation in its own $transaction to bind
+    // app.clinic_id. `EmrRepository.finalizeConsultation` and
+    // `savePrescriptions` use the interactive `$transaction(async (tx) => ...)`
+    // overload, so the binding has to survive one transaction nested inside
+    // another -- otherwise plan 06-02's emr conversion would silently run the
+    // EMR write path unscoped.
+    it('tenant handle keeps scoping inside an interactive $transaction', async () => {
+      if (requiresAppDb()) return;
+
+      const ownerA = await createTestPetOwner(clinicA.id);
+      const ownerB = await createTestPetOwner(clinicB.id);
+      const petA = await createTestPet(clinicA.id, ownerA.id);
+      const petB = await createTestPet(clinicB.id, ownerB.id);
+      const consultA = await createTestConsultation(clinicA.id, petA.id, userA.id);
+      const consultB = await createTestConsultation(clinicB.id, petB.id, userB.id);
+
+      const dbA = createTenantClient(clinicA.id);
+
+      // Reads inside the interactive transaction stay scoped.
+      const seenInsideTx = await dbA.$transaction(async (tx) => {
+        const rows = await tx.consultation.findMany();
+        return rows.map((c) => c.id);
+      });
+      expect(seenInsideTx).toContain(consultA.id);
+      expect(seenInsideTx).not.toContain(consultB.id);
+
+      // `EmrRepository.updateAddenda` updates by id with no clinicId filter,
+      // so RLS is the only thing standing between clinic A and clinic B's
+      // consultation here.
+      await expect(
+        dbA.$transaction(async (tx) => {
+          await tx.consultation.update({
+            where: { id: consultB.id },
+            data: { status: 'finalized' },
+          });
+        }),
+      ).rejects.toThrow();
+
+      const after = await prisma.consultation.findUnique({ where: { id: consultB.id } });
+      expect(after?.status).toBe('draft');
+    });
   });
 
   // ----------------------------------------------------------------
