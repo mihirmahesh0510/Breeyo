@@ -138,3 +138,43 @@ Impact: any executor or reviewer running the API suite on a new worktree
 database will see 25 red tests that have nothing to do with their change. Worth
 fixing (one `dotenv.config()` call) before the next wave, so the phase's test
 signal is trustworthy by default.
+
+## Found during 06-07 (invoice domain: repository, stock validator, service)
+
+### 9. Two different FIFO orderings now exist for the same batch table
+
+`FifoDispenseService.dispense` (Phase 5) selects batches with
+`ORDER BY received_at ASC`. `StockValidatorService.reserveAndDeduct` (this plan)
+selects with `ORDER BY expiry_date ASC NULLS LAST, received_at ASC`, because
+06-07's acceptance criteria require expiry-ascending selection and
+first-expiry-first-out is the correct practice for pharmaceuticals.
+
+The two agree whenever expiries are absent or ordered the same way as receipts,
+which is the common case, and both exclude expired batches identically. They
+diverge when an older-received batch has a later expiry than a newer-received
+one: Phase 5 draws from the older receipt, Phase 6 from the earlier expiry.
+
+Not fixed here because changing Phase 5's shipped dispense ordering is outside
+this plan's scope and would need its own regression pass. Worth reconciling on
+one ordering (recommend FEFO everywhere) before the phase closes.
+
+### 10. `voidInvoice` cancels Razorpay links locally but nothing calls the gateway yet
+
+D-35 requires that voiding an invoice with an active payment link cancels that
+link at Razorpay. `InvoiceRepository.voidInvoice` marks the local `payments`
+rows `cancelled` inside the void transaction and returns
+`cancelledPaymentLinkIds` so a caller can perform the API call, and
+`InvoiceService.voidInvoice` propagates that list to its own caller.
+
+The gateway call itself is not implemented — it belongs to the Razorpay module
+(plan 06-09/06-10). Until that lands, a voided invoice's link is dead in this
+system but still live at Razorpay. The state needed to close it is present and
+must not be dropped when the payment module is wired.
+
+### 11. `middleware/error-handler.ts` previously discarded `error.details`
+
+Fixed in this plan (commit `aafc966`) rather than deferred, because BIL-02
+requires the 409 to name every short item and the handler forwarded only
+`error.clinics`. Recorded here so other modules know the channel now exists:
+any 4xx domain error may carry a `details` object and it will reach the client.
+The `>= 500` branch returns before that point, so nothing internal can leak.
