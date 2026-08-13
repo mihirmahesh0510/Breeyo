@@ -7,9 +7,14 @@ import {
   createTestClinic,
   createTestClinicMember,
   createTestTokens,
+  createTestPetOwner,
+  createTestPet,
+  createTestConsultation,
+  createTestServiceCatalogEntry,
+  createTestPrescription,
   prisma,
 } from './helpers/factories.js';
-import { getBasePrisma } from '../src/lib/prisma-rls.js';
+import { getBasePrisma, createTenantClient } from '../src/lib/prisma-rls.js';
 import type { FastifyInstance } from 'fastify';
 
 let app: FastifyInstance;
@@ -414,5 +419,114 @@ describe('Tenant Isolation', () => {
     expect(clinicsResponse.statusCode).toBe(200);
     const clinicNames = clinicsResponse.json().data.clinics.map((c: any) => c.name);
     expect(clinicNames).not.toContain('Clinic A');
+  });
+
+  // ----------------------------------------------------------------
+  // Phase 3/4 table isolation (D-30, plan 06-00)
+  // ----------------------------------------------------------------
+  // These read through `createTenantClient` -- the breeyo_app handle that
+  // binds app.clinic_id -- NOT through `prisma` from factories.ts, which
+  // connects as breeyo_admin and bypasses RLS by design.
+  describe('Phase 3/4 table isolation via tenant client (D-30)', () => {
+    const requiresAppDb = () => {
+      if (!process.env.DATABASE_URL_APP) {
+        console.warn('Skipping RLS DB test: DATABASE_URL_APP not set');
+        return true;
+      }
+      return false;
+    };
+
+    it('tenant handle scopes pets', async () => {
+      if (requiresAppDb()) return;
+
+      const ownerA = await createTestPetOwner(clinicA.id);
+      const ownerB = await createTestPetOwner(clinicB.id);
+      const petA = await createTestPet(clinicA.id, ownerA.id, { name: 'Pet A' });
+      const petB = await createTestPet(clinicB.id, ownerB.id, { name: 'Pet B' });
+
+      const petsSeenByA = await createTenantClient(clinicA.id).pet.findMany();
+      const idsSeenByA = petsSeenByA.map((p) => p.id);
+
+      expect(idsSeenByA).toContain(petA.id);
+      expect(idsSeenByA).not.toContain(petB.id);
+      for (const p of petsSeenByA) {
+        expect(p.clinicId).toBe(clinicA.id);
+      }
+    });
+
+    it('tenant handle scopes consultations', async () => {
+      if (requiresAppDb()) return;
+
+      const ownerA = await createTestPetOwner(clinicA.id);
+      const ownerB = await createTestPetOwner(clinicB.id);
+      const petA = await createTestPet(clinicA.id, ownerA.id);
+      const petB = await createTestPet(clinicB.id, ownerB.id);
+      const consultA = await createTestConsultation(clinicA.id, petA.id, userA.id);
+      const consultB = await createTestConsultation(clinicB.id, petB.id, userB.id);
+
+      const seenByA = await createTenantClient(clinicA.id).consultation.findMany();
+      const idsSeenByA = seenByA.map((c) => c.id);
+
+      expect(idsSeenByA).toContain(consultA.id);
+      expect(idsSeenByA).not.toContain(consultB.id);
+    });
+
+    it('tenant handle scopes service_catalog', async () => {
+      if (requiresAppDb()) return;
+
+      const serviceA = await createTestServiceCatalogEntry(clinicA.id, {
+        name: 'Consultation Fee A',
+      });
+      const serviceB = await createTestServiceCatalogEntry(clinicB.id, {
+        name: 'Consultation Fee B',
+      });
+
+      const seenByA = await createTenantClient(clinicA.id).serviceCatalog.findMany();
+      const idsSeenByA = seenByA.map((s) => s.id);
+
+      expect(idsSeenByA).toContain(serviceA.id);
+      expect(idsSeenByA).not.toContain(serviceB.id);
+
+      // ...and the mirror direction, so a policy that hides everything cannot pass.
+      const seenByB = await createTenantClient(clinicB.id).serviceCatalog.findMany();
+      const idsSeenByB = seenByB.map((s) => s.id);
+      expect(idsSeenByB).toContain(serviceB.id);
+      expect(idsSeenByB).not.toContain(serviceA.id);
+    });
+
+    it('tenant handle blocks cross-tenant write', async () => {
+      if (requiresAppDb()) return;
+
+      const ownerB = await createTestPetOwner(clinicB.id);
+      const petB = await createTestPet(clinicB.id, ownerB.id, { name: 'Pet B' });
+
+      // The RLS USING clause hides the row, so Prisma reports record-not-found.
+      await expect(
+        createTenantClient(clinicA.id).pet.update({
+          where: { id: petB.id },
+          data: { name: 'Hijacked' },
+        }),
+      ).rejects.toThrow();
+
+      // The row is untouched when read with the RLS-bypassing admin client.
+      const after = await prisma.pet.findUnique({ where: { id: petB.id } });
+      expect(after?.name).toBe('Pet B');
+    });
+
+    it('child table isolation -- prescriptions inherit their consultation clinic', async () => {
+      if (requiresAppDb()) return;
+
+      const ownerB = await createTestPetOwner(clinicB.id);
+      const petB = await createTestPet(clinicB.id, ownerB.id);
+      const consultB = await createTestConsultation(clinicB.id, petB.id, userB.id);
+      const rxB = await createTestPrescription(consultB.id, { drugName: 'Meloxicam B' });
+
+      // prescriptions has no clinic_id -- it is scoped through consultations.
+      const seenByA = await createTenantClient(clinicA.id).prescription.findMany();
+      expect(seenByA.map((p) => p.id)).not.toContain(rxB.id);
+
+      const seenByB = await createTenantClient(clinicB.id).prescription.findMany();
+      expect(seenByB.map((p) => p.id)).toContain(rxB.id);
+    });
   });
 });
