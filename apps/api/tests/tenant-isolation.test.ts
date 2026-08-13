@@ -688,15 +688,21 @@ describe('Tenant Isolation', () => {
       const ownerB = await createTestPetOwner(clinicB.id, { name: 'Owner B Secret' });
       const petB = await createTestPet(clinicB.id, ownerB.id, { name: 'PetB Secret' });
 
-      // Clinic A checks in a pet id it does not own. Whether this is rejected
-      // outright or accepted is an implementation detail; what must never
-      // happen is clinic B's pet data surfacing on clinic A's board.
-      await app.inject({
+      // Clinic A checks in a pet id it does not own.
+      const attempt = await app.inject({
         method: 'POST',
         url: '/api/v1/queue/check-in',
         headers: authFor(tokenA),
         payload: { petId: petB.id, visitReason: 'Cross-tenant attempt' },
       });
+
+      // Rejected cleanly -- not a 201, and not a 500 leaking a constraint error.
+      expect(attempt.statusCode).toBe(404);
+      expect(attempt.json().error.code).toBe('PET_NOT_FOUND');
+
+      // ...and no orphan row was written against clinic B's pet.
+      const orphans = await prisma.queueEntry.findMany({ where: { petId: petB.id } });
+      expect(orphans).toHaveLength(0);
 
       const board = await app.inject({
         method: 'GET',

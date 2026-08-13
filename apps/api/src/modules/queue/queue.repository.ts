@@ -56,6 +56,20 @@ export class QueueRepository {
   }
 
   /**
+   * Finds a pet within the calling clinic.
+   *
+   * D-30 defence in depth: RLS already hides other clinics' pets from the
+   * tenant handle, but check-in must fail cleanly rather than surfacing a
+   * constraint error, so the explicit clinicId filter stays as layer one.
+   */
+  async findPetInClinic(clinicId: string, petId: string) {
+    return this.prisma.pet.findFirst({
+      where: { id: petId, clinicId },
+      select: { id: true },
+    });
+  }
+
+  /**
    * Counts WAITING entries for today (for position assignment).
    */
   async countWaiting(clinicId: string, today: Date): Promise<number> {
