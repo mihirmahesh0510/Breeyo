@@ -74,7 +74,7 @@ describe('Queue Check-in (QUE-01)', () => {
     // Clean queue entries first (depends on Pet), then other tables
     await prisma.queueEntry.deleteMany();
     await prisma.pet.deleteMany();
-    await prisma.owner.deleteMany();
+    await prisma.petOwner.deleteMany();
     await cleanupTestData();
 
     // Set up fresh authenticated user for each test

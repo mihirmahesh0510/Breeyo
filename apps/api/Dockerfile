@@ -30,6 +30,7 @@ RUN pnpm turbo build --filter=@breeyo/api...
 # ============================================================
 FROM node:22-alpine AS runner
 
+RUN apk add --no-cache curl
 RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
 
 WORKDIR /app
@@ -53,6 +54,10 @@ COPY --from=builder /app/pnpm-lock.yaml ./
 
 # Install production dependencies only
 RUN pnpm install --frozen-lockfile --prod
+
+# Generate the Prisma client against the production dependency tree --
+# @prisma/client ships as a stub until `prisma generate` runs against it.
+RUN pnpm --filter @breeyo/api exec prisma generate
 
 EXPOSE 3000
 

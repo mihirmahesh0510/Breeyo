@@ -206,14 +206,17 @@ export class QueueRepository {
 
   /**
    * Archives entries from before the given date.
+   * Omit clinicId for the global midnight sweep; pass it to scope an
+   * authenticated request to a single clinic.
    * D-39: IN_CONSULT entries persist past midnight.
    */
-  async archiveEntries(beforeDate: Date) {
+  async archiveEntries(beforeDate: Date, clinicId?: string) {
     return this.prisma.queueEntry.updateMany({
       where: {
         archivedAt: null,
         status: { in: ['WAITING', 'DONE', 'NO_SHOW'] },
         checkedInAt: { lt: beforeDate },
+        ...(clinicId && { clinicId }),
       },
       data: { archivedAt: new Date() },
     });

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { VaccinationService } from '../vaccination.service.js';
 import type { VaccinationRepository } from '../vaccination.repository.js';
 import { DRUG_SEED_DATA } from '../../drug/drug-seed.js';
@@ -28,8 +28,32 @@ function createMockPrisma() {
     authAuditLog: {
       create: vi.fn().mockResolvedValue({}),
     },
+    pet: {
+      findFirst: vi.fn(),
+    },
   } as any;
 }
+
+// Fixed reference "now" so pet age (derived from birthYear/birthMonth, at
+// day-of-month precision) is deterministic regardless of when the suite runs.
+// The service always treats the birth date as the 1st of birthMonth, so ages
+// below are computed from FIXED_NOW back to the 1st of each birthMonth --
+// not a plain day offset -- and each is chosen well clear of any interval
+// bucket boundary (14/90/120/180 days).
+const FIXED_NOW = new Date('2026-06-15T00:00:00Z');
+
+/** Mocks the pet lookup createVaccination/createDeworming now require. */
+function mockPet(mockPrisma: ReturnType<typeof createMockPrisma>, species: string, birthYear: number, birthMonth: number) {
+  vi.mocked(mockPrisma.pet.findFirst).mockResolvedValueOnce({ species, birthYear, birthMonth });
+}
+
+// birthYear/birthMonth -> resulting age as of FIXED_NOW (2026-06-15):
+//   2026-05 -> 45 days  (puppy: [14, 90])
+//   2026-03 -> 106 days (adult-ish for vaccines: DHPPi non-booster is [42, 120])
+//   2025-05 -> 410 days (adult: 180+ / booster ranges)
+const PUPPY_AGE = { birthYear: 2026, birthMonth: 5 };
+const MID_AGE = { birthYear: 2026, birthMonth: 3 };
+const ADULT_AGE = { birthYear: 2025, birthMonth: 5 };
 
 describe('VaccinationService', () => {
   let service: VaccinationService;
@@ -37,18 +61,24 @@ describe('VaccinationService', () => {
   let mockPrisma: ReturnType<typeof createMockPrisma>;
 
   beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(FIXED_NOW);
     mockRepo = createMockRepository();
     mockPrisma = createMockPrisma();
     service = new VaccinationService(mockRepo, mockPrisma);
   });
 
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   describe('createVaccination', () => {
     it('should auto-calculate nextDueDate for known vaccines', async () => {
       const spy = vi.mocked(mockRepo.createVaccination).mockResolvedValue({ id: 'vax_1' } as any);
+      mockPet(mockPrisma, 'DOG', MID_AGE.birthYear, MID_AGE.birthMonth);
 
       await service.createVaccination(
         'clinic_1', 'pet_1', 'consult_1',
-        'DOG', 100, // 100 days old
         { vaccineName: 'DHPPi', administeredBy: 'vet_1' },
       );
 
@@ -60,10 +90,10 @@ describe('VaccinationService', () => {
     it('should use provided nextDueDate when given', async () => {
       const customDate = new Date('2027-01-01');
       vi.mocked(mockRepo.createVaccination).mockResolvedValue({ id: 'vax_1' } as any);
+      mockPet(mockPrisma, 'DOG', ADULT_AGE.birthYear, ADULT_AGE.birthMonth);
 
       await service.createVaccination(
         'clinic_1', 'pet_1', null,
-        'DOG', 365,
         { vaccineName: 'DHPPi', administeredBy: 'vet_1', nextDueDate: customDate },
       );
 
@@ -73,10 +103,10 @@ describe('VaccinationService', () => {
 
     it('should return null nextDueDate for unknown vaccines', async () => {
       vi.mocked(mockRepo.createVaccination).mockResolvedValue({ id: 'vax_1' } as any);
+      mockPet(mockPrisma, 'DOG', ADULT_AGE.birthYear, ADULT_AGE.birthMonth);
 
       await service.createVaccination(
         'clinic_1', 'pet_1', null,
-        'DOG', 365,
         { vaccineName: 'Unknown-Vaccine', administeredBy: 'vet_1' },
       );
 
@@ -86,10 +116,10 @@ describe('VaccinationService', () => {
 
     it('writes a VACCINATION_RECORDED audit log entry on success (EMR-07 / D-62)', async () => {
       vi.mocked(mockRepo.createVaccination).mockResolvedValue({ id: 'vax_1' } as any);
+      mockPet(mockPrisma, 'DOG', MID_AGE.birthYear, MID_AGE.birthMonth);
 
       await service.createVaccination(
         'clinic_1', 'pet_1', 'consult_1',
-        'DOG', 100,
         { vaccineName: 'DHPPi', administeredBy: 'vet_1' },
       );
 
@@ -120,10 +150,10 @@ describe('VaccinationService', () => {
       'resolves a non-null nextDueDate for seeded vaccine "$vaccineName" ($species)',
       async ({ vaccineName, species }) => {
         vi.mocked(mockRepo.createVaccination).mockResolvedValue({ id: 'vax_1' } as any);
+        mockPet(mockPrisma, species, ADULT_AGE.birthYear, ADULT_AGE.birthMonth);
 
         await service.createVaccination(
           'clinic_1', 'pet_1', null,
-          species, 400, // adult
           { vaccineName, administeredBy: 'vet_1' },
         );
 
@@ -136,10 +166,10 @@ describe('VaccinationService', () => {
   describe('createDeworming', () => {
     it('should auto-calculate nextDueDate for puppies (14-day interval)', async () => {
       vi.mocked(mockRepo.createDeworming).mockResolvedValue({ id: 'dew_1' } as any);
+      mockPet(mockPrisma, 'DOG', PUPPY_AGE.birthYear, PUPPY_AGE.birthMonth);
 
       await service.createDeworming(
         'clinic_1', 'pet_1', null,
-        'DOG', 30, // 30 days old = puppy
         { drugName: 'Fenbendazole', administeredBy: 'vet_1' },
       );
 
@@ -152,10 +182,10 @@ describe('VaccinationService', () => {
 
     it('should auto-calculate nextDueDate for adults (90-day interval)', async () => {
       vi.mocked(mockRepo.createDeworming).mockResolvedValue({ id: 'dew_1' } as any);
+      mockPet(mockPrisma, 'DOG', ADULT_AGE.birthYear, ADULT_AGE.birthMonth);
 
       await service.createDeworming(
         'clinic_1', 'pet_1', null,
-        'DOG', 365, // adult
         { drugName: 'Fenbendazole', administeredBy: 'vet_1' },
       );
 

@@ -4,18 +4,59 @@ import { calculateNextDueDate, DEWORMING_INTERVALS } from '@breeyo/types';
 import type { VaccinationRepository } from './vaccination.repository.js';
 import { writeAuditLog, AuditEvent } from '../../lib/audit-log.js';
 
+function petNotFoundError() {
+  const error = new Error('Pet not found at this clinic') as Error & { statusCode: number; code: string };
+  error.statusCode = 404;
+  error.code = 'PET_NOT_FOUND';
+  return error;
+}
+
+function petBirthDateMissingError() {
+  const error = new Error('Pet is missing birth year/month, required to schedule vaccination/deworming intervals') as Error & { statusCode: number; code: string };
+  error.statusCode = 400;
+  error.code = 'PET_BIRTH_DATE_MISSING';
+  return error;
+}
+
+function calculateAgeDays(birthYear: number, birthMonth: number): number {
+  const birthDate = new Date(Date.UTC(birthYear, birthMonth - 1, 1));
+  return Math.floor((Date.now() - birthDate.getTime()) / (1000 * 60 * 60 * 24));
+}
+
 export class VaccinationService {
   constructor(
     private readonly repository: VaccinationRepository,
     private readonly prisma: PrismaClient,
   ) {}
 
+  /**
+   * Loads the pet scoped to this clinic and derives species/age from its
+   * own record -- never trusts client-supplied species/age, and rejects
+   * petIds belonging to another clinic.
+   */
+  private async getPetForClinic(clinicId: string, petId: string) {
+    const pet = await this.prisma.pet.findFirst({
+      where: { id: petId, clinicId },
+      select: { species: true, birthYear: true, birthMonth: true },
+    });
+
+    if (!pet) {
+      throw petNotFoundError();
+    }
+    if (pet.birthYear == null || pet.birthMonth == null) {
+      throw petBirthDateMissingError();
+    }
+
+    return {
+      species: pet.species,
+      ageDays: calculateAgeDays(pet.birthYear, pet.birthMonth),
+    };
+  }
+
   async createVaccination(
     clinicId: string,
     petId: string,
     consultationId: string | null,
-    petSpecies: string,
-    petAgeDays: number,
     data: {
       vaccineName: string;
       batchNumber?: string | null;
@@ -25,6 +66,8 @@ export class VaccinationService {
       nextDueDate?: Date | null;
     },
   ) {
+    const { species: petSpecies, ageDays: petAgeDays } = await this.getPetForClinic(clinicId, petId);
+
     let nextDueDate = data.nextDueDate ?? null;
 
     if (!nextDueDate) {
@@ -63,14 +106,14 @@ export class VaccinationService {
     clinicId: string,
     petId: string,
     consultationId: string | null,
-    _petSpecies: string,
-    petAgeDays: number,
     data: {
       drugName: string;
       administeredBy: string;
       nextDueDate?: Date | null;
     },
   ) {
+    const { ageDays: petAgeDays } = await this.getPetForClinic(clinicId, petId);
+
     let nextDueDate = data.nextDueDate ?? null;
 
     if (!nextDueDate) {

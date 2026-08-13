@@ -15,8 +15,6 @@ export class VaccinationController {
       expiryDate?: string;
       consultationId?: string;
       nextDueDate?: string;
-      petSpecies: string;
-      petAgeDays: number;
     };
 
     if (!body.vaccineName) {
@@ -27,8 +25,6 @@ export class VaccinationController {
       clinicId,
       petId,
       body.consultationId ?? null,
-      body.petSpecies,
-      body.petAgeDays,
       {
         vaccineName: body.vaccineName,
         batchNumber: body.batchNumber,
@@ -58,8 +54,6 @@ export class VaccinationController {
       drugName: string;
       consultationId?: string;
       nextDueDate?: string;
-      petSpecies: string;
-      petAgeDays: number;
     };
 
     if (!body.drugName) {
@@ -70,8 +64,6 @@ export class VaccinationController {
       clinicId,
       petId,
       body.consultationId ?? null,
-      body.petSpecies,
-      body.petAgeDays,
       {
         drugName: body.drugName,
         administeredBy: vetId,

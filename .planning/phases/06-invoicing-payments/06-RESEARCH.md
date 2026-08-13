@@ -1291,36 +1291,52 @@ No framework install needed — Vitest 2.1 is configured in every workspace.
 
 ## Open Questions
 
+> **Resolution status (recorded 2026-08-12 during plan-phase).** Six of the seven questions below were closed by decisions in `06-CONTEXT.md` or by plan structure, and each carries an inline marker. Q5 remains genuinely open — it is an external, long-lead dependency that no plan can close on its own, and it is tracked to a blocking human checkpoint rather than pretended away.
+
 1. **Is Phase 6 shipping flat-rate GST (D-08/D-17) or full per-line CGST/SGST/IGST (ROADMAP #4 / BIL-07)?**
+
+   **RESOLVED: see D-08 (superseded) and D-17 (superseded) in `06-CONTEXT.md`.** Full per-line CGST/SGST/IGST ships. The recommended Path B was taken: the user confirmed, and both D-08 and D-17 were rewritten in place with a supersession note pointing back at Contradiction 1 so the losing text no longer reads as authoritative. Implemented by plan 06-05 (`gst.service.ts`, `computeInvoiceTax`, per-head Rule 51 rounding) and frozen at finalize by plan 06-07.
    - What we know: ROADMAP and STATE.md say full; CONTEXT.md and UI-SPEC say flat. Phase 4 already shipped `ServiceCatalog.hsnCode/sacCode/gstRateOverride`; Phase 5 plan 05-08 exists solely to add `hsnSacCode`/`gstRate` to inventory items *for Phase 6's use*. The cost delta is ~0.5 plan-days.
    - What's unclear: which document the user considers authoritative.
    - Recommendation: **Path B.** Confirm with the user, then update the losing documents so they stop contradicting. If Path A wins, `06-UI-SPEC.md` line 947–957 and D-08/D-17 remain valid, but the exempt/taxable per-line flag (Finding G1) is still mandatory.
 
 2. **Does veterinary-service GST exemption change the answer to Q1?**
+
+   **RESOLVED: see D-08 (superseded) in `06-CONTEXT.md`.** Finding G1 was surfaced and did change the answer — D-08's supersession note states explicitly that a single flat rate would have meant illegally taxing exempt services rather than merely simplifying. The per-line `taxTreatment` flag (`exempt` | `taxable` | `nil_rated`) is in the schema (plan 06-03), the validators (plan 06-04) and the tax engine (plan 06-05), and the exempt/taxable line mix drives the Rule 46A document heading.
    - What we know: consultations/surgery/vaccination are exempt (Notification 12/2017 Entry 46); products are taxable; a single flat rate across both is incorrect regardless of path.
    - What's unclear: whether the user was aware of this when locking D-08.
    - Recommendation: surface Finding G1 to the user explicitly. It may change their mind on Q1 independent of the ROADMAP-vs-CONTEXT argument.
 
 3. **Should Wave 0 infrastructure remediation be in scope for Phase 6?**
+
+   **RESOLVED: see D-30 in `06-CONTEXT.md`.** In scope, as a blocking wave rather than a single plan — the diagnosis worsened during pattern-mapping (no existing route used the tenant client at all), so the remediation is plans 06-00 (client lifecycle, RLS policy reconciliation, missing migrations), 06-01 (missing mobile dependencies), 06-02 (six module conversions) and 06-20 (the remaining two modules plus the CI regression gate). Everything else in the phase depends on them.
    - What we know: `createTenantClient` leaks connections and may not enforce RLS; 11 of 24 tables have no migrations; only 3 have RLS policies; `expo-print`/`expo-sharing`/`react-native-paper` are missing from the mobile app.
    - What's unclear: whether these become a Phase 6 plan, a separate hotfix phase, or are deferred.
    - Recommendation: **make it plan 06-00 and block everything else on it.** Adding 8 money tables to a foundation with unverified tenant isolation is the highest-risk option available. This changes the phase from 4 plans to 5.
 
 4. **Does Phase 5 link `StockMovement` to `Consultation`?**
+
+   **RESOLVED: verified against Phase 5 and encoded as a hard gate rather than an assumption.** `StockMovement` carries `consultationId`, `invoiceId`, `ownerId`, `quantity` and a dispense-time `unitPrice`, which is what BIL-01's quantity is sourced from. Plan 06-07 Task 1 opens with an explicit `grep`-and-STOP instruction: if any of those fields is absent, report BIL-01 as blocked on a Phase 5 amendment rather than defaulting quantities to 1. Plan 06-03 records the observed `StockMovement.id` type so the `InvoiceLineItem.stockMovementId` FK matches what actually shipped. That column also became the deduct-versus-stamp discriminator at finalize — see the plan-06-07 stock-plan predicate, since Phase 5 already decrements the batch at dispense time.
    - What we know: `Prescription` (Phase 4) has `dispensed` and `inventoryItemId` but **no quantity**. BIL-01 needs quantity.
    - What's unclear: whether Phase 5's dispense flow records the consultation reference on the movement.
    - Recommendation: verify against `05-01-PLAN.md`/`05-06-PLAN.md` before planning 06-02. If absent, it is a Phase 5 amendment, not a Phase 6 workaround.
 
 5. **How do 20 pilot clinics each get a Razorpay account and configure a webhook (D-29)?**
+
+   **PARTIALLY ADDRESSED — still genuinely open.** What the phase does close: plan 06-01's `user_setup` block declares the per-clinic account, KYC and dashboard steps as human-required work with the exact dashboard paths; plan 06-12 returns a server-computed `webhookConfigured` flag; plan 06-23's settings screen renders the per-clinic webhook URL with a copy action and a not-configured warning state, so a clinic that skipped the step is visible rather than silently broken; and plan 06-19's blocking human checkpoint requires a count of KYC-complete clinics, confirmation that an onboarding runbook exists, and a readability check on the indicator. What remains open: whether the onboarding path actually scales to 20 clinics, and whether Razorpay Route or Partner (one platform account) was considered and rejected. Neither is a code decision, so no plan can close it — it is tracked as a long-lead external dependency with a named owner required before the phase is closed.
    - What we know: per-clinic keys means per-clinic accounts, per-clinic KYC, per-clinic webhook configuration and per-clinic webhook secrets.
    - What's unclear: whether this onboarding path exists, and whether Razorpay Route/Partner (one platform account) was considered and rejected.
    - Recommendation: treat as a long-lead external dependency starting now. Build a "Webhook configured ✓/✗" health check into Billing Settings so a misconfigured clinic is visible rather than silently broken.
 
 6. **Should `InventoryItem.sellingPrice` be normalized to integer paise before Phase 5 ships?**
+
+   **RESOLVED: see D-31 in `06-CONTEXT.md`.** Not normalized. Phase 5's `Decimal(10,2)` rupees stays as shipped; Phase 6 adds a single tested `toPaise()` boundary adapter in the invoice line-item builder, with a unit test guarding the 100x error. The recommendation to normalize was rejected in favour of one conversion point, and the plans enforce that it is exactly one: grep gates in plan 06-07 assert `toPaise` appears in `invoice.service.ts` and never in `invoice.repository.ts`.
    - What we know: `ServiceCatalog.price` is `Int` paise (shipped); `05-01-PLAN.md` specifies `Decimal(10,2)` rupees. Mixing them on one invoice is a 100× error waiting to happen.
    - Recommendation: normalize now while Phase 5 is unimplemented — it is a one-line plan edit today and a data migration later.
 
 7. **Is `auth_audit_log` the right home for billing audit events?**
+
+   **RESOLVED: see D-32 in `06-CONTEXT.md`.** No — a dedicated `billing_audit_log` table ships instead, so financial events (finalize, void, refund, credit note, payment) get 6-year Section 36 retention decoupled from auth audit policy. Created in plan 06-03, written through `writeBillingAuditLog(tx, ...)` from plan 06-06, and called inside the finalize and void transactions in plan 06-07 so an audit row cannot exist for a rolled-back operation.
    - What we know: the table is named for auth, and `AuditEvent` is an auth-centric enum. D-21/D-26 and GST record-keeping (invoices must be retained 6 years under Section 36) imply financial audit needs.
    - Recommendation: add a separate `billing_audit_log` or generalize the existing table. Ask the user; either is defensible.
 
