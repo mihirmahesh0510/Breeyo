@@ -12,24 +12,32 @@ import { PermissionService } from '../auth/permission.service.js';
 import { authenticate } from '../../middleware/authenticate.js';
 import { tenantContext } from '../../middleware/tenant-context.js';
 import { requireInventoryPermission } from './middleware/inventory-permissions.middleware.js';
+import type { TenantPrismaClient } from '../../lib/prisma-rls.js';
 
 export default async function dispenseRoutes(fastify: FastifyInstance) {
-  const stockMovementService = new StockMovementService(fastify.prisma);
-  const fifoDispenseService = new FifoDispenseService(fastify.prisma, stockMovementService);
-  const stockAdjustmentService = new StockAdjustmentService(fastify.prisma, stockMovementService);
-  const stockTakeService = new StockTakeService(fastify.prisma, stockMovementService);
-  const stockReceiptService = new StockReceiptService(fastify.prisma);
-  const parLevelAlertService = new ParLevelAlertService(fastify.prisma);
-  const wantListService = new WantListService(parLevelAlertService, fastify.prisma);
+  // D-30: every service is built per request from `request.db`, the
+  // tenant-scoped handle `tenantContext` installs, rather than once at plugin
+  // scope from the breeyo_admin client, which bypasses RLS by design. Phase 5
+  // landed this module after plan 06-20 was written, so it was on the admin
+  // client with its six RLS policies (added by 06-00) unreachable. Every route
+  // below carries `tenantContext`, so `request.db` is always present.
+  const buildServices = (db: TenantPrismaClient) => {
+    // One StockMovementService and one ParLevelAlertService per request, shared
+    // by their dependents exactly as the previous plugin-scope wiring did.
+    const stockMovementService = new StockMovementService(db);
+    const parLevelAlertService = new ParLevelAlertService(db);
+    return {
+      stockMovementService,
+      parLevelAlertService,
+      fifoDispenseService: new FifoDispenseService(db, stockMovementService),
+      stockAdjustmentService: new StockAdjustmentService(db, stockMovementService),
+      stockTakeService: new StockTakeService(db, stockMovementService),
+      stockReceiptService: new StockReceiptService(db),
+      wantListService: new WantListService(parLevelAlertService, db),
+    };
+  };
 
-  const controller = new DispenseController(
-    fifoDispenseService,
-    stockAdjustmentService,
-    stockTakeService,
-    stockMovementService,
-    parLevelAlertService,
-    wantListService,
-  );
+  const controller = new DispenseController(buildServices);
 
   // D-53: generic sync dispatcher's own PermissionService instance, built
   // directly from fastify.prisma/fastify.redis.
@@ -44,17 +52,31 @@ export default async function dispenseRoutes(fastify: FastifyInstance) {
   // encapsulation means auth.routes.ts's own decoration never reaches this
   // sibling plugin's scope -- decorate locally, matching inventory.routes.ts
   // and clinic.routes.ts's real working pattern.
+  //
+  // Admin client by design: runs before tenantContext (D-30 exemption) --
+  // permission resolution executes during `authenticate`, before `request.db`
+  // exists, and reads the global reference tables (`users`, `roles`,
+  // `permissions`, `clinic_member_roles`) that plan 06-00 deliberately left
+  // without RLS policies because they are what *establishes* the tenant.
   const permissionService = new PermissionService(fastify.prisma, fastify.redis);
   if (!fastify.hasDecorator('permissionService')) {
     fastify.decorate('permissionService', permissionService);
   }
-  const syncOperationService = new SyncOperationService(
-    fifoDispenseService,
-    stockAdjustmentService,
-    stockReceiptService,
-    permissionService,
-    fastify.redis,
-  );
+
+  // D-30: the sync dispatcher wraps three tenant-scoped services, so it is
+  // built per request too. `permissionService` and `redis` are tenant-agnostic
+  // and stay plugin-scope singletons closed over by the factory.
+  const buildSyncOperationService = (db: TenantPrismaClient) => {
+    const { fifoDispenseService, stockAdjustmentService, stockReceiptService } =
+      buildServices(db);
+    return new SyncOperationService(
+      fifoDispenseService,
+      stockAdjustmentService,
+      stockReceiptService,
+      permissionService,
+      fastify.redis,
+    );
+  };
 
   const base = [authenticate, tenantContext];
   const dispense = [...base, requireInventoryPermission('dispense')];
@@ -88,6 +110,7 @@ export default async function dispenseRoutes(fastify: FastifyInstance) {
   fastify.post('/inventory/sync-operation', {
     preHandler: base,
     handler: async (request: FastifyRequest, reply: FastifyReply) => {
+      const syncOperationService = buildSyncOperationService(request.db);
       const result = await syncOperationService.execute(
         request.user.activeClinicId,
         request.user.id,

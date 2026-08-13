@@ -83,6 +83,22 @@ export function createTenantClient(clinicId: string) {
 export type TenantPrismaClient = ReturnType<typeof createTenantClient>;
 
 /**
+ * The `tx` handle yielded by `TenantPrismaClient.$transaction(async (tx) => ...)`.
+ *
+ * `Prisma.TransactionClient` describes the *unextended* client's transaction
+ * handle and is not assignable from the extended one, so a helper that accepts
+ * a `tx` from a tenant-scoped interactive transaction must be typed against
+ * this instead. Casting to `Prisma.TransactionClient` would compile but would
+ * silently discard the extension's typing — exactly the escape hatch D-30 is
+ * closing — so the alias is derived from `TenantPrismaClient` rather than
+ * declared independently.
+ */
+export type TenantTransactionClient = Omit<
+  TenantPrismaClient,
+  '$connect' | '$disconnect' | '$on' | '$transaction' | '$extends'
+>;
+
+/**
  * The Prisma handle a repository or service may be constructed with.
  *
  * On the HTTP path this is always the tenant-scoped `TenantPrismaClient`

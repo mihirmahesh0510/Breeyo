@@ -1,4 +1,4 @@
-import type { PrismaClient } from '@prisma/client';
+import type { TenantPrismaClient } from '../../lib/prisma-rls.js';
 import { stockAdjustmentSchema } from '@breeyo/validators';
 import { StockMovementService } from './stock-movement.service.js';
 
@@ -18,7 +18,7 @@ function validationError(message: string): Error & { statusCode: number; code: s
 
 export class StockAdjustmentService {
   constructor(
-    private readonly prisma: PrismaClient,
+    private readonly prisma: TenantPrismaClient,
     private readonly stockMovementService: StockMovementService,
   ) {}
 

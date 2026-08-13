@@ -8,13 +8,26 @@ import { PermissionService } from '../auth/permission.service.js';
 import { authenticate } from '../../middleware/authenticate.js';
 import { tenantContext } from '../../middleware/tenant-context.js';
 import { requireInventoryPermission } from './middleware/inventory-permissions.middleware.js';
+import type { TenantPrismaClient } from '../../lib/prisma-rls.js';
 
 export default async function inventoryRoutes(fastify: FastifyInstance) {
-  const repository = new InventoryItemRepository(fastify.prisma);
-  const service = new InventoryItemService(repository);
-  const stockReceiptService = new StockReceiptService(fastify.prisma);
-  const barcodeLookupService = new BarcodeLookupService(repository);
-  const controller = new InventoryController(service, stockReceiptService, barcodeLookupService);
+  // D-30: every service is built per request from `request.db`, the
+  // tenant-scoped handle `tenantContext` installs, rather than once at plugin
+  // scope from the breeyo_admin client, which bypasses RLS by design. Phase 5
+  // landed this module after plan 06-20 was written, so it was on the admin
+  // client with its six RLS policies (added by 06-00) unreachable. Same factory
+  // shape as patient.routes.ts; every route below carries `tenantContext`, so
+  // `request.db` is always present.
+  const buildServices = (db: TenantPrismaClient) => {
+    const repository = new InventoryItemRepository(db);
+    return {
+      service: new InventoryItemService(repository),
+      stockReceiptService: new StockReceiptService(db),
+      barcodeLookupService: new BarcodeLookupService(repository),
+    };
+  };
+
+  const controller = new InventoryController(buildServices);
 
   // Fastify's plugin encapsulation means auth.routes.ts's own
   // `fastify.decorate('permissionService', ...)` never reaches this sibling
@@ -22,6 +35,10 @@ export default async function inventoryRoutes(fastify: FastifyInstance) {
   // read was always undefined here. Decorate locally, matching clinic.routes.ts's
   // real working pattern (bug found via live E2E testing, not caught by unit tests
   // since those mock the permission check itself).
+  //
+  // Admin client by design: runs before tenantContext (D-30 exemption) — the
+  // permission check executes during `authenticate` and reads the global
+  // reference tables 06-00 deliberately left without RLS policies.
   if (!fastify.hasDecorator('permissionService')) {
     fastify.decorate('permissionService', new PermissionService(fastify.prisma, fastify.redis));
   }
