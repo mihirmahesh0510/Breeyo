@@ -38,6 +38,7 @@
     "react-native": "^0.76.0",
     "react-native-gesture-handler": "~2.20.2",
     "react-native-paper": "^5.15.1",
+    "react-native-qrcode-svg": "^6.3.21",
     "react-native-reanimated": "~3.16.1",
     "react-native-svg": "15.8.0",
     "react-native-web": "~0.19.13",
