@@ -29,6 +29,9 @@ export function NavigationBar({
 }: NavigationBarProps) {
   const theme = useAppTheme();
   const colors = theme.colors as Record<string, string>;
+  // See BottomSheet.ts: useAppTheme() can resolve to Paper's bare theme on
+  // some web render paths, where these Breeyo-specific tokens are undefined.
+  const spacing = theme.spacing ?? { xs: 4, md: 16 };
 
   const styles = StyleSheet.create({
     container: {
@@ -36,11 +39,11 @@ export function NavigationBar({
       flexDirection: 'row' as const,
       alignItems: 'center' as const,
       backgroundColor: colors[NAV_BAR_CONFIG.background] || colors.surface,
-      paddingHorizontal: theme.spacing.xs,
+      paddingHorizontal: spacing.xs,
     },
     title: {
       flex: 1,
-      marginLeft: onBack ? 0 : theme.spacing.md,
+      marginLeft: onBack ? 0 : spacing.md,
     },
     actions: {
       flexDirection: 'row' as const,

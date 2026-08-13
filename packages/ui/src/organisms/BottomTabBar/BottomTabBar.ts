@@ -41,6 +41,9 @@ export function BottomTabBar({
 }: BottomTabBarProps) {
   const theme = useAppTheme();
   const colors = theme.colors as Record<string, string>;
+  // See BottomSheet.ts: useAppTheme() can resolve to Paper's bare theme on
+  // some web render paths, where these Breeyo-specific tokens are undefined.
+  const spacing = theme.spacing ?? { xs: 4 };
 
   const styles = StyleSheet.create({
     container: {
@@ -54,7 +57,7 @@ export function BottomTabBar({
       flex: 1,
       alignItems: 'center' as const,
       justifyContent: 'center' as const,
-      paddingVertical: theme.spacing.xs,
+      paddingVertical: spacing.xs,
     },
     label: {
       marginTop: 2,

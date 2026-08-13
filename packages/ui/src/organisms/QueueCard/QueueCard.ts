@@ -62,6 +62,10 @@ export function QueueCard({
 }: QueueCardProps) {
   const theme = useAppTheme();
   const colors = theme.colors as Record<string, string>;
+  // See BottomSheet.ts: useAppTheme() can resolve to Paper's bare theme on
+  // some web render paths, where these Breeyo-specific tokens are undefined.
+  const spacing = theme.spacing ?? { md: 16, sm: 8 };
+  const borderRadius = theme.borderRadius ?? { lg: 12 };
 
   const a11yLabel = generateAccessibilityLabel({
     position,
@@ -74,11 +78,11 @@ export function QueueCard({
     container: {
       height: QUEUE_CARD_CONFIG.cardHeight,
       backgroundColor: colors.surface,
-      borderRadius: theme.borderRadius.lg,
+      borderRadius: borderRadius.lg,
       flexDirection: 'row' as const,
       alignItems: 'center' as const,
-      paddingHorizontal: theme.spacing.md,
-      gap: theme.spacing.sm,
+      paddingHorizontal: spacing.md,
+      gap: spacing.sm,
     },
     position: {
       width: 28,

@@ -37,6 +37,15 @@ export default function TabsLayout() {
           ),
         }}
       />
+      <Tabs.Screen
+        name="inventory"
+        options={{
+          title: 'Inventory',
+          tabBarIcon: ({ color, size }) => (
+            <MaterialCommunityIcons name="package-variant-closed" size={size} color={color} />
+          ),
+        }}
+      />
     </Tabs>
   );
 }

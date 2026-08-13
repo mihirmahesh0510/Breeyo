@@ -49,5 +49,18 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       },
     ],
   },
-  plugins: ['expo-router', 'expo-secure-store'],
+  plugins: [
+    'expo-router',
+    'expo-secure-store',
+    'expo-sqlite',
+    [
+      'expo-camera',
+      {
+        cameraPermission: 'Breeyo needs camera access to scan barcodes',
+        // Barcode scanning only -- no video/audio capture in this app.
+        microphonePermission: false,
+        recordAudioAndroid: false,
+      },
+    ],
+  ],
 });

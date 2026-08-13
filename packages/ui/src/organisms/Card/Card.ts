@@ -16,7 +16,7 @@ export interface CardVariantConfig {
 export const CARD_VARIANTS: Record<CardVariant, CardVariantConfig> = {
   elevated: { elevation: 1, background: 'surface' },
   filled: { elevation: 0, background: 'surfaceVariant' },
-  outlined: { elevation: 0, borderWidth: 1, borderColor: 'outline' },
+  outlined: { elevation: 0, background: 'surface', borderWidth: 1, borderColor: 'outline' },
 };
 
 // --- Sub-components ---
@@ -93,11 +93,16 @@ function CardComponent({
   const theme = useAppTheme();
   const config = CARD_VARIANTS[variant];
   const colors = theme.colors as Record<string, string>;
+  // See BottomSheet.ts for why this fallback exists: on some web render paths
+  // `useAppTheme()` resolves to Paper's bare MD3LightTheme instead of the
+  // custom breeyoTheme, so `theme.borderRadius` (a Breeyo-specific addition)
+  // is undefined and crashes StyleSheet.create below.
+  const borderRadius = theme.borderRadius ?? { lg: 12 };
 
   const styles = StyleSheet.create({
     card: {
       backgroundColor: colors[config.background] || config.background,
-      borderRadius: theme.borderRadius.lg,
+      borderRadius: borderRadius.lg,
       overflow: 'hidden' as const,
       ...(config.borderWidth
         ? {

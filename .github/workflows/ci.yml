@@ -75,6 +75,7 @@ jobs:
           psql "$DATABASE_URL" -f apps/api/prisma/init-rls-roles.sql
           psql "$DATABASE_URL" -f apps/api/prisma/post-migrate.sql
           psql "$DATABASE_URL" -f apps/api/prisma/rls/phase-03-patient-queue-rls.sql
+          psql "$DATABASE_URL" -f apps/api/prisma/rls/phase-05-inventory-rls.sql
 
       - name: Build
         run: pnpm build

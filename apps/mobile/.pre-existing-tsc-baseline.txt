@@ -1,0 +1,210 @@
+app/(app)/owner/[ownerId].tsx(10,29): error TS2322: Type '{ ownerId: string; }' is not assignable to type 'IntrinsicAttributes'.
+  Property 'ownerId' does not exist on type 'IntrinsicAttributes'.
+app/(app)/patient/[petId].tsx(10,31): error TS2322: Type '{ petId: string; }' is not assignable to type 'IntrinsicAttributes'.
+  Property 'petId' does not exist on type 'IntrinsicAttributes'.
+app/(app)/patient/register.tsx(13,7): error TS2322: Type '{ initialMobile: string | undefined; ownerId: string | undefined; }' is not assignable to type 'IntrinsicAttributes'.
+  Property 'initialMobile' does not exist on type 'IntrinsicAttributes'.
+app/setup-wizard/_layout.tsx(42,42): error TS2835: Relative import paths need explicit file extensions in ECMAScript imports when '--moduleResolution' is 'node16' or 'nodenext'. Did you mean '../../src/lib/api.js'?
+app/setup-wizard/_layout.tsx(43,47): error TS2835: Relative import paths need explicit file extensions in ECMAScript imports when '--moduleResolution' is 'node16' or 'nodenext'. Did you mean '../../src/lib/auth-storage.js'?
+src/features/attachment/components/AttachmentPicker.tsx(12,33): error TS2307: Cannot find module 'expo-document-picker' or its corresponding type declarations.
+src/features/attachment/hooks/useFileUpload.ts(3,45): error TS2307: Cannot find module 'expo-image-manipulator' or its corresponding type declarations.
+src/features/consultation/components/CareInstructionsSection.tsx(34,58): error TS2345: Argument of type 'string' is not assignable to parameter of type '"Soft food" | "NPO (nothing by mouth)" | "Exercise restriction" | "Cone/collar" | "Wound care" | "Keep dry" | "Rest"'.
+src/features/consultation/hooks/useVoiceTranscription.ts(5,8): error TS2307: Cannot find module 'expo-speech-recognition' or its corresponding type declarations.
+src/features/consultation/hooks/useVoiceTranscription.ts(117,40): error TS7006: Parameter 'event' implicitly has an 'any' type.
+src/features/consultation/hooks/useVoiceTranscription.ts(140,39): error TS7006: Parameter 'event' implicitly has an 'any' type.
+src/features/consultation/screens/ConsultationScreen.tsx(309,31): error TS2345: Argument of type 'Consultation' is not assignable to parameter of type 'Record<string, unknown>'.
+  Index signature for type 'string' is missing in type 'Consultation'.
+src/features/history/components/WeightTrendChart.tsx(3,62): error TS2307: Cannot find module 'react-native-svg' or its corresponding type declarations.
+src/features/patient/screens/PatientDetailScreen.tsx(169,27): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(predicate: (value: Visit, index: number, array: Visit[]) => value is Visit, thisArg?: any): Visit[]', gave the following error.
+    Argument of type '(v: Record<string, unknown>) => boolean' is not assignable to parameter of type '(value: Visit, index: number, array: Visit[]) => value is Visit'.
+      Types of parameters 'v' and 'value' are incompatible.
+        Type 'Visit' is not assignable to type 'Record<string, unknown>'.
+          Index signature for type 'string' is missing in type 'Visit'.
+  Overload 2 of 2, '(predicate: (value: Visit, index: number, array: Visit[]) => unknown, thisArg?: any): Visit[]', gave the following error.
+    Argument of type '(v: Record<string, unknown>) => boolean' is not assignable to parameter of type '(value: Visit, index: number, array: Visit[]) => unknown'.
+      Types of parameters 'v' and 'value' are incompatible.
+        Type 'Visit' is not assignable to type 'Record<string, unknown>'.
+          Index signature for type 'string' is missing in type 'Visit'.
+src/features/patient/screens/PatientDetailScreen.tsx(170,24): error TS2345: Argument of type '(v: Record<string, unknown>) => { date: Date; weightKg: number; }' is not assignable to parameter of type '(value: Visit, index: number, array: Visit[]) => { date: Date; weightKg: number; }'.
+  Types of parameters 'v' and 'value' are incompatible.
+    Type 'Visit' is not assignable to type 'Record<string, unknown>'.
+      Index signature for type 'string' is missing in type 'Visit'.
+src/features/queue/components/CheckInSheet.tsx(7,31): error TS2307: Cannot find module '@breeyo/types/constants/species' or its corresponding type declarations.
+src/features/queue/components/CheckInSheet.tsx(47,39): error TS2339: Property 'data' does not exist on type 'NoInfer<OwnerWithPets>'.
+src/features/queue/components/QueueBoard.tsx(4,48): error TS2307: Cannot find module '@breeyo/types/constants/queue-status' or its corresponding type declarations.
+src/features/queue/components/QueueCardItem.tsx(6,31): error TS2307: Cannot find module '@breeyo/types/constants/species' or its corresponding type declarations.
+src/features/queue/components/QueueCardItem.tsx(7,55): error TS2307: Cannot find module '@breeyo/types/constants/queue-status' or its corresponding type declarations.
+src/features/queue/components/VisitReasonPicker.tsx(4,31): error TS2307: Cannot find module '@breeyo/types/constants/visit-reasons' or its corresponding type declarations.
+src/features/queue/components/VisitReasonPicker.tsx(40,29): error TS7006: Parameter 'reason' implicitly has an 'any' type.
+src/features/queue/hooks/useQueueSocket.ts(4,31): error TS2307: Cannot find module '@breeyo/types/constants/socket-events' or its corresponding type declarations.
+src/features/queue/screens/QueueScreen.tsx(7,29): error TS2307: Cannot find module '@breeyo/types/constants/queue-status' or its corresponding type declarations.
+src/providers/AuthProvider.tsx(150,31): error TS2352: Conversion of type 'Record<string, unknown>' to type 'ClinicSelectionPayload' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Property 'clinics' is missing in type 'Record<string, unknown>' but required in type 'ClinicSelectionPayload'.
+src/providers/AuthProvider.tsx(177,31): error TS2352: Conversion of type 'Record<string, unknown>' to type 'ClinicSelectionPayload' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Property 'clinics' is missing in type 'Record<string, unknown>' but required in type 'ClinicSelectionPayload'.
+../../packages/ui/src/atoms/IconButton/IconButton.ts(46,5): error TS2769: No overload matches this call.
+  The last overload gave the following error.
+    Type '"default" | "outlined" | "contained"' is not assignable to type 'IconButtonMode | undefined'.
+      Type '"default"' is not assignable to type 'IconButtonMode | undefined'.
+../../packages/ui/src/atoms/NotificationBadge/NotificationBadge.ts(49,18): error TS2352: Conversion of type '{ readonly primary: "#2E7D32"; readonly onPrimary: "#FFFFFF"; readonly primaryContainer: "#C8E6C9"; readonly onPrimaryContainer: "#1B5E20"; readonly secondary: "#5D4037"; readonly onSecondary: "#FFFFFF"; ... 28 more ...; readonly elevation: MD3ElevationColors; }' to type 'Record<string, string>' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Property 'elevation' is incompatible with index signature.
+    Type 'MD3ElevationColors' is not comparable to type 'string'.
+../../packages/ui/src/atoms/NotificationBadge/NotificationBadge.ts(92,31): error TS2769: No overload matches this call.
+  The last overload gave the following error.
+    Argument of type '{ variant: "bodyLarge"; }' is not assignable to parameter of type 'Attributes & TextProps & { variant?: VariantProp<never> | undefined; children: ReactNode; theme?: ThemeProp | undefined; style?: StyleProp<...>; } & { ...; }'.
+      Property 'children' is missing in type '{ variant: "bodyLarge"; }' but required in type '{ variant?: VariantProp<never> | undefined; children: ReactNode; theme?: ThemeProp | undefined; style?: StyleProp<TextStyle>; }'.
+../../packages/ui/src/atoms/NotificationBadge/NotificationBadge.ts(97,37): error TS2769: No overload matches this call.
+  The last overload gave the following error.
+    Argument of type '{ style: { color: string; fontSize: number; fontWeight: "bold"; textAlign: "center"; }; }' is not assignable to parameter of type 'Attributes & TextProps & { variant?: VariantProp<never> | undefined; children: ReactNode; theme?: ThemeProp | undefined; style?: StyleProp<...>; } & { ...; }'.
+      Property 'children' is missing in type '{ style: { color: string; fontSize: number; fontWeight: "bold"; textAlign: "center"; }; }' but required in type '{ variant?: VariantProp<never> | undefined; children: ReactNode; theme?: ThemeProp | undefined; style?: StyleProp<TextStyle>; }'.
+../../packages/ui/src/atoms/StatusBadge/StatusBadge.ts(86,18): error TS2352: Conversion of type '{ readonly primary: "#2E7D32"; readonly onPrimary: "#FFFFFF"; readonly primaryContainer: "#C8E6C9"; readonly onPrimaryContainer: "#1B5E20"; readonly secondary: "#5D4037"; readonly onSecondary: "#FFFFFF"; ... 28 more ...; readonly elevation: MD3ElevationColors; }' to type 'Record<string, string>' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Property 'elevation' is incompatible with index signature.
+    Type 'MD3ElevationColors' is not comparable to type 'string'.
+../../packages/ui/src/atoms/StatusBadge/StatusBadge.ts(108,7): error TS2769: No overload matches this call.
+  The last overload gave the following error.
+    Argument of type '{ variant: "labelSmall"; style: { color: string; }; }' is not assignable to parameter of type 'Attributes & TextProps & { variant?: VariantProp<never> | undefined; children: ReactNode; theme?: ThemeProp | undefined; style?: StyleProp<...>; } & { ...; }'.
+      Property 'children' is missing in type '{ variant: "labelSmall"; style: { color: string; }; }' but required in type '{ variant?: VariantProp<never> | undefined; children: ReactNode; theme?: ThemeProp | undefined; style?: StyleProp<TextStyle>; }'.
+../../packages/ui/src/atoms/TextInput/TextInput.ts(56,11): error TS2769: No overload matches this call.
+  The last overload gave the following error.
+    Argument of type '{ type: "error"; visible: true; }' is not assignable to parameter of type 'Attributes & $Omit<$Omit<Omit<Omit<Props<never>, "ref"> & RefAttributes<Text & HTMLElement>, "ref"> & { ...; }, "padding">, "type"> & { ...; }'.
+      Property 'children' is missing in type '{ type: "error"; visible: true; }' but required in type '{ type: "error" | "info"; children: ReactNode; visible?: boolean | undefined; padding?: "none" | "normal" | undefined; disabled?: boolean | undefined; style?: StyleProp<TextStyle>; theme?: ThemeProp | undefined; testID?: string | undefined; }'.
+../../packages/ui/src/atoms/TextInput/TextInput.ts(62,13): error TS2769: No overload matches this call.
+  The last overload gave the following error.
+    Argument of type '{ type: "info"; visible: true; }' is not assignable to parameter of type 'Attributes & $Omit<$Omit<Omit<Omit<Props<never>, "ref"> & RefAttributes<Text & HTMLElement>, "ref"> & { ...; }, "padding">, "type"> & { ...; }'.
+      Property 'children' is missing in type '{ type: "info"; visible: true; }' but required in type '{ type: "error" | "info"; children: ReactNode; visible?: boolean | undefined; padding?: "none" | "normal" | undefined; disabled?: boolean | undefined; style?: StyleProp<TextStyle>; theme?: ThemeProp | undefined; testID?: string | undefined; }'.
+../../packages/ui/src/molecules/AccordionItem/AccordionItem.ts(37,9): error TS2769: No overload matches this call.
+  The last overload gave the following error.
+    Object literal may only specify known properties, but 'accessibilityState' does not exist in type 'Attributes & Props'. Did you mean to write 'accessibilityLabel'?
+../../packages/ui/src/molecules/EmptyState/EmptyState.ts(58,7): error TS2769: No overload matches this call.
+  The last overload gave the following error.
+    Argument of type '{ variant: "heading2"; style: { textAlign: "center"; marginBottom: number; }; }' is not assignable to parameter of type 'Attributes & TypographyProps'.
+      Property 'children' is missing in type '{ variant: "heading2"; style: { textAlign: "center"; marginBottom: number; }; }' but required in type 'TypographyProps'.
+../../packages/ui/src/molecules/EmptyState/EmptyState.ts(64,11): error TS2769: No overload matches this call.
+  The last overload gave the following error.
+    Argument of type '{ variant: "body"; style: { textAlign: "center"; marginBottom: number; }; }' is not assignable to parameter of type 'Attributes & TypographyProps'.
+      Property 'children' is missing in type '{ variant: "body"; style: { textAlign: "center"; marginBottom: number; }; }' but required in type 'TypographyProps'.
+../../packages/ui/src/molecules/FormField/FormField.ts(36,7): error TS2769: No overload matches this call.
+  The last overload gave the following error.
+    Argument of type '{ variant: "caption"; style: { marginBottom: number; }; }' is not assignable to parameter of type 'Attributes & TypographyProps'.
+      Property 'children' is missing in type '{ variant: "caption"; style: { marginBottom: number; }; }' but required in type 'TypographyProps'.
+../../packages/ui/src/molecules/NotificationItem/NotificationItem.ts(54,18): error TS2352: Conversion of type '{ readonly primary: "#2E7D32"; readonly onPrimary: "#FFFFFF"; readonly primaryContainer: "#C8E6C9"; readonly onPrimaryContainer: "#1B5E20"; readonly secondary: "#5D4037"; readonly onSecondary: "#FFFFFF"; ... 28 more ...; readonly elevation: MD3ElevationColors; }' to type 'Record<string, string>' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Property 'elevation' is incompatible with index signature.
+    Type 'MD3ElevationColors' is not comparable to type 'string'.
+../../packages/ui/src/molecules/NotificationItem/NotificationItem.ts(114,9): error TS2769: No overload matches this call.
+  The last overload gave the following error.
+    Argument of type '{ style: { color: string; fontSize: number; }; }' is not assignable to parameter of type 'Attributes & TextProps & { variant?: VariantProp<never> | undefined; children: ReactNode; theme?: ThemeProp | undefined; style?: StyleProp<...>; } & { ...; }'.
+      Property 'children' is missing in type '{ style: { color: string; fontSize: number; }; }' but required in type '{ variant?: VariantProp<never> | undefined; children: ReactNode; theme?: ThemeProp | undefined; style?: StyleProp<TextStyle>; }'.
+../../packages/ui/src/molecules/NotificationItem/NotificationItem.ts(124,9): error TS2769: No overload matches this call.
+  The last overload gave the following error.
+    Argument of type '{ variant: "titleSmall"; style: { fontWeight: "bold" | "normal"; }; }' is not assignable to parameter of type 'Attributes & TextProps & { variant?: VariantProp<never> | undefined; children: ReactNode; theme?: ThemeProp | undefined; style?: StyleProp<...>; } & { ...; }'.
+      Property 'children' is missing in type '{ variant: "titleSmall"; style: { fontWeight: "bold" | "normal"; }; }' but required in type '{ variant?: VariantProp<never> | undefined; children: ReactNode; theme?: ThemeProp | undefined; style?: StyleProp<TextStyle>; }'.
+../../packages/ui/src/molecules/NotificationItem/NotificationItem.ts(129,9): error TS2769: No overload matches this call.
+  The last overload gave the following error.
+    Argument of type '{ variant: "bodySmall"; numberOfLines: number; }' is not assignable to parameter of type 'Attributes & TextProps & { variant?: VariantProp<never> | undefined; children: ReactNode; theme?: ThemeProp | undefined; style?: StyleProp<...>; } & { ...; }'.
+      Property 'children' is missing in type '{ variant: "bodySmall"; numberOfLines: number; }' but required in type '{ variant?: VariantProp<never> | undefined; children: ReactNode; theme?: ThemeProp | undefined; style?: StyleProp<TextStyle>; }'.
+../../packages/ui/src/molecules/NotificationItem/NotificationItem.ts(134,9): error TS2769: No overload matches this call.
+  The last overload gave the following error.
+    Argument of type '{ variant: "labelSmall"; style: { color: string; }; }' is not assignable to parameter of type 'Attributes & TextProps & { variant?: VariantProp<never> | undefined; children: ReactNode; theme?: ThemeProp | undefined; style?: StyleProp<...>; } & { ...; }'.
+      Property 'children' is missing in type '{ variant: "labelSmall"; style: { color: string; }; }' but required in type '{ variant?: VariantProp<never> | undefined; children: ReactNode; theme?: ThemeProp | undefined; style?: StyleProp<TextStyle>; }'.
+../../packages/ui/src/organisms/BottomSheet/BottomSheet.ts(40,18): error TS2352: Conversion of type '{ readonly primary: "#2E7D32"; readonly onPrimary: "#FFFFFF"; readonly primaryContainer: "#C8E6C9"; readonly onPrimaryContainer: "#1B5E20"; readonly secondary: "#5D4037"; readonly onSecondary: "#FFFFFF"; ... 28 more ...; readonly elevation: MD3ElevationColors; }' to type 'Record<string, string>' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Property 'elevation' is incompatible with index signature.
+    Type 'MD3ElevationColors' is not comparable to type 'string'.
+../../packages/ui/src/organisms/BottomSheet/BottomSheet.ts(90,13): error TS2769: No overload matches this call.
+  The last overload gave the following error.
+    Argument of type '{ variant: "titleMedium"; style: { marginBottom: 16; }; }' is not assignable to parameter of type 'Attributes & TextProps & { variant?: VariantProp<never> | undefined; children: ReactNode; theme?: ThemeProp | undefined; style?: StyleProp<...>; } & { ...; }'.
+      Property 'children' is missing in type '{ variant: "titleMedium"; style: { marginBottom: 16; }; }' but required in type '{ variant?: VariantProp<never> | undefined; children: ReactNode; theme?: ThemeProp | undefined; style?: StyleProp<TextStyle>; }'.
+../../packages/ui/src/organisms/BottomTabBar/BottomTabBar.ts(43,18): error TS2352: Conversion of type '{ readonly primary: "#2E7D32"; readonly onPrimary: "#FFFFFF"; readonly primaryContainer: "#C8E6C9"; readonly onPrimaryContainer: "#1B5E20"; readonly secondary: "#5D4037"; readonly onSecondary: "#FFFFFF"; ... 28 more ...; readonly elevation: MD3ElevationColors; }' to type 'Record<string, string>' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Property 'elevation' is incompatible with index signature.
+    Type 'MD3ElevationColors' is not comparable to type 'string'.
+../../packages/ui/src/organisms/BottomTabBar/BottomTabBar.ts(89,11): error TS2769: No overload matches this call.
+  The last overload gave the following error.
+    Argument of type '{ variant: "labelSmall"; style: ({ marginTop: number; } | { color: string; })[]; }' is not assignable to parameter of type 'Attributes & TextProps & { variant?: VariantProp<never> | undefined; children: ReactNode; theme?: ThemeProp | undefined; style?: StyleProp<...>; } & { ...; }'.
+      Property 'children' is missing in type '{ variant: "labelSmall"; style: ({ marginTop: number; } | { color: string; })[]; }' but required in type '{ variant?: VariantProp<never> | undefined; children: ReactNode; theme?: ThemeProp | undefined; style?: StyleProp<TextStyle>; }'.
+../../packages/ui/src/organisms/Card/Card.ts(19,3): error TS2741: Property 'background' is missing in type '{ elevation: number; borderWidth: number; borderColor: string; }' but required in type 'CardVariantConfig'.
+../../packages/ui/src/organisms/Card/Card.ts(95,18): error TS2352: Conversion of type '{ readonly primary: "#2E7D32"; readonly onPrimary: "#FFFFFF"; readonly primaryContainer: "#C8E6C9"; readonly onPrimaryContainer: "#1B5E20"; readonly secondary: "#5D4037"; readonly onSecondary: "#FFFFFF"; ... 28 more ...; readonly elevation: MD3ElevationColors; }' to type 'Record<string, string>' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Property 'elevation' is incompatible with index signature.
+    Type 'MD3ElevationColors' is not comparable to type 'string'.
+../../packages/ui/src/organisms/Modal/Modal.ts(49,25): error TS2352: Conversion of type '{ readonly primary: "#2E7D32"; readonly onPrimary: "#FFFFFF"; readonly primaryContainer: "#C8E6C9"; readonly onPrimaryContainer: "#1B5E20"; readonly secondary: "#5D4037"; readonly onSecondary: "#FFFFFF"; ... 28 more ...; readonly elevation: MD3ElevationColors; }' to type 'Record<string, string>' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Property 'elevation' is incompatible with index signature.
+    Type 'MD3ElevationColors' is not comparable to type 'string'.
+../../packages/ui/src/organisms/Modal/Modal.ts(76,13): error TS2769: No overload matches this call.
+  The last overload gave the following error.
+    Argument of type '{ variant: "headlineSmall"; style: { marginBottom: 16; }; }' is not assignable to parameter of type 'Attributes & TextProps & { variant?: VariantProp<never> | undefined; children: ReactNode; theme?: ThemeProp | undefined; style?: StyleProp<...>; } & { ...; }'.
+      Property 'children' is missing in type '{ variant: "headlineSmall"; style: { marginBottom: 16; }; }' but required in type '{ variant?: VariantProp<never> | undefined; children: ReactNode; theme?: ThemeProp | undefined; style?: StyleProp<TextStyle>; }'.
+../../packages/ui/src/organisms/NavigationBar/NavigationBar.ts(31,18): error TS2352: Conversion of type '{ readonly primary: "#2E7D32"; readonly onPrimary: "#FFFFFF"; readonly primaryContainer: "#C8E6C9"; readonly onPrimaryContainer: "#1B5E20"; readonly secondary: "#5D4037"; readonly onSecondary: "#FFFFFF"; ... 28 more ...; readonly elevation: MD3ElevationColors; }' to type 'Record<string, string>' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Property 'elevation' is incompatible with index signature.
+    Type 'MD3ElevationColors' is not comparable to type 'string'.
+../../packages/ui/src/organisms/NavigationBar/NavigationBar.ts(68,7): error TS2769: No overload matches this call.
+  The last overload gave the following error.
+    Argument of type '{ variant: "titleLarge"; style: { flex: number; marginLeft: number; }; numberOfLines: number; }' is not assignable to parameter of type 'Attributes & TextProps & { variant?: VariantProp<never> | undefined; children: ReactNode; theme?: ThemeProp | undefined; style?: StyleProp<...>; } & { ...; }'.
+      Property 'children' is missing in type '{ variant: "titleLarge"; style: { flex: number; marginLeft: number; }; numberOfLines: number; }' but required in type '{ variant?: VariantProp<never> | undefined; children: ReactNode; theme?: ThemeProp | undefined; style?: StyleProp<TextStyle>; }'.
+../../packages/ui/src/organisms/NotificationList/NotificationList.ts(66,18): error TS2352: Conversion of type '{ readonly primary: "#2E7D32"; readonly onPrimary: "#FFFFFF"; readonly primaryContainer: "#C8E6C9"; readonly onPrimaryContainer: "#1B5E20"; readonly secondary: "#5D4037"; readonly onSecondary: "#FFFFFF"; ... 28 more ...; readonly elevation: MD3ElevationColors; }' to type 'Record<string, string>' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Property 'elevation' is incompatible with index signature.
+    Type 'MD3ElevationColors' is not comparable to type 'string'.
+../../packages/ui/src/organisms/NotificationList/NotificationList.ts(120,11): error TS2769: No overload matches this call.
+  The last overload gave the following error.
+    Argument of type '{ variant: "bodyMedium"; }' is not assignable to parameter of type 'Attributes & TextProps & { variant?: VariantProp<never> | undefined; children: ReactNode; theme?: ThemeProp | undefined; style?: StyleProp<...>; } & { ...; }'.
+      Property 'children' is missing in type '{ variant: "bodyMedium"; }' but required in type '{ variant?: VariantProp<never> | undefined; children: ReactNode; theme?: ThemeProp | undefined; style?: StyleProp<TextStyle>; }'.
+../../packages/ui/src/organisms/NotificationList/NotificationList.ts(136,11): error TS2769: No overload matches this call.
+  The last overload gave the following error.
+    Argument of type '{ variant: "titleMedium"; }' is not assignable to parameter of type 'Attributes & TextProps & { variant?: VariantProp<never> | undefined; children: ReactNode; theme?: ThemeProp | undefined; style?: StyleProp<...>; } & { ...; }'.
+      Property 'children' is missing in type '{ variant: "titleMedium"; }' but required in type '{ variant?: VariantProp<never> | undefined; children: ReactNode; theme?: ThemeProp | undefined; style?: StyleProp<TextStyle>; }'.
+../../packages/ui/src/organisms/NotificationList/NotificationList.ts(139,35): error TS2769: No overload matches this call.
+  The last overload gave the following error.
+    Argument of type '{ variant: "bodyMedium"; }' is not assignable to parameter of type 'Attributes & TextProps & { variant?: VariantProp<never> | undefined; children: ReactNode; theme?: ThemeProp | undefined; style?: StyleProp<...>; } & { ...; }'.
+      Property 'children' is missing in type '{ variant: "bodyMedium"; }' but required in type '{ variant?: VariantProp<never> | undefined; children: ReactNode; theme?: ThemeProp | undefined; style?: StyleProp<TextStyle>; }'.
+../../packages/ui/src/organisms/NotificationList/NotificationList.ts(150,7): error TS2769: No overload matches this call.
+  The last overload gave the following error.
+    Argument of type '{ variant: "titleLarge"; }' is not assignable to parameter of type 'Attributes & TextProps & { variant?: VariantProp<never> | undefined; children: ReactNode; theme?: ThemeProp | undefined; style?: StyleProp<...>; } & { ...; }'.
+      Property 'children' is missing in type '{ variant: "titleLarge"; }' but required in type '{ variant?: VariantProp<never> | undefined; children: ReactNode; theme?: ThemeProp | undefined; style?: StyleProp<TextStyle>; }'.
+../../packages/ui/src/organisms/NotificationList/NotificationList.ts(156,11): error TS2769: No overload matches this call.
+  The last overload gave the following error.
+    Argument of type '{ variant: "labelMedium"; style: { color: string; }; onPress: (() => void) | undefined; accessibilityRole: "button"; }' is not assignable to parameter of type 'Attributes & TextProps & { variant?: VariantProp<never> | undefined; children: ReactNode; theme?: ThemeProp | undefined; style?: StyleProp<...>; } & { ...; }'.
+      Property 'children' is missing in type '{ variant: "labelMedium"; style: { color: string; }; onPress: (() => void) | undefined; accessibilityRole: "button"; }' but required in type '{ variant?: VariantProp<never> | undefined; children: ReactNode; theme?: ThemeProp | undefined; style?: StyleProp<TextStyle>; }'.
+../../packages/ui/src/organisms/NotificationList/NotificationList.ts(180,9): error TS2769: No overload matches this call.
+  The last overload gave the following error.
+    Argument of type '{ variant: "labelMedium"; style: { color: string; }; onPress: (() => void) | undefined; }' is not assignable to parameter of type 'Attributes & TextProps & { variant?: VariantProp<never> | undefined; children: ReactNode; theme?: ThemeProp | undefined; style?: StyleProp<...>; } & { ...; }'.
+      Property 'children' is missing in type '{ variant: "labelMedium"; style: { color: string; }; onPress: (() => void) | undefined; }' but required in type '{ variant?: VariantProp<never> | undefined; children: ReactNode; theme?: ThemeProp | undefined; style?: StyleProp<TextStyle>; }'.
+../../packages/ui/src/organisms/NotificationList/NotificationList.ts(219,11): error TS2769: No overload matches this call.
+  The last overload gave the following error.
+    Argument of type '{ variant: "titleMedium"; }' is not assignable to parameter of type 'Attributes & TextProps & { variant?: VariantProp<never> | undefined; children: ReactNode; theme?: ThemeProp | undefined; style?: StyleProp<...>; } & { ...; }'.
+      Property 'children' is missing in type '{ variant: "titleMedium"; }' but required in type '{ variant?: VariantProp<never> | undefined; children: ReactNode; theme?: ThemeProp | undefined; style?: StyleProp<TextStyle>; }'.
+../../packages/ui/src/organisms/NotificationList/NotificationList.ts(224,11): error TS2769: No overload matches this call.
+  The last overload gave the following error.
+    Argument of type '{ variant: "bodyMedium"; }' is not assignable to parameter of type 'Attributes & TextProps & { variant?: VariantProp<never> | undefined; children: ReactNode; theme?: ThemeProp | undefined; style?: StyleProp<...>; } & { ...; }'.
+      Property 'children' is missing in type '{ variant: "bodyMedium"; }' but required in type '{ variant?: VariantProp<never> | undefined; children: ReactNode; theme?: ThemeProp | undefined; style?: StyleProp<TextStyle>; }'.
+../../packages/ui/src/organisms/NotificationList/NotificationList.ts(244,9): error TS2769: No overload matches this call.
+  The last overload gave the following error.
+    Argument of type '{ variant: "bodyMedium"; }' is not assignable to parameter of type 'Attributes & TextProps & { variant?: VariantProp<never> | undefined; children: ReactNode; theme?: ThemeProp | undefined; style?: StyleProp<...>; } & { ...; }'.
+      Property 'children' is missing in type '{ variant: "bodyMedium"; }' but required in type '{ variant?: VariantProp<never> | undefined; children: ReactNode; theme?: ThemeProp | undefined; style?: StyleProp<TextStyle>; }'.
+../../packages/ui/src/organisms/QueueCard/QueueCard.ts(64,18): error TS2352: Conversion of type '{ readonly primary: "#2E7D32"; readonly onPrimary: "#FFFFFF"; readonly primaryContainer: "#C8E6C9"; readonly onPrimaryContainer: "#1B5E20"; readonly secondary: "#5D4037"; readonly onSecondary: "#FFFFFF"; ... 28 more ...; readonly elevation: MD3ElevationColors; }' to type 'Record<string, string>' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Property 'elevation' is incompatible with index signature.
+    Type 'MD3ElevationColors' is not comparable to type 'string'.
+../../packages/ui/src/organisms/QueueCard/QueueCard.ts(108,9): error TS2769: No overload matches this call.
+  The last overload gave the following error.
+    Argument of type '{ variant: "titleMedium"; }' is not assignable to parameter of type 'Attributes & TextProps & { variant?: VariantProp<never> | undefined; children: ReactNode; theme?: ThemeProp | undefined; style?: StyleProp<...>; } & { ...; }'.
+      Property 'children' is missing in type '{ variant: "titleMedium"; }' but required in type '{ variant?: VariantProp<never> | undefined; children: ReactNode; theme?: ThemeProp | undefined; style?: StyleProp<TextStyle>; }'.
+../../packages/ui/src/organisms/QueueCard/QueueCard.ts(117,9): error TS2769: No overload matches this call.
+  The last overload gave the following error.
+    Argument of type '{ variant: "titleSmall"; numberOfLines: number; }' is not assignable to parameter of type 'Attributes & TextProps & { variant?: VariantProp<never> | undefined; children: ReactNode; theme?: ThemeProp | undefined; style?: StyleProp<...>; } & { ...; }'.
+      Property 'children' is missing in type '{ variant: "titleSmall"; numberOfLines: number; }' but required in type '{ variant?: VariantProp<never> | undefined; children: ReactNode; theme?: ThemeProp | undefined; style?: StyleProp<TextStyle>; }'.
+../../packages/ui/src/organisms/QueueCard/QueueCard.ts(122,9): error TS2769: No overload matches this call.
+  The last overload gave the following error.
+    Argument of type '{ variant: "bodySmall"; numberOfLines: number; }' is not assignable to parameter of type 'Attributes & TextProps & { variant?: VariantProp<never> | undefined; children: ReactNode; theme?: ThemeProp | undefined; style?: StyleProp<...>; } & { ...; }'.
+      Property 'children' is missing in type '{ variant: "bodySmall"; numberOfLines: number; }' but required in type '{ variant?: VariantProp<never> | undefined; children: ReactNode; theme?: ThemeProp | undefined; style?: StyleProp<TextStyle>; }'.
+../../packages/ui/src/organisms/QueueCard/QueueCard.ts(131,9): error TS2769: No overload matches this call.
+  The last overload gave the following error.
+    Argument of type '{ variant: "labelSmall"; }' is not assignable to parameter of type 'Attributes & TextProps & { variant?: VariantProp<never> | undefined; children: ReactNode; theme?: ThemeProp | undefined; style?: StyleProp<...>; } & { ...; }'.
+      Property 'children' is missing in type '{ variant: "labelSmall"; }' but required in type '{ variant?: VariantProp<never> | undefined; children: ReactNode; theme?: ThemeProp | undefined; style?: StyleProp<TextStyle>; }'.
+../../packages/ui/src/organisms/WizardStepper/WizardStepper.ts(37,18): error TS2352: Conversion of type '{ readonly primary: "#2E7D32"; readonly onPrimary: "#FFFFFF"; readonly primaryContainer: "#C8E6C9"; readonly onPrimaryContainer: "#1B5E20"; readonly secondary: "#5D4037"; readonly onSecondary: "#FFFFFF"; ... 28 more ...; readonly elevation: MD3ElevationColors; }' to type 'Record<string, string>' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Property 'elevation' is incompatible with index signature.
+    Type 'MD3ElevationColors' is not comparable to type 'string'.
+../../packages/ui/src/organisms/WizardStepper/WizardStepper.ts(93,9): error TS2769: No overload matches this call.
+  The last overload gave the following error.
+    Argument of type '{ variant: "labelMedium"; style: { marginBottom: 8; }; }' is not assignable to parameter of type 'Attributes & TextProps & { variant?: VariantProp<never> | undefined; children: ReactNode; theme?: ThemeProp | undefined; style?: StyleProp<...>; } & { ...; }'.
+      Property 'children' is missing in type '{ variant: "labelMedium"; style: { marginBottom: 8; }; }' but required in type '{ variant?: VariantProp<never> | undefined; children: ReactNode; theme?: ThemeProp | undefined; style?: StyleProp<TextStyle>; }'.
+../../packages/ui/src/organisms/WizardStepper/WizardStepper.ts(107,13): error TS2769: No overload matches this call.
+  The last overload gave the following error.
+    Argument of type '{ variant: "titleLarge"; }' is not assignable to parameter of type 'Attributes & TextProps & { variant?: VariantProp<never> | undefined; children: ReactNode; theme?: ThemeProp | undefined; style?: StyleProp<...>; } & { ...; }'.
+      Property 'children' is missing in type '{ variant: "titleLarge"; }' but required in type '{ variant?: VariantProp<never> | undefined; children: ReactNode; theme?: ThemeProp | undefined; style?: StyleProp<TextStyle>; }'.

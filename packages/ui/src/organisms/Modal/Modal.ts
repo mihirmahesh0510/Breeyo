@@ -29,6 +29,10 @@ export function Modal({
   testID,
 }: ModalProps) {
   const theme = useAppTheme();
+  // See BottomSheet.ts: useAppTheme() can resolve to Paper's bare theme on
+  // some web render paths, where these Breeyo-specific tokens are undefined.
+  const spacing = theme.spacing ?? { md: 16, lg: 24 };
+  const borderRadius = theme.borderRadius ?? { lg: 12 };
 
   if (!visible) {
     return null;
@@ -47,13 +51,13 @@ export function Modal({
     },
     container: {
       backgroundColor: (theme.colors as Record<string, string>).surface,
-      borderRadius: theme.borderRadius.lg,
+      borderRadius: borderRadius.lg,
       maxWidth: MODAL_DEFAULTS.maxWidth,
       width: '90%' as any,
-      padding: theme.spacing.lg,
+      padding: spacing.lg,
     },
     title: {
-      marginBottom: theme.spacing.md,
+      marginBottom: spacing.md,
     },
   });
 

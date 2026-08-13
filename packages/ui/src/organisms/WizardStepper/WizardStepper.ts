@@ -35,6 +35,9 @@ export function WizardStepper({
   const theme = useAppTheme();
   const [currentStep, setCurrentStep] = React.useState(0);
   const colors = theme.colors as Record<string, string>;
+  // See BottomSheet.ts: useAppTheme() can resolve to Paper's bare theme on
+  // some web render paths, where these Breeyo-specific tokens are undefined.
+  const spacing = theme.spacing ?? { sm: 8, md: 16 };
 
   const totalSteps = steps.length;
   const isFirst = currentStep === 0;
@@ -59,26 +62,26 @@ export function WizardStepper({
   const styles = StyleSheet.create({
     container: {
       flex: 1,
-      padding: theme.spacing.md,
+      padding: spacing.md,
     },
     header: {
-      marginBottom: theme.spacing.md,
+      marginBottom: spacing.md,
     },
     stepLabel: {
-      marginBottom: theme.spacing.sm,
+      marginBottom: spacing.sm,
     },
     content: {
       flex: 1,
-      marginVertical: theme.spacing.md,
+      marginVertical: spacing.md,
     },
     actions: {
       flexDirection: 'row' as const,
       justifyContent: 'space-between' as const,
-      gap: theme.spacing.sm,
+      gap: spacing.sm,
     },
     leftActions: {
       flexDirection: 'row' as const,
-      gap: theme.spacing.sm,
+      gap: spacing.sm,
     },
   });
 

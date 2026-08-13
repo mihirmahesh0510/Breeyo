@@ -35,30 +35,33 @@ model User {
 }
 
 model Clinic {
-  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  name             String
-  address          String
-  contactPhone     String    @map("contact_phone")
-  city             String?
-  gstin            String?
-  logoUrl          String?   @map("logo_url")
-  workingHours     Json?     @map("working_hours")
+  id                String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name              String
+  address           String
+  contactPhone      String    @map("contact_phone")
+  city              String?
+  gstin             String?
+  logoUrl           String?   @map("logo_url")
+  workingHours      Json?     @map("working_hours")
   wizardCompletedAt DateTime? @map("wizard_completed_at")
-  ownerId          String    @map("owner_id") @db.Uuid
-  createdAt        DateTime  @default(now()) @map("created_at")
-  updatedAt        DateTime  @updatedAt @map("updated_at")
+  ownerId           String    @map("owner_id") @db.Uuid
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
 
-  owner              User                @relation(fields: [ownerId], references: [id])
-  members            ClinicMember[]
-  petOwners          PetOwner[]
-  pets               Pet[]
-  queueEntries       QueueEntry[]
-  consultations      Consultation[]
-  consultationDrafts ConsultationDraft[]
-  vaccinationRecords VaccinationRecord[]
-  dewormingRecords   DewormingRecord[]
-  drugs              Drug[]
-  serviceCatalog     ServiceCatalog[]
+  owner               User                      @relation(fields: [ownerId], references: [id])
+  members             ClinicMember[]
+  petOwners           PetOwner[]
+  pets                Pet[]
+  queueEntries        QueueEntry[]
+  consultations       Consultation[]
+  consultationDrafts  ConsultationDraft[]
+  vaccinationRecords  VaccinationRecord[]
+  dewormingRecords    DewormingRecord[]
+  drugs               Drug[]
+  serviceCatalog      ServiceCatalog[]
+  inventoryItems      InventoryItem[]
+  inventoryCategories ClinicInventoryCategory[]
+  inventoryUnits      ClinicInventoryUnit[]
 
   @@map("clinics")
 }
@@ -70,8 +73,8 @@ model ClinicMember {
   isActive  Boolean  @default(true) @map("is_active")
   createdAt DateTime @default(now()) @map("created_at")
 
-  user                User                      @relation(fields: [userId], references: [id])
-  clinic              Clinic                    @relation(fields: [clinicId], references: [id])
+  user                User                     @relation(fields: [userId], references: [id])
+  clinic              Clinic                   @relation(fields: [clinicId], references: [id])
   roles               ClinicMemberRole[]
   permissionOverrides UserPermissionOverride[]
 
@@ -142,16 +145,16 @@ model UserPermissionOverride {
 }
 
 model RefreshToken {
-  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId    String   @map("user_id") @db.Uuid
-  tokenHash String   @unique @map("token_hash")
-  familyId  String   @map("family_id") @db.Uuid
-  clinicId  String   @map("clinic_id") @db.Uuid
-  expiresAt DateTime @map("expires_at")
+  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  tokenHash String    @unique @map("token_hash")
+  familyId  String    @map("family_id") @db.Uuid
+  clinicId  String    @map("clinic_id") @db.Uuid
+  expiresAt DateTime  @map("expires_at")
   revokedAt DateTime? @map("revoked_at")
-  ipAddress String?  @map("ip_address")
-  userAgent String?  @map("user_agent")
-  createdAt DateTime @default(now()) @map("created_at")
+  ipAddress String?   @map("ip_address")
+  userAgent String?   @map("user_agent")
+  createdAt DateTime  @default(now()) @map("created_at")
 
   user User @relation(fields: [userId], references: [id])
 
@@ -235,8 +238,9 @@ model PetOwner {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  clinic Clinic @relation(fields: [clinicId], references: [id])
-  pets   Pet[]
+  clinic         Clinic          @relation(fields: [clinicId], references: [id])
+  pets           Pet[]
+  stockMovements StockMovement[] // D-60: counter-sale owner attribution
 
   @@unique([clinicId, mobile])
   @@index([clinicId])
@@ -340,9 +344,9 @@ model Consultation {
   createdAt        DateTime  @default(now()) @map("created_at")
   updatedAt        DateTime  @updatedAt @map("updated_at")
 
-  clinic             Clinic                  @relation(fields: [clinicId], references: [id])
-  pet                Pet                     @relation(fields: [petId], references: [id])
-  vet                User                    @relation("ConsultationVet", fields: [vetId], references: [id])
+  clinic             Clinic                   @relation(fields: [clinicId], references: [id])
+  pet                Pet                      @relation(fields: [petId], references: [id])
+  vet                User                     @relation("ConsultationVet", fields: [vetId], references: [id])
   vitals             Vitals?
   prescriptions      Prescription[]
   attachments        ConsultationAttachment[]
@@ -395,18 +399,18 @@ model Vitals {
 }
 
 model Drug {
-  id          String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  clinicId    String? @map("clinic_id") @db.Uuid
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clinicId    String?  @map("clinic_id") @db.Uuid
   name        String
-  genericName String  @map("generic_name")
+  genericName String   @map("generic_name")
   category    String
-  isActive    Boolean @default(true) @map("is_active")
+  isActive    Boolean  @default(true) @map("is_active")
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
-  clinic        Clinic?          @relation(fields: [clinicId], references: [id])
-  formulations  DrugFormulation[]
-  dosageRanges  SpeciesDosage[]
+  clinic       Clinic?           @relation(fields: [clinicId], references: [id])
+  formulations DrugFormulation[]
+  dosageRanges SpeciesDosage[]
 
   @@index([name])
   @@index([genericName])
@@ -471,18 +475,18 @@ model Prescription {
 }
 
 model VaccinationRecord {
-  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  clinicId        String    @map("clinic_id") @db.Uuid
-  petId           String    @map("pet_id") @db.Uuid
-  consultationId  String?   @map("consultation_id") @db.Uuid
-  vaccineName     String    @map("vaccine_name")
-  batchNumber     String?   @map("batch_number")
-  manufacturer    String?
-  expiryDate      DateTime? @map("expiry_date")
-  administeredAt  DateTime  @map("administered_at")
-  administeredBy  String    @map("administered_by") @db.Uuid
-  nextDueDate     DateTime? @map("next_due_date")
-  createdAt       DateTime  @default(now()) @map("created_at")
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clinicId       String    @map("clinic_id") @db.Uuid
+  petId          String    @map("pet_id") @db.Uuid
+  consultationId String?   @map("consultation_id") @db.Uuid
+  vaccineName    String    @map("vaccine_name")
+  batchNumber    String?   @map("batch_number")
+  manufacturer   String?
+  expiryDate     DateTime? @map("expiry_date")
+  administeredAt DateTime  @map("administered_at")
+  administeredBy String    @map("administered_by") @db.Uuid
+  nextDueDate    DateTime? @map("next_due_date")
+  createdAt      DateTime  @default(now()) @map("created_at")
 
   clinic       Clinic        @relation(fields: [clinicId], references: [id])
   pet          Pet           @relation(fields: [petId], references: [id])
@@ -513,18 +517,18 @@ model DewormingRecord {
 }
 
 model ConsultationAttachment {
-  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  consultationId  String   @map("consultation_id") @db.Uuid
-  fileType        String   @map("file_type")
-  fileName        String   @map("file_name")
-  mimeType        String   @map("mime_type")
-  fileSizeBytes   Int      @map("file_size_bytes")
-  s3Key           String   @map("s3_key")
-  s3Url           String?  @map("s3_url")
-  thumbnailS3Key  String?  @map("thumbnail_s3_key")
-  description     String?
-  uploadedBy      String   @map("uploaded_by") @db.Uuid
-  uploadedAt      DateTime @default(now()) @map("uploaded_at")
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  consultationId String   @map("consultation_id") @db.Uuid
+  fileType       String   @map("file_type")
+  fileName       String   @map("file_name")
+  mimeType       String   @map("mime_type")
+  fileSizeBytes  Int      @map("file_size_bytes")
+  s3Key          String   @map("s3_key")
+  s3Url          String?  @map("s3_url")
+  thumbnailS3Key String?  @map("thumbnail_s3_key")
+  description    String?
+  uploadedBy     String   @map("uploaded_by") @db.Uuid
+  uploadedAt     DateTime @default(now()) @map("uploaded_at")
 
   consultation Consultation @relation(fields: [consultationId], references: [id])
 
@@ -539,7 +543,7 @@ model ServiceCatalog {
   clinicId        String   @map("clinic_id") @db.Uuid
   name            String
   category        String   @default("other")
-  price           Int      // price in paise
+  price           Int // price in paise
   sacCode         String?  @map("sac_code")
   hsnCode         String?  @map("hsn_code")
   gstRateOverride Decimal? @map("gst_rate_override") @db.Decimal(5, 2)
@@ -554,4 +558,137 @@ model ServiceCatalog {
   @@index([clinicId, isActive])
   @@index([clinicId, category])
   @@map("service_catalog")
+}
+
+// ─── Phase 5: Inventory Management ─────────────────────────────────
+
+model InventoryItem {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clinicId     String   @map("clinic_id") @db.Uuid
+  name         String
+  category     String // 'medicine'|'vaccine'|'surgical_supply'|'lab_consumable'|'food_supplement'|'equipment'|'general_supply'|custom (D-29, D-61)
+  unit         String // 'tablets'|'capsules'|'ml'|'strips'|'bottles'|'vials'|'sachets'|'kg'|'grams'|'pieces'|custom (D-05, D-61)
+  sellingPrice Decimal  @map("selling_price") @db.Decimal(10, 2)
+  parLevel     Int?     @map("par_level")
+  scheduleH    Boolean  @default(false) @map("schedule_h")
+  notes        String?
+  photoUrl     String?  @map("photo_url")
+  isActive     Boolean  @default(true) @map("is_active")
+  currentStock Int      @default(0) @map("current_stock")
+  hsnSacCode   String?  @map("hsn_sac_code") // INV-09: HSN (products)/SAC (services) code for GST invoicing; optional per D-62, no category enforcement
+  gstRate      Decimal? @map("gst_rate") @db.Decimal(5, 2) // INV-09: item-specific GST rate (0/5/12/18/28); null = use clinic default (Phase 6)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  clinic    Clinic             @relation(fields: [clinicId], references: [id])
+  barcodes  InventoryBarcode[]
+  batches   StockBatch[]
+  movements StockMovement[]
+
+  @@index([clinicId, name])
+  @@index([clinicId, category])
+  @@index([clinicId, isActive])
+  @@map("inventory_items")
+}
+
+model InventoryBarcode {
+  id       String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code     String
+  format   String // 'ean13'|'ean8'|'upc_a'|'code128'|'code39' (D-15)
+  itemId   String @map("item_id") @db.Uuid
+  clinicId String @map("clinic_id") @db.Uuid
+
+  item InventoryItem @relation(fields: [itemId], references: [id])
+
+  @@unique([code, clinicId])
+  @@index([code])
+  @@map("inventory_barcodes")
+}
+
+model StockBatch {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  itemId        String    @map("item_id") @db.Uuid
+  clinicId      String    @map("clinic_id") @db.Uuid
+  lotNumber     String?   @map("lot_number")
+  expiryDate    DateTime? @map("expiry_date")
+  purchasePrice Decimal?  @map("purchase_price") @db.Decimal(10, 2)
+  supplier      String? // D-02 free-text distributor name
+  initialQty    Int       @map("initial_qty")
+  currentQty    Int       @map("current_qty")
+  receivedAt    DateTime  @default(now()) @map("received_at")
+  isExpired     Boolean   @default(false) @map("is_expired")
+
+  item      InventoryItem   @relation(fields: [itemId], references: [id])
+  movements StockMovement[]
+
+  @@index([itemId, receivedAt])
+  @@index([clinicId, expiryDate])
+  @@index([clinicId, itemId, isExpired])
+  @@map("stock_batches")
+}
+
+model StockMovement {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clinicId       String   @map("clinic_id") @db.Uuid
+  itemId         String   @map("item_id") @db.Uuid
+  batchId        String?  @map("batch_id") @db.Uuid
+  type           String // 'received'|'dispensed'|'adjusted'|'disposed'|'stock_take'|'returned' (D-45)
+  quantity       Int // positive=add, negative=deduct
+  reason         String? // required for 'adjusted' (D-04)
+  runningTotal   Int      @map("running_total")
+  userId         String   @map("user_id") @db.Uuid
+  userName       String   @map("user_name")
+  consultationId String?  @map("consultation_id") @db.Uuid
+  invoiceId      String?  @map("invoice_id") @db.Uuid
+  ownerId        String?  @map("owner_id") @db.Uuid // D-60: counter-sale owner attribution
+  unitPrice      Decimal? @map("unit_price") @db.Decimal(10, 2) // D-60: sellingPrice snapshot at dispense time
+  notes          String?
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  // Set on a 'returned' movement to the id of the 'dispensed' movement it
+  // reverses. @unique enforces at the DB level that a dispensed movement
+  // can be returned at most once (CodeRabbit-flagged: without this, a
+  // repeated return request would double-credit stock).
+  reversedMovementId String?        @unique @map("reversed_movement_id") @db.Uuid
+  reversedMovement   StockMovement? @relation("MovementReversal", fields: [reversedMovementId], references: [id])
+  reversal           StockMovement? @relation("MovementReversal")
+
+  item  InventoryItem @relation(fields: [itemId], references: [id])
+  batch StockBatch?   @relation(fields: [batchId], references: [id])
+  owner PetOwner?     @relation(fields: [ownerId], references: [id])
+
+  @@index([itemId, createdAt(sort: Desc)])
+  @@index([clinicId, createdAt(sort: Desc)])
+  @@index([clinicId, type])
+  @@index([clinicId, type, invoiceId]) // D-60: Phase 6 queries uninvoiced counter sales via type='dispensed' AND consultationId IS NULL AND invoiceId IS NULL
+  @@map("stock_movements")
+}
+
+// D-61: reusable clinic-level custom categories, so a custom category typed on one item
+// is offered in the picker for every future item at that clinic (not one-off free text)
+model ClinicInventoryCategory {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clinicId  String   @map("clinic_id") @db.Uuid
+  value     String // slug, matches InventoryItem.category
+  label     String // display label as first typed
+  createdAt DateTime @default(now()) @map("created_at")
+
+  clinic Clinic @relation(fields: [clinicId], references: [id])
+
+  @@unique([clinicId, value])
+  @@map("clinic_inventory_categories")
+}
+
+// D-61: reusable clinic-level custom units, mirroring ClinicInventoryCategory
+model ClinicInventoryUnit {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clinicId  String   @map("clinic_id") @db.Uuid
+  value     String
+  label     String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  clinic Clinic @relation(fields: [clinicId], references: [id])
+
+  @@unique([clinicId, value])
+  @@map("clinic_inventory_units")
 }
