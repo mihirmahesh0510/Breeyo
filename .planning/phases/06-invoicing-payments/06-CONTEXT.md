@@ -61,6 +61,26 @@ Decisions made resolving 06-RESEARCH.md's blocking contradictions and open quest
 - **D-32:** Billing audit events go in a new, dedicated `billing_audit_log` table — separate from the existing auth-centric `auth_audit_log`. Financial events (void, refund, credit note, payment) get independent retention (GST record-keeping requires 6-year retention under Section 36) decoupled from auth audit policy.
 - **D-33:** RPT-01 (patients-seen-today) ships as a 5th summary card on the Billing dashboard, alongside D-24's existing four (Today's Revenue, Unpaid Total, Overdue Count, Recent Payments). Computed as `COUNT(DISTINCT petId)` over today's finalized consultations, IST-bounded.
 
+### Plan-Review Resolutions (2026-08-13)
+
+Decisions made resolving gaps surfaced during `breeyo-build --review phase 6` (plan review against product flows, edge cases, and cross-phase integration):
+
+- **D-34 (amends D-26):** Void always restores stock regardless of dispense age. D-26/D-51/D-57's 24-hour window governs the *manual* "Return to stock" action on a single dispense record; voiding an entire invoice is a distinct, unrestricted operation that always reverses every stock movement tied to that invoice, however old.
+- **D-35:** Voiding an invoice with an active Razorpay payment link auto-cancels that link. If a payment nonetheless completes for an already-voided invoice (late webhook, race), the payment is recorded but the invoice is NOT reopened — instead it's surfaced in a billing exceptions list for manual refund by staff.
+- **D-36:** Overpayment (e.g., cash marked paid while a separate digital payment for the same invoice also lands) is auto-detected and the invoice is flagged in the billing exceptions list; further status-changing actions on it are blocked until staff resolve it manually. No automatic refund is issued.
+- **D-37:** If a split payment's digital leg (UPI/card) times out unpaid after the cash leg was already collected, the invoice reverts to Partially Paid (cash retained), never to fully Unpaid.
+- **D-38 (amends D-15):** Invoice numbering resets annually at the start of the Indian financial year (April 1), not purely per calendar month. Format remains `INV-YYYYMM-XXXX` with the sequence component resetting each April 1; month still increments within the year for readability.
+- **D-39 (confirms D-27 in scope):** D-27's combined multi-invoice payment link is confirmed in scope for Phase 6, not deferred — implementation and UI design must be added to the plan before the phase closes.
+- **D-40 (confirms D-07):** No manager-approval threshold on manual discounts for Beta/pilot. Front Desk and Admin can apply any discount, including up to 100%, without additional sign-off. Revisit if pilot clinics report abuse.
+- **D-41:** Offline behavior for all money-affecting billing screens (Invoice Builder, Payment Collection, Quick Sale, Credit Note, Refund, Billing Settings) matches the dashboard's existing pattern: the action is blocked with a clear "you're offline" message, showing only cached/read-only data until connectivity returns.
+- **D-42 (amends D-12):** Split-payment refunds can be issued per leg independently — staff may refund only the cash portion, only the digital portion, or both, matching how the original payment was actually collected.
+- **D-43:** A credit note reduces the revenue total of the month it is *issued* in, not the month of the original invoice. No retroactive restatement of prior months.
+- **D-44:** Payment links/QR codes can be generated for a walk-in sale even with no phone number on file — the QR is shown on-screen for the owner to scan; a phone number is only needed if the link must be sent remotely.
+- **D-45:** Out-of-stock items appearing in invoice/Quick Sale product search are shown but disabled (grayed out, not selectable) with an "out of stock" note, rather than hidden or shown normally.
+- **D-46:** "Finalized" (locked, awaiting payment) and "Unpaid" (no payment received) remain distinct invoice states but get clearly differentiated labels/colors in the UI so staff can tell them apart at a glance (UI-SPEC to be updated accordingly).
+- **D-47:** Deleting a pet/owner record is blocked while any of their invoices has an outstanding balance. Once all invoices are settled, the record can be deleted or merged, and existing invoice history transfers to/stays visible under the surviving record.
+- **D-48:** An in-progress Quick Sale cart lost to an app crash or force-close is an acceptable loss — no persistence/recovery is required; staff simply re-add items.
+
 ### Claude's Discretion
 - Invoice builder UI layout (single-page vs sections)
 - Quick Sale screen UX and barcode integration details
