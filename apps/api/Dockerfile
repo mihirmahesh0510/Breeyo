@@ -30,6 +30,7 @@ RUN pnpm turbo build --filter=@breeyo/api...
 # ============================================================
 FROM node:22-alpine AS runner
 
+RUN apk add --no-cache curl
 RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
 
 WORKDIR /app
