@@ -40,7 +40,11 @@ export default async function inventoryRoutes(fastify: FastifyInstance) {
   // permission check executes during `authenticate` and reads the global
   // reference tables 06-00 deliberately left without RLS policies.
   if (!fastify.hasDecorator('permissionService')) {
-    fastify.decorate('permissionService', new PermissionService(fastify.prisma, fastify.redis));
+    // D-30 exemption
+    fastify.decorate(
+      'permissionService',
+      new PermissionService(fastify.prisma, fastify.redis), // D-30 exemption
+    );
   }
 
   const base = [authenticate, tenantContext];

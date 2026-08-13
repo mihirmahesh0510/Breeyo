@@ -40,7 +40,7 @@ export default async function dispenseRoutes(fastify: FastifyInstance) {
   const controller = new DispenseController(buildServices);
 
   // D-53: generic sync dispatcher's own PermissionService instance, built
-  // directly from fastify.prisma/fastify.redis.
+  // directly from the admin client and the Redis handle.
   //
   // CORRECTED (found via live E2E testing): the comment this replaced claimed
   // building the instance locally was sufficient instead of decorating it --
@@ -58,7 +58,7 @@ export default async function dispenseRoutes(fastify: FastifyInstance) {
   // exists, and reads the global reference tables (`users`, `roles`,
   // `permissions`, `clinic_member_roles`) that plan 06-00 deliberately left
   // without RLS policies because they are what *establishes* the tenant.
-  const permissionService = new PermissionService(fastify.prisma, fastify.redis);
+  const permissionService = new PermissionService(fastify.prisma, fastify.redis); // D-30 exemption
   if (!fastify.hasDecorator('permissionService')) {
     fastify.decorate('permissionService', permissionService);
   }

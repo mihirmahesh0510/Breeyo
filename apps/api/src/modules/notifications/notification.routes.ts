@@ -20,7 +20,7 @@ export default async function notificationRoutes(fastify: FastifyInstance) {
   // have a `request.db`. Both derive tenancy from data they already hold — the
   // worker from its durable job payload's clinicId, device tokens from the
   // authenticated userId. (D-30 exemption)
-  const adminDb = fastify.prisma;
+  const adminDb = fastify.prisma; // D-30 exemption
 
   const deviceTokenService = new NotificationService(adminDb);
   const controller = createNotificationController(buildService, deviceTokenService);

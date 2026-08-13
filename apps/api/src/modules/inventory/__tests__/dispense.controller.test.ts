@@ -17,7 +17,7 @@ import { mockClinic, mockUser } from './inventory.fixtures.js';
  * here is the second layer, not the only one.
  *
  * That makes *wiring* the thing worth asserting: these tests fail if a handler
- * ever goes back to a plugin-scope service built once from `fastify.prisma`,
+ * ever goes back to a plugin-scope service built once from the admin client,
  * because the per-request factory would then never be called with `request.db`.
  */
 function createMockServices() {

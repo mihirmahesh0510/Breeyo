@@ -22,7 +22,7 @@ export default async function clinicRoutes(fastify: FastifyInstance) {
   // `tenantContext` has set `request.db`. Moving it onto the tenant handle
   // breaks login.
   if (!fastify.hasDecorator('permissionService')) {
-    const permissionService = new PermissionService(fastify.prisma, fastify.redis);
+    const permissionService = new PermissionService(fastify.prisma, fastify.redis); // D-30 exemption
     fastify.decorate('permissionService', permissionService);
   }
 
