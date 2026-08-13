@@ -57,21 +57,46 @@ function computation(overrides: Partial<FinalizeComputation> = {}): FinalizeComp
   };
 }
 
+/**
+ * `$queryRaw` accepts either a `Prisma.Sql` (the `Prisma.sql\`...\`` form this
+ * repository uses) or a raw `TemplateStringsArray` plus values (the tagged
+ * template form `numbering.service.ts` uses). The double normalises both so a
+ * test can assert on the emitted text either way.
+ */
+interface CapturedSql {
+  sql: string;
+  values: unknown[];
+}
+
+function captureSql(query: Prisma.Sql | TemplateStringsArray, values: unknown[]): CapturedSql {
+  if (Array.isArray(query)) {
+    return { sql: (query as TemplateStringsArray).join('?'), values };
+  }
+  const asSql = query as Prisma.Sql;
+  return { sql: asSql.sql, values: asSql.values };
+}
+
+/** The first argument of a mock's first call, untyped for assertion purposes. */
+function firstArg(fn: { mock: { calls: unknown[][] } }): any {
+  return fn.mock.calls[0][0];
+}
+
 function createHarness(options: { lockedRows?: unknown[] } = {}) {
-  const rawQueries: Prisma.Sql[] = [];
-  const rawExecutes: Prisma.Sql[] = [];
+  const rawQueries: CapturedSql[] = [];
+  const rawExecutes: CapturedSql[] = [];
   const lockedRows = options.lockedRows ?? [{ id: INVOICE }];
 
   const tx = {
-    $queryRaw: vi.fn(async (sql: Prisma.Sql) => {
-      rawQueries.push(sql);
+    $queryRaw: vi.fn(async (query: Prisma.Sql | TemplateStringsArray, ...values: unknown[]) => {
+      const captured = captureSql(query, values);
+      rawQueries.push(captured);
       // Only the invoice FOR UPDATE probe and the numbering upsert go through
       // $queryRaw in the finalize path; distinguish them by target table.
-      if (sql.sql.includes('invoice_number_counters')) return [{ last_number: 7 }];
+      if (captured.sql.includes('invoice_number_counters')) return [{ last_number: 7 }];
       return lockedRows;
     }),
-    $executeRaw: vi.fn(async (sql: Prisma.Sql) => {
-      rawExecutes.push(sql);
+    $executeRaw: vi.fn(async (query: Prisma.Sql | TemplateStringsArray, ...values: unknown[]) => {
+      rawExecutes.push(captureSql(query, values));
       return 1;
     }),
     invoice: {
@@ -102,8 +127,8 @@ function createHarness(options: { lockedRows?: unknown[] } = {}) {
 
   const prisma = {
     $transaction: vi.fn(async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
-    $queryRaw: vi.fn(async (sql: Prisma.Sql) => {
-      rawQueries.push(sql);
+    $queryRaw: vi.fn(async (query: Prisma.Sql | TemplateStringsArray, ...values: unknown[]) => {
+      rawQueries.push(captureSql(query, values));
       return [];
     }),
     invoice: {
@@ -254,7 +279,7 @@ describe('InvoiceRepository.finalizeInvoice', () => {
 
     await harness.repository.finalizeInvoice(CLINIC, INVOICE, computed, [], ACTOR, new Date());
 
-    const invoiceUpdate = harness.tx.invoice.update.mock.calls[0][0] as any;
+    const invoiceUpdate = firstArg(harness.tx.invoice.update);
     expect(invoiceUpdate.data.grandTotalPaise).toBe(11200);
     expect(invoiceUpdate.data.roundOffPaise).toBe(-37);
     expect(invoiceUpdate.data.balancePaise).toBe(11200);
@@ -303,7 +328,7 @@ describe('InvoiceRepository.recomputePaymentState', () => {
 
     await repository.recomputePaymentState(tx as any, CLINIC, INVOICE);
 
-    const data = (tx.invoice.update.mock.calls[0][0] as any).data;
+    const data = firstArg(tx.invoice.update).data;
     expect(data.status).toBe('UNPAID');
     expect(data.amountPaidPaise).toBe(0);
     expect(data.balancePaise).toBe(10000);
@@ -317,7 +342,7 @@ describe('InvoiceRepository.recomputePaymentState', () => {
 
     await repository.recomputePaymentState(tx as any, CLINIC, INVOICE);
 
-    const data = (tx.invoice.update.mock.calls[0][0] as any).data;
+    const data = firstArg(tx.invoice.update).data;
     expect(data.amountPaidPaise).toBe(6000);
     expect(data.balancePaise).toBe(4000);
     expect(data.status).toBe('PARTIALLY_PAID');
@@ -330,7 +355,7 @@ describe('InvoiceRepository.recomputePaymentState', () => {
 
     await repository.recomputePaymentState(tx as any, CLINIC, INVOICE);
 
-    const data = (tx.invoice.update.mock.calls[0][0] as any).data;
+    const data = firstArg(tx.invoice.update).data;
     expect(data.status).toBe('PAID');
     // Negative, deliberately: plan 06-03 left balance_paise unconstrained so an
     // overpaid invoice is representable and therefore detectable.
@@ -346,7 +371,7 @@ describe('InvoiceRepository.recomputePaymentState', () => {
 
     await repository.recomputePaymentState(tx as any, CLINIC, INVOICE);
 
-    const data = (tx.invoice.update.mock.calls[0][0] as any).data;
+    const data = firstArg(tx.invoice.update).data;
     expect(data.status).toBe('VOIDED');
     expect(data.exceptionFlag).toBe('payment_after_void');
   });
@@ -358,7 +383,7 @@ describe('InvoiceRepository.recomputePaymentState', () => {
 
     await repository.recomputePaymentState(tx as any, CLINIC, INVOICE);
 
-    const data = (tx.invoice.update.mock.calls[0][0] as any).data;
+    const data = firstArg(tx.invoice.update).data;
     expect(data.creditedPaise).toBe(10000);
     expect(data.amountPaidPaise).toBe(0);
     expect(data.balancePaise).toBe(0);
@@ -377,7 +402,7 @@ describe('InvoiceRepository.voidInvoice', () => {
 
     expect(rawQueries[0].sql).toContain('FOR UPDATE');
     expect(stockValidator.restoreToStock).toHaveBeenCalledWith(tx, CLINIC, INVOICE, expect.anything());
-    const data = (tx.invoice.update.mock.calls[0][0] as any).data;
+    const data = firstArg(tx.invoice.update).data;
     expect(data.status).toBe('VOIDED');
     expect(data.voidRestoredStock).toBe(true);
     expect(data.voidReason).toBe('wrong pet');
