@@ -99,3 +99,42 @@ any mobile billing plan (06-12 onward) can use a green typecheck as its gate.
 Recorded as a suspected gap, then disproved before filing: `turbo test
 --dry-run` lists `@breeyo/mobile#test` among the ten tasks the root `pnpm test`
 runs, so 06-01's `pdf-deps.test.ts` is already covered by CI. No action needed.
+
+## Found during 06-06 (numbering, encryption, billing audit log)
+
+### 7. `@breeyo/api`'s `test` script is `vitest` (watch mode), not `vitest run`
+
+`apps/api/package.json` sets `"test": "vitest"`. Every plan in this phase writes
+its verify block as `pnpm --filter @breeyo/api test -- <file>`, which therefore
+starts an interactive **watch session** rather than a one-shot run. It never
+exits, so an agent or CI step invoking it either hangs until timeout or reports
+a misleading status — in this plan's case the watcher was still running after
+600 s and then exited **1** when a scratch file was deleted, which looks exactly
+like a test failure and is not one.
+
+Every sibling package uses the one-shot form (`packages/ui`, `packages/types`,
+`packages/validators` all run `vitest run`), so `apps/api` is the outlier.
+
+Workaround used here: invoke `./node_modules/.bin/vitest run` directly.
+
+Impact: low severity, high nuisance, and it actively produces false failure
+signals. One-line fix (`"test": "vitest run"`, with a separate `test:watch`),
+but changing the API's test entrypoint mid-phase would touch every remaining
+plan's verify block, so it is recorded rather than done here.
+
+### 8. `prisma/seed.ts` is required before the API suite passes (extends item 2)
+
+Confirming and quantifying deferred item 2 from 06-02. On a freshly migrated
+database the full API suite reports **25 failed / 560 passed**; every failure is
+a `403` from a permission check, because `roles` and `permissions` are empty.
+After running the seed the same suite is **585 passed / 0 failed** (9 skipped,
+80 todo).
+
+The seed cannot be run with the documented `pnpm db:seed` because `seed.ts`
+never calls `dotenv.config()`; it must be invoked with `DATABASE_URL` exported
+into the shell.
+
+Impact: any executor or reviewer running the API suite on a new worktree
+database will see 25 red tests that have nothing to do with their change. Worth
+fixing (one `dotenv.config()` call) before the next wave, so the phase's test
+signal is trustworthy by default.
