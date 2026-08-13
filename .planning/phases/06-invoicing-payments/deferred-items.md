@@ -71,6 +71,29 @@ queue remain unexercised against a real database.
 Impact: out of scope for a tenancy plan, but the inventory write path is now
 one of the least-covered surfaces in the API relative to its risk.
 
+### 6. `pnpm --filter @breeyo/mobile exec tsc --noEmit` reports 61 pre-existing errors
+
+Found during 06-04. The mobile typecheck does not currently exit 0, independent
+of anything Phase 6 has touched. Every error is in one of two buckets:
+
+- **`packages/ui/src/**/*.ts` (16 files, the bulk of the errors).** These are
+  `.ts` files — not `.tsx` — calling `React.createElement` against
+  `react-native-paper` components. Under the resolved Paper typings, `Text`
+  requires a `children` prop that the positional-argument call style does not
+  satisfy, and `WizardStepper.ts` additionally casts the MD3 colour object to
+  `Record<string, string>` when `elevation` is a nested object.
+- **9 `apps/mobile` feature files** (`ConsultationScreen.tsx`,
+  `PatientDetailScreen.tsx`, `AuthProvider.tsx`, `useFileUpload.ts`, others).
+
+Verified unrelated to 06-04: filtering the tsc output for `gst|billing|invoice|
+slab|hsn` matches **0** lines, and neither `GstRatePicker.tsx` nor
+`ItemFormScreen.tsx` — the two mobile consumers of the constants 06-04 changed —
+appears in the error set.
+
+Impact: plan 06-04's verification block asks for a clean mobile typecheck, which
+cannot be satisfied without fixing Phase 2 UI-library code. Needs an owner before
+any mobile billing plan (06-12 onward) can use a green typecheck as its gate.
+
 ### 5. (withdrawn) `apps/mobile` tests in CI
 
 Recorded as a suspected gap, then disproved before filing: `turbo test

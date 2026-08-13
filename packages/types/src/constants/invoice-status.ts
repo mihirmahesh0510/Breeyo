@@ -190,6 +190,13 @@ export type RefundMethod = (typeof REFUND_METHODS)[number];
 export const INVOICE_SOURCES = ['consultation', 'manual', 'quick_sale'] as const;
 export type InvoiceSource = (typeof INVOICE_SOURCES)[number];
 
+/**
+ * `invoice_line_items.line_type`. A `product` line has stock provenance and may
+ * require a FIFO deduction at finalize; a `service` line never does.
+ */
+export const INVOICE_LINE_TYPES = ['service', 'product'] as const;
+export type InvoiceLineType = (typeof INVOICE_LINE_TYPES)[number];
+
 /** `discount_type` on both `invoices` and `invoice_line_items` (D-07). */
 export const DISCOUNT_TYPES = ['percent', 'flat'] as const;
 export type DiscountType = (typeof DISCOUNT_TYPES)[number];
