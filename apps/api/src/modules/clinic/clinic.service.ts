@@ -1,7 +1,8 @@
-import type { PrismaClient, Prisma } from '@prisma/client';
+import type { Prisma } from '@prisma/client';
+import type { TenantPrismaClient } from '../../lib/prisma-rls.js';
 
 export class ClinicService {
-  constructor(private readonly prisma: PrismaClient) {}
+  constructor(private readonly prisma: TenantPrismaClient) {}
 
   async getClinic(clinicId: string) {
     return this.prisma.clinic.findUniqueOrThrow({ where: { id: clinicId } });

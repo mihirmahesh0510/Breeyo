@@ -1,4 +1,4 @@
-import type { PrismaClient } from '@prisma/client';
+import type { TenantPrismaClient } from '../../lib/prisma-rls.js';
 import type { WantListItem } from '@breeyo/types';
 import type { ParLevelAlertService } from './par-level-alert.service.js';
 
@@ -7,7 +7,7 @@ const WANT_LIST_SEPARATOR = '─────────────────
 export class WantListService {
   constructor(
     private readonly parLevelAlertService: ParLevelAlertService,
-    private readonly prisma: PrismaClient,
+    private readonly prisma: TenantPrismaClient,
   ) {}
 
   /**

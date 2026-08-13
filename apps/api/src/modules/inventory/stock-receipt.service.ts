@@ -1,4 +1,4 @@
-import type { PrismaClient } from '@prisma/client';
+import type { TenantPrismaClient } from '../../lib/prisma-rls.js';
 import { stockReceiptSchema } from '@breeyo/validators';
 import { EXPIRY_REQUIRED_CATEGORIES, getCategoryLabel } from '@breeyo/types';
 
@@ -17,7 +17,7 @@ function validationError(message: string): Error & { statusCode: number; code: s
 }
 
 export class StockReceiptService {
-  constructor(private readonly prisma: PrismaClient) {}
+  constructor(private readonly prisma: TenantPrismaClient) {}
 
   /**
    * D-11: every receipt always creates a brand-new StockBatch (never merges

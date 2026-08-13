@@ -12,6 +12,15 @@ import { requirePermission } from '../../middleware/authorize.js';
 export default async function authRoutes(fastify: FastifyInstance) {
   const emailService = new EmailService();
   const otpService = new OtpService(fastify.redis);
+  // Admin client by design: runs before tenantContext (D-30 exemption).
+  //
+  // The whole auth module is pre-tenant. Login, OTP verification and token
+  // refresh all execute before a clinic has been selected, so `request.db` does
+  // not exist yet and `app.clinic_id` cannot be bound. These three services read
+  // `users`, `refresh_tokens`, `roles`, `permissions` and `clinic_member_roles`
+  // — global reference tables plan 06-00 deliberately left without RLS policies
+  // because they are the tables that *establish* which clinic the caller is in.
+  // `scripts/check-tenant-client.sh` hardcodes this file as exempt.
   const tokenService = new TokenService(fastify.prisma, fastify.jwt);
   const authService = new AuthService(fastify.prisma, fastify.redis, emailService);
   const permissionService = new PermissionService(fastify.prisma, fastify.redis);

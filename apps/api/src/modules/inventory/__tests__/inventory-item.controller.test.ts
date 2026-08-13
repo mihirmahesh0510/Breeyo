@@ -41,6 +41,11 @@ function createMockRequest(overrides: Record<string, unknown> = {}) {
     query: {},
     body: {},
     user: { id: mockUser.id, activeClinicId: mockClinic.id },
+    // D-30: every handler now resolves its services from `request.db`. The
+    // factory below ignores the handle, so a marker object is enough here —
+    // but its presence is what proves the handler reads the tenant-scoped
+    // client rather than a plugin-scope singleton.
+    db: { __tenantScoped: true },
     ...overrides,
   } as any;
 }
@@ -50,12 +55,29 @@ describe('InventoryController', () => {
   let stockReceiptService: ReturnType<typeof createMockStockReceiptService>;
   let barcodeLookupService: ReturnType<typeof createMockBarcodeLookupService>;
   let controller: InventoryController;
+  let receivedDb: unknown;
 
   beforeEach(() => {
     service = createMockService();
     stockReceiptService = createMockStockReceiptService();
     barcodeLookupService = createMockBarcodeLookupService();
-    controller = new InventoryController(service, stockReceiptService, barcodeLookupService);
+    receivedDb = undefined;
+    controller = new InventoryController((db) => {
+      receivedDb = db;
+      return { service, stockReceiptService, barcodeLookupService };
+    });
+  });
+
+  // D-30: guards the conversion itself. If a handler were to go back to a
+  // plugin-scope service, the factory would never be called and `receivedDb`
+  // would stay undefined.
+  it('builds its services from request.db rather than a plugin-scope singleton', async () => {
+    vi.mocked(service.getSummary).mockResolvedValue({} as any);
+
+    const request = createMockRequest();
+    await controller.getSummary(request, createMockReply());
+
+    expect(receivedDb).toBe(request.db);
   });
 
   describe('createItem', () => {

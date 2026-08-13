@@ -717,6 +717,130 @@ describe('Tenant Isolation', () => {
       expect(serialized).not.toContain(petB.id);
     });
 
+    // ----------------------------------------------------------------
+    // Inventory (plan 06-20 scope addition)
+    // ----------------------------------------------------------------
+    // The inventory module landed in Phase 5, after plan 06-20's file list was
+    // written, and was still on `fastify.prisma` when this plan started -- its
+    // six RLS policies from 06-00 existed with nothing reaching them. Its
+    // integration suite is entirely `it.todo`, so these are the only runtime
+    // proof that the conversion works and did not break the write path.
+
+    /** Creates an inventory item over HTTP and returns it. */
+    async function createItem(token: string, name: string) {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/v1/inventory/items',
+        headers: authFor(token),
+        payload: { name, category: 'MEDICINE', unit: 'TABLET', sellingPrice: 10 },
+      });
+      expect(response.statusCode).toBe(201);
+      return response.json().data;
+    }
+
+    it('HTTP inventory scoping -- GET /inventory/items never crosses clinics', async () => {
+      const itemA = await createItem(tokenA, 'Amoxicillin A');
+      const itemB = await createItem(tokenB, 'Amoxicillin B');
+
+      const responseA = await app.inject({
+        method: 'GET',
+        url: '/api/v1/inventory/items',
+        headers: authFor(tokenA),
+      });
+      expect(responseA.statusCode).toBe(200);
+
+      const serialized = JSON.stringify(responseA.json().data);
+      expect(serialized).toContain(itemA.id);
+      expect(serialized).not.toContain(itemB.id);
+      expect(serialized).not.toContain('Amoxicillin B');
+
+      // Mirror direction, so a policy that hides everything cannot pass.
+      const responseB = await app.inject({
+        method: 'GET',
+        url: '/api/v1/inventory/items',
+        headers: authFor(tokenB),
+      });
+      expect(responseB.statusCode).toBe(200);
+      const serializedB = JSON.stringify(responseB.json().data);
+      expect(serializedB).toContain(itemB.id);
+      expect(serializedB).not.toContain(itemA.id);
+    });
+
+    // The riskiest part of the conversion. `StockReceiptService.receiveStock`
+    // and `FifoDispenseService.dispense` both use the *interactive*
+    // `$transaction(async (tx) => ...)` overload, and dispense issues a raw
+    // `SELECT ... FOR UPDATE` through `tx.$queryRaw`. Running those through the
+    // tenant handle nests one transaction inside the extension's own, so this
+    // asserts the write path still works end to end rather than only that reads
+    // are filtered.
+    it('HTTP inventory write path -- receive then dispense works through the tenant handle', async () => {
+      const item = await createItem(tokenA, 'Meloxicam A');
+
+      const receipt = await app.inject({
+        method: 'POST',
+        url: `/api/v1/inventory/items/${item.id}/receive`,
+        headers: authFor(tokenA),
+        payload: { quantity: 20, costPrice: 5, batchNumber: 'B-1' },
+      });
+      expect(receipt.statusCode).toBe(201);
+
+      const dispense = await app.inject({
+        method: 'POST',
+        url: `/api/v1/inventory/items/${item.id}/dispense`,
+        headers: authFor(tokenA),
+        payload: { quantity: 3 },
+      });
+      expect(dispense.statusCode).toBe(200);
+
+      // Stock actually moved -- the nested transaction committed.
+      const after = await prisma.inventoryItem.findUnique({ where: { id: item.id } });
+      expect(Number(after?.currentStock)).toBe(17);
+
+      const movements = await prisma.stockMovement.findMany({ where: { itemId: item.id } });
+      expect(movements.length).toBeGreaterThan(0);
+      for (const movement of movements) {
+        expect(movement.clinicId).toBe(clinicA.id);
+      }
+    });
+
+    it('HTTP inventory IDOR -- clinic A cannot dispense or read clinic B stock', async () => {
+      const itemB = await createItem(tokenB, 'Ketamine B');
+
+      const receipt = await app.inject({
+        method: 'POST',
+        url: `/api/v1/inventory/items/${itemB.id}/receive`,
+        headers: authFor(tokenB),
+        payload: { quantity: 10, costPrice: 50, batchNumber: 'CTRL-1' },
+      });
+      expect(receipt.statusCode).toBe(201);
+
+      // Read attempt: must not return clinic B's item to clinic A.
+      const read = await app.inject({
+        method: 'GET',
+        url: `/api/v1/inventory/items/${itemB.id}`,
+        headers: authFor(tokenA),
+      });
+      expect(read.statusCode).not.toBe(200);
+      expect(JSON.stringify(read.json())).not.toContain('Ketamine B');
+
+      // Write attempt: must not deduct stock from clinic B's controlled drug.
+      const dispense = await app.inject({
+        method: 'POST',
+        url: `/api/v1/inventory/items/${itemB.id}/dispense`,
+        headers: authFor(tokenA),
+        payload: { quantity: 4 },
+      });
+      expect(dispense.statusCode).not.toBe(200);
+
+      const after = await prisma.inventoryItem.findUnique({ where: { id: itemB.id } });
+      expect(Number(after?.currentStock)).toBe(10);
+
+      const foreignMovements = await prisma.stockMovement.findMany({
+        where: { itemId: itemB.id, clinicId: clinicA.id },
+      });
+      expect(foreignMovements).toHaveLength(0);
+    });
+
     it('static helper preserved -- QueueRepository.getTodayIST() stays callable without an instance', () => {
       // The per-request refactor must not turn this into an instance method:
       // the midnight-archive cron job calls it with no repository in scope.

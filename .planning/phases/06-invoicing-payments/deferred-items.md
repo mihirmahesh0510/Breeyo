@@ -5,7 +5,15 @@ found them.
 
 ## Found during 06-02 (D-30 tenant-handle conversion)
 
-### 1. `inventory` module is still on the admin client and is unowned
+### 1. `inventory` module is still on the admin client and is unowned — RESOLVED in 06-20
+
+**Resolved by plan 06-20** (commit `cd80720`), which folded the conversion into
+its own scope rather than adding the allowlist entry this item warned about.
+`scripts/check-tenant-client.sh` therefore ships with no inventory allowlist.
+Original text preserved below.
+
+---
+
 
 `apps/api/src/modules/inventory/inventory.routes.ts` and
 `dispense.routes.ts` construct eight services from `fastify.prisma`:
@@ -43,3 +51,28 @@ Called by the midnight-archive cron job across all clinics by design. It is
 one of the documented admin-client exemptions 06-20 Task 1 is meant to write
 up. Recorded here so the exemption list is complete: the job legitimately
 needs the raw client, which is why `DbClient` keeps a `PrismaClient` arm.
+
+## Found during 06-20 (exemption list + CI gate)
+
+### 4. The `tests/inventory/` integration suite is entirely `it.todo`
+
+All 80 tests across nine files in `apps/api/tests/inventory/` are placeholders:
+`item-crud` (21), `stock-receipt` (12), `fifo-dispense` (10), `stock-movement`
+(9), `stock-adjustment` (8), `par-level-alerts` (6), `barcode-lookup` (5),
+`offline-queue` (5), `want-list` (4). Phase 5 shipped the module with unit
+tests over mocked Prisma clients and no HTTP-level coverage at all.
+
+Plan 06-20 added three HTTP tests to `tenant-isolation.test.ts` covering the
+paths its conversion touched (list, receive→dispense, cross-tenant IDOR), but
+that is tenancy coverage, not functional coverage — FIFO ordering, expiry
+blocking, batch override, insufficient-stock handling and the offline replay
+queue remain unexercised against a real database.
+
+Impact: out of scope for a tenancy plan, but the inventory write path is now
+one of the least-covered surfaces in the API relative to its risk.
+
+### 5. (withdrawn) `apps/mobile` tests in CI
+
+Recorded as a suspected gap, then disproved before filing: `turbo test
+--dry-run` lists `@breeyo/mobile#test` among the ten tasks the root `pnpm test`
+runs, so 06-01's `pdf-deps.test.ts` is already covered by CI. No action needed.

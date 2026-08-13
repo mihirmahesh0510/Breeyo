@@ -1,4 +1,5 @@
-import { Prisma, type PrismaClient } from '@prisma/client';
+import { Prisma } from '@prisma/client';
+import type { TenantPrismaClient } from '../../lib/prisma-rls.js';
 import type { LowStockItem, ExpiringBatchItem } from '@breeyo/types';
 
 const DEFAULT_EXPIRY_LEAD_DAYS = 30; // D-21 default; per-clinic override lands via clinic settings
@@ -10,7 +11,7 @@ export interface AlertCounts {
 }
 
 export class ParLevelAlertService {
-  constructor(private readonly prisma: PrismaClient) {}
+  constructor(private readonly prisma: TenantPrismaClient) {}
 
   /**
    * D-06/D-32: items whose combined non-expired batch stock has fallen

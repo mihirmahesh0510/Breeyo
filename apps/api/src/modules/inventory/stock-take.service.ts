@@ -1,11 +1,11 @@
-import type { PrismaClient } from '@prisma/client';
+import type { TenantPrismaClient } from '../../lib/prisma-rls.js';
 import { stockTakeSchema } from '@breeyo/validators';
 import type { StockTakeSummary, StockTakeResult } from '@breeyo/types';
 import { StockMovementService } from './stock-movement.service.js';
 
 export class StockTakeService {
   constructor(
-    private readonly prisma: PrismaClient,
+    private readonly prisma: TenantPrismaClient,
     private readonly stockMovementService: StockMovementService,
   ) {}
 

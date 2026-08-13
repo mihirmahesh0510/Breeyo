@@ -1,4 +1,5 @@
-import { Prisma, type PrismaClient } from '@prisma/client';
+import { Prisma } from '@prisma/client';
+import type { TenantPrismaClient } from '../../lib/prisma-rls.js';
 import { dispenseSchema } from '@breeyo/validators';
 import type { DispenseResult, BatchDeduction } from '@breeyo/types';
 import { StockMovementService } from './stock-movement.service.js';
@@ -49,7 +50,7 @@ interface LockedBatchRow {
 
 export class FifoDispenseService {
   constructor(
-    private readonly prisma: PrismaClient,
+    private readonly prisma: TenantPrismaClient,
     private readonly stockMovementService: StockMovementService,
   ) {}
 

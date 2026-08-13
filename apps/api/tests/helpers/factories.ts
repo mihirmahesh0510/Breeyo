@@ -471,6 +471,16 @@ export async function cleanupTestData() {
     await tx.pet.deleteMany();
     await tx.petOwner.deleteMany();
 
+    // Phase 5 tables (inventory & pharmacy). Same reason as the Phase 3/4 block
+    // above: these landed after this helper was written, and `clinic.deleteMany()`
+    // fails on `inventory_items_clinic_id_fkey` once any test creates stock.
+    await tx.stockMovement.deleteMany();
+    await tx.stockBatch.deleteMany();
+    await tx.inventoryBarcode.deleteMany();
+    await tx.inventoryItem.deleteMany();
+    await tx.clinicInventoryCategory.deleteMany();
+    await tx.clinicInventoryUnit.deleteMany();
+
     await tx.clinic.deleteMany();
     await tx.user.deleteMany();
   });
