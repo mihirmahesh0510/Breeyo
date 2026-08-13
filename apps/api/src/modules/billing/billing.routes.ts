@@ -1,0 +1,95 @@
+import type { FastifyInstance } from 'fastify';
+import { authenticate } from '../../middleware/authenticate.js';
+import { tenantContext } from '../../middleware/tenant-context.js';
+import { requirePermission } from '../../middleware/authorize.js';
+import type { TenantPrismaClient } from '../../lib/prisma-rls.js';
+import { PermissionService } from '../auth/permission.service.js';
+import { StockMovementService } from '../inventory/stock-movement.service.js';
+import { InvoiceRepository } from './invoice.repository.js';
+import { InvoiceService } from './invoice.service.js';
+import { StockValidatorService } from './stock-validator.service.js';
+import { createInvoiceController } from './invoice.controller.js';
+
+/**
+ * Billing routes — the first consumer of `requirePermission` outside auth.
+ *
+ * Paths carry no version prefix: it is applied by `app.ts` at registration
+ * time, exactly as in `emr.routes.ts`.
+ *
+ * ## Three gates, not one
+ *
+ * D-05 splits billing authority two ways, and the route table reflects it:
+ *
+ *  * `VIEW_INVOICES` — reads. Clinicians keep this: a vet must be able to see
+ *    the invoice for a patient they treated.
+ *  * `CREATE_INVOICES` — building and finalizing invoices. Front Desk and Admin
+ *    only; `prisma/seed.ts` no longer grants it to Clinician.
+ *  * `MANAGE_PAYMENTS` — void, mark-paid and mark-unpaid. These move MONEY
+ *    state rather than document state, so they sit behind the stricter gate even
+ *    though a user who can create an invoice can usually also collect for it.
+ *
+ * ## What is deliberately NOT here
+ *
+ * The D-03 End-Consultation path. A Clinician finishing a consultation must
+ * still produce a draft for the front desk, and under D-05 a Clinician holds no
+ * billing permission at all. That path is a direct
+ * `InvoiceService.createDraftFromConsultation` call from
+ * `EmrService.finalizeConsultation` (plan 06-12) with no HTTP surface and no
+ * permission check. The `from-consultation` route below is the *other* surface
+ * onto the same method — the D-06 front-desk picker — and is gated. Gating the
+ * service method itself, rather than this route, would break D-03.
+ */
+export default async function billingRoutes(fastify: FastifyInstance) {
+  /**
+   * D-30: built per request from the tenant handle, never as a plugin-scope
+   * singleton. `StockValidatorService` is shared between the repository and the
+   * service so that the finalize transaction and the read-only availability
+   * check observe the same instance.
+   */
+  const buildService = (db: TenantPrismaClient) => {
+    const stockValidator = new StockValidatorService(db, new StockMovementService(db));
+    const repository = new InvoiceRepository(db, stockValidator);
+    return new InvoiceService(repository, stockValidator, db);
+  };
+
+  const controller = createInvoiceController(buildService);
+
+  // `requirePermission` reads `request.server.permissionService`, and Fastify's
+  // plugin encapsulation means auth.routes.ts's decoration never reaches this
+  // sibling plugin's scope. Without this, every billing request 500s with
+  // "Cannot read properties of undefined (reading 'getUserPermissions')" —
+  // the exact failure dispense.routes.ts documents having hit and fixed the
+  // same way. Decorate locally, matching inventory.routes.ts and clinic.routes.ts.
+  //
+  // Admin client by design (D-30 exemption): permission resolution runs during
+  // `authenticate`, before `tenantContext` creates `request.db`, and reads the
+  // global reference tables (`users`, `roles`, `permissions`,
+  // `clinic_member_roles`) that plan 06-00 deliberately left without RLS
+  // policies because they are what *establishes* the tenant.
+  const permissionService = new PermissionService(fastify.prisma, fastify.redis); // D-30 exemption
+  if (!fastify.hasDecorator('permissionService')) {
+    fastify.decorate('permissionService', permissionService);
+  }
+
+  const readHandler = [authenticate, tenantContext, requirePermission('VIEW_INVOICES')];
+  const writeHandler = [authenticate, tenantContext, requirePermission('CREATE_INVOICES')];
+  const payHandler = [authenticate, tenantContext, requirePermission('MANAGE_PAYMENTS')];
+
+  // Reads
+  fastify.get('/billing/invoices', { preHandler: readHandler, handler: controller.listHandler });
+  fastify.get('/billing/invoices/:invoiceId', { preHandler: readHandler, handler: controller.getHandler });
+  fastify.get('/billing/pets/:petId/invoices', { preHandler: readHandler, handler: controller.listForPetHandler });
+
+  // Draft lifecycle (D-01, D-06, D-21)
+  fastify.post('/billing/invoices', { preHandler: writeHandler, handler: controller.createHandler });
+  fastify.post('/billing/invoices/from-consultation/:consultationId', { preHandler: writeHandler, handler: controller.createDraftFromConsultationHandler });
+  fastify.post('/billing/invoices/preview-totals', { preHandler: writeHandler, handler: controller.previewTotalsHandler });
+  fastify.patch('/billing/invoices/:invoiceId', { preHandler: writeHandler, handler: controller.updateDraftHandler });
+  fastify.delete('/billing/invoices/:invoiceId', { preHandler: writeHandler, handler: controller.deleteDraftHandler });
+  fastify.post('/billing/invoices/:invoiceId/finalize', { preHandler: writeHandler, handler: controller.finalizeHandler });
+
+  // Money-state changes (D-05: Front Desk and Admin only)
+  fastify.post('/billing/invoices/:invoiceId/void', { preHandler: payHandler, handler: controller.voidHandler });
+  fastify.post('/billing/invoices/:invoiceId/mark-paid', { preHandler: payHandler, handler: controller.markPaidHandler });
+  fastify.post('/billing/invoices/:invoiceId/mark-unpaid', { preHandler: payHandler, handler: controller.markUnpaidHandler });
+}

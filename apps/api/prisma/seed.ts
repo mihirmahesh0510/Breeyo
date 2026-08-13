@@ -56,7 +56,10 @@ const DEFAULT_ROLE_PERMISSIONS: Record<string, string[]> = {
     'VIEW_QUEUE', 'MANAGE_QUEUE',
     'VIEW_EMR', 'EDIT_EMR',
     'VIEW_INVENTORY', 'DISPENSE_INVENTORY', // D-43: clinicians may dispense
-    'VIEW_INVOICES', 'CREATE_INVOICES',
+    // D-05: Clinicians cannot create invoices. The End-Consultation draft path
+    // (D-03) is server-initiated and ungated. VIEW_INVOICES is retained so a vet
+    // can still see the invoice for a patient they treated.
+    'VIEW_INVOICES',
     'SEND_WHATSAPP',
     'VIEW_SCHEDULE', 'MANAGE_SCHEDULE',
   ],
@@ -118,6 +121,22 @@ async function main() {
         },
       });
     }
+
+    // Reconcile: drop grants that are no longer in the map.
+    //
+    // The upserts above are purely additive, so a permission REMOVED from
+    // DEFAULT_ROLE_PERMISSIONS would survive forever in any database that was
+    // seeded before the change — which is every existing dev and staging
+    // environment. That would make the D-05 removal of CREATE_INVOICES from
+    // Clinician inert exactly where it matters, while passing on a fresh CI
+    // database. Per-user grants in `user_permission_overrides` are a separate
+    // mechanism and are deliberately untouched here.
+    await prisma.rolePermission.deleteMany({
+      where: {
+        roleId: createdRole.id,
+        permission: { code: { notIn: permCodes } },
+      },
+    });
   }
 
   // Seed service catalog for demo clinic (if one exists)

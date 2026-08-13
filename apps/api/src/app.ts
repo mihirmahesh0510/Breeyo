@@ -99,6 +99,12 @@ export async function buildApp(
   await app.register(import('./modules/inventory/inventory.routes.js'), { prefix: '/api/v1' });
   await app.register(import('./modules/inventory/dispense.routes.js'), { prefix: '/api/v1' });
 
+  // Phase 6: Invoicing & Payments
+  // No `config` override: billing keeps the global 200/min rate limit. The
+  // Razorpay webhook route (plan 06-10) is the documented exception and is
+  // registered as a separate plugin with its own limit.
+  await app.register(import('./modules/billing/billing.routes.js'), { prefix: '/api/v1' });
+
   // Midnight archive cron (skip in test environment)
   if (!isTest) {
     scheduleMidnightArchive(app.prisma, app.io);
