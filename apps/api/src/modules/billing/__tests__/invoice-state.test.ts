@@ -141,7 +141,9 @@ describe('InvoiceService state guards — void (D-21, D-26, D-34)', () => {
   it('restores stock however old the dispense is — there is no age gate (D-34)', async () => {
     // D-34 amends D-26: the 24-hour window governs Phase 5's manual
     // per-dispense return, never an invoice void. A years-old invoice voids and
-    // restores exactly like a fresh one.
+    // restores exactly like a fresh one. WHICH movements are in scope is a
+    // separate question, settled in stock-validator.test.ts — only the ones the
+    // invoice itself created, never a drug administered during a consultation.
     const { service, repository } = build({
       id: INVOICE,
       status: 'OVERDUE',

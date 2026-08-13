@@ -38,8 +38,8 @@ interface FakeBatchRow {
  */
 function createFakeTx(batchesByItem: Record<string, FakeBatchRow[]>) {
   const queries: Prisma.Sql[] = [];
-  const batchUpdates: Array<{ id: string; decrement: number }> = [];
-  const itemUpdates: Array<{ id: string; decrement: number }> = [];
+  const batchUpdates: Array<{ id: string; decrement?: number; increment?: number }> = [];
+  const itemUpdates: Array<{ id: string; decrement?: number; increment?: number }> = [];
 
   const tx = {
     $queryRaw: vi.fn(async (sql: Prisma.Sql) => {
@@ -51,18 +51,25 @@ function createFakeTx(batchesByItem: Record<string, FakeBatchRow[]>) {
       return (batchesByItem[itemId ?? ''] ?? []).map((row) => ({ ...row }));
     }),
     stockBatch: {
+      // Spread the delta rather than reading `.decrement`, so a deduction
+      // records `{ id, decrement }` and a restoration records `{ id, increment }`
+      // — the direction is then visible in the assertion instead of collapsing
+      // into an `undefined`.
       update: vi.fn(async (args: any) => {
-        batchUpdates.push({ id: args.where.id, decrement: args.data.currentQty.decrement });
+        batchUpdates.push({ id: args.where.id, ...args.data.currentQty });
         return {};
       }),
     },
     inventoryItem: {
       update: vi.fn(async (args: any) => {
-        itemUpdates.push({ id: args.where.id, decrement: args.data.currentStock.decrement });
+        itemUpdates.push({ id: args.where.id, ...args.data.currentStock });
         return {};
       }),
     },
     stockMovement: {
+      findMany: vi.fn(async () => []),
+    },
+    invoiceLineItem: {
       findMany: vi.fn(async () => []),
     },
   };
@@ -308,6 +315,119 @@ describe('StockValidatorService.reserveAndDeduct', () => {
       (sql) => sql.values.find((value) => typeof value === 'string' && value !== CLINIC),
     );
     expect(lockedOrder).toEqual([ITEM_A, ITEM_B]);
+  });
+});
+
+describe('StockValidatorService.restoreToStock (D-34, refined 2026-08-14)', () => {
+  let movementService: ReturnType<typeof createFakeMovementService>;
+  let service: StockValidatorService;
+
+  beforeEach(() => {
+    movementService = createFakeMovementService();
+    service = new StockValidatorService({} as any, movementService as any);
+  });
+
+  /**
+   * Both provenances end up with `invoiceId` set on the movement, so the only
+   * thing that separates them is whether an invoice line REFERENCES the
+   * movement: a line built from an already-dispensed movement carries its id in
+   * `stockMovementId`, a line the invoice deducted for itself does not.
+   */
+  function harnessFor(options: {
+    movements: Array<{ id: string; itemId: string; batchId: string | null; quantity: number; reversal?: unknown }>;
+    stampedMovementIds?: string[];
+  }) {
+    const { tx, batchUpdates, itemUpdates } = createFakeTx({});
+    tx.stockMovement.findMany = vi.fn(async () =>
+      options.movements.map((m) => ({ reversal: null, ...m })),
+    ) as any;
+    tx.invoiceLineItem.findMany = vi.fn(async () =>
+      (options.stampedMovementIds ?? []).map((id) => ({ stockMovementId: id })),
+    ) as any;
+    return { tx, batchUpdates, itemUpdates };
+  }
+
+  it('does not reverse a consultation-dispensed line — the drug went into the animal', async () => {
+    const { tx, batchUpdates, itemUpdates } = harnessFor({
+      movements: [{ id: 'mv-consult', itemId: ITEM_A, batchId: 'batch-1', quantity: -4 }],
+      // The invoice line was built FROM this movement, so it merely stamped it.
+      stampedMovementIds: ['mv-consult'],
+    });
+
+    const restored = await service.restoreToStock(tx as any, CLINIC, INVOICE, {
+      userId: 'user-1',
+      userName: 'Front Desk',
+    });
+
+    expect(restored).toBe(0);
+    expect(movementService.recordMovement).not.toHaveBeenCalled();
+    expect(batchUpdates).toEqual([]);
+    expect(itemUpdates).toEqual([]);
+  });
+
+  it('reverses a Quick Sale / manually added line — the invoice itself moved that stock', async () => {
+    const { tx, batchUpdates, itemUpdates } = harnessFor({
+      movements: [{ id: 'mv-billing', itemId: ITEM_A, batchId: 'batch-1', quantity: -3 }],
+      stampedMovementIds: [],
+    });
+
+    const restored = await service.restoreToStock(tx as any, CLINIC, INVOICE, {
+      userId: 'user-1',
+      userName: 'Front Desk',
+    });
+
+    expect(restored).toBe(1);
+    expect(batchUpdates).toEqual([{ id: 'batch-1', increment: 3 }]);
+    expect(itemUpdates).toEqual([{ id: ITEM_A, increment: 3 }]);
+    expect(movementService.recordMovement).toHaveBeenCalledWith(
+      tx,
+      expect.objectContaining({
+        type: 'returned',
+        quantity: 3,
+        reversedMovementId: 'mv-billing',
+        invoiceId: INVOICE,
+      }),
+    );
+  });
+
+  it('restores only the billing-time line on an invoice carrying both provenances', async () => {
+    const { tx, batchUpdates } = harnessFor({
+      movements: [
+        { id: 'mv-consult', itemId: ITEM_A, batchId: 'batch-a', quantity: -5 },
+        { id: 'mv-billing', itemId: ITEM_B, batchId: 'batch-b', quantity: -2 },
+      ],
+      stampedMovementIds: ['mv-consult'],
+    });
+
+    const restored = await service.restoreToStock(tx as any, CLINIC, INVOICE, {
+      userId: 'user-1',
+      userName: 'Front Desk',
+    });
+
+    expect(restored).toBe(1);
+    expect(batchUpdates).toEqual([{ id: 'batch-b', increment: 2 }]);
+    expect(movementService.recordMovement).toHaveBeenCalledTimes(1);
+    expect(movementService.recordMovement).toHaveBeenCalledWith(
+      tx,
+      expect.objectContaining({ reversedMovementId: 'mv-billing' }),
+    );
+  });
+
+  it('skips a movement that has already been reversed rather than double-crediting', async () => {
+    const { tx } = harnessFor({
+      movements: [
+        { id: 'mv-billing', itemId: ITEM_A, batchId: 'batch-1', quantity: -3, reversal: { id: 'mv-return' } },
+      ],
+      stampedMovementIds: [],
+    });
+
+    const restored = await service.restoreToStock(tx as any, CLINIC, INVOICE, {
+      userId: 'user-1',
+      userName: 'Front Desk',
+    });
+
+    expect(restored).toBe(0);
+    expect(movementService.recordMovement).not.toHaveBeenCalled();
   });
 });
 

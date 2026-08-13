@@ -564,12 +564,18 @@ export class InvoiceRepository {
   // ─── Void (D-21, D-26, D-34, D-35) ────────────────────────────────────────
 
   /**
-   * Voids an invoice, always restoring stock.
+   * Voids an invoice and restores the stock the invoice itself moved.
    *
-   * D-34 amends D-26: there is no age gate. The 24-hour window applies to the
+   * D-34 (refined 2026-08-14) scopes the restoration: Quick Sale and manually
+   * added lines — the ones this invoice deducted at finalize — are credited
+   * back; a drug dispensed during the consultation is not, because it was
+   * administered to the animal and consumed. `StockValidatorService.restoreToStock`
+   * owns that distinction, using the same `stockMovementId` discriminator that
+   * governs deduction.
+   *
+   * Within that scope there is no age gate: the 24-hour window applies to the
    * separate manual per-dispense "Return to stock" action in Phase 5's UI, not
-   * to voiding a whole invoice, which reverses every movement tied to it
-   * however old. `voidRestoredStock` is set in the same transaction as the
+   * to a void. `voidRestoredStock` is set in the same transaction as the
    * restoration, so a second void attempt cannot restore twice.
    */
   async voidInvoice(

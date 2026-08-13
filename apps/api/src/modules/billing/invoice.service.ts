@@ -551,13 +551,22 @@ export class InvoiceService {
   // ─── Void (D-21, D-26, D-34, D-35) ────────────────────────────────────────
 
   /**
-   * Voids an invoice and restores its stock.
+   * Voids an invoice and restores the stock the invoice itself moved.
    *
-   * D-34: restoration is unconditional and has no age gate — the 24-hour window
-   * belongs to Phase 5's manual per-dispense return, not to an invoice void.
-   * The shipped `voidInvoiceSchema` accordingly only validates `restoreStock:
-   * true`, so a client asking for `false` is rejected rather than silently
-   * overridden.
+   * D-34 (refined 2026-08-14): restoration covers the lines added at billing
+   * time — a Quick Sale counter item or a manually added product line, whose
+   * stock movement this invoice created at finalize. It deliberately does NOT
+   * cover a drug dispensed during the consultation: that item went into the
+   * animal and a billing correction does not bring it back.
+   * `StockValidatorService.restoreToStock` enforces the split using the same
+   * `stockMovementId` discriminator as {@link
+   * InvoiceService.buildProductLineStockPlan}, so deduct and restore are exact
+   * mirrors of each other.
+   *
+   * Within that scope there is no age gate — the 24-hour window belongs to
+   * Phase 5's manual per-dispense return. The shipped `voidInvoiceSchema`
+   * accordingly only validates `restoreStock: true`, so a client asking for
+   * `false` is rejected rather than silently overridden.
    */
   async voidInvoice(
     clinicId: string,

@@ -314,16 +314,42 @@ export class StockValidatorService {
   /**
    * The D-26/D-34 reverse, run inside the void transaction.
    *
-   * D-34 is unambiguous and amends D-26: voiding an invoice reverses EVERY
-   * stock movement tied to it, however old. There is deliberately no age gate
-   * here — the 24-hour window in D-26/D-51/D-57 governs the separate manual
-   * per-dispense "Return to stock" action in Phase 5's UI, not an invoice void.
+   * ## What is restored, and what deliberately is not
    *
-   * Idempotency has two independent guards. The caller only invokes this when
+   * D-34 (refined 2026-08-14): a void restores stock ONLY for the movements the
+   * invoice itself created — a Quick Sale counter item, or a product line added
+   * by hand in the builder, both deducted by {@link
+   * StockValidatorService.reserveAndDeduct} at finalize. A drug dispensed during
+   * a consultation is NOT restored: it was physically administered to the animal
+   * and consumed, and a billing correction does not put it back in the cupboard.
+   * Restoring it would inflate stock by an item that no longer exists.
+   *
+   * The discriminator is the same one that governs deduction: an
+   * `InvoiceLineItem` created from an already-dispensed movement carries that
+   * movement's id in `stockMovementId`, whereas a line the invoice deducted for
+   * itself has `stockMovementId` null and its movement is only reachable through
+   * the movement's own `invoiceId`. So the movements referenced by this
+   * invoice's line items are exactly the pre-existing ones, and they are
+   * excluded here — the mirror image of them being excluded from the stock plan
+   * at finalize. Deduct and restore stay symmetric: this method reverses exactly
+   * what `reserveAndDeduct` did for this invoice, and nothing else.
+   *
+   * ## No age gate
+   *
+   * D-34's other half stands: for the movements that ARE in scope, restoration
+   * is unconditional however old the invoice. The 24-hour window in
+   * D-26/D-51/D-57 governs the separate manual per-dispense "Return to stock"
+   * action in Phase 5's UI, not an invoice void.
+   *
+   * ## Idempotency
+   *
+   * Two independent guards. The caller only invokes this when
    * `voidRestoredStock` is false and sets it true in the same transaction; and
    * `StockMovement.reversedMovementId` is `@unique`, so a concurrent duplicate
    * that races past that check still fails atomically at the database rather
    * than double-crediting stock.
+   *
+   * @returns the number of movements actually reversed.
    */
   async restoreToStock(
     tx: TenantTransactionClient,
@@ -331,6 +357,19 @@ export class StockValidatorService {
     invoiceId: string,
     context: { userId: string; userName: string },
   ): Promise<number> {
+    // The movements this invoice merely STAMPED rather than created. Phase 5
+    // dispensed these during the consultation (or at the counter) before the
+    // invoice existed; the goods are gone and must not be credited back.
+    const stampedLines = await tx.invoiceLineItem.findMany({
+      where: { clinicId, invoiceId, stockMovementId: { not: null } },
+      select: { stockMovementId: true },
+    });
+    const preExistingMovementIds = new Set(
+      stampedLines
+        .map((line) => line.stockMovementId)
+        .filter((id): id is string => id != null),
+    );
+
     const dispensed = await tx.stockMovement.findMany({
       where: { clinicId, invoiceId, type: 'dispensed' },
       include: { reversal: true },
@@ -339,6 +378,10 @@ export class StockValidatorService {
     let restored = 0;
 
     for (const movement of dispensed) {
+      // Physically administered during the consultation — out of scope for a
+      // billing void (D-34 refined). Skip, do not reverse.
+      if (preExistingMovementIds.has(movement.id)) continue;
+
       // Already reversed — a return was recorded through Phase 5's own flow, or
       // a previous void attempt got this far. Skip rather than double-credit.
       if (movement.reversal) continue;
