@@ -99,6 +99,12 @@ function serviceLine(overrides: Record<string, unknown> = {}) {
 }
 
 describe('BIL-01 invoice creation over HTTP', () => {
+  it('rejects an unauthenticated request before any permission check runs', async () => {
+    const response = await request(app.server).get('/api/v1/billing/invoices');
+
+    expect(response.status).toBe(401);
+  });
+
   it('rejects a create whose body carries no line items', async () => {
     const response = await request(app.server)
       .post('/api/v1/billing/invoices')
