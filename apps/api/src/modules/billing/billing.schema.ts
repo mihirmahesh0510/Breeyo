@@ -58,6 +58,17 @@ export const markPaidBodySchema = z.object({
   reference: z.string().max(100).optional(),
 });
 
+/**
+ * D-13 "View Receipt". Both ids are validated: the receipt is looked up by
+ * `(id, clinicId, invoiceId)` so a valid receipt id from another invoice — or
+ * another clinic — cannot be read through this route.
+ */
+export const receiptParamsSchema = z.object({
+  invoiceId: z.string().uuid(),
+  receiptId: z.string().uuid(),
+});
+
 export type InvoiceParams = z.infer<typeof invoiceParamsSchema>;
+export type ReceiptParams = z.infer<typeof receiptParamsSchema>;
 export type PreviewTotalsBody = z.infer<typeof previewTotalsBodySchema>;
 export type MarkPaidBody = z.infer<typeof markPaidBodySchema>;

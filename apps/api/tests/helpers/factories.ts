@@ -38,6 +38,17 @@ export async function createTestClinic(
     name: string;
     address: string;
     contactPhone: string;
+    /**
+     * D-29 Razorpay credentials. Pass `razorpayKeySecretEnc` as an
+     * `encryptSecret(...)` envelope, never plaintext — the payment suite
+     * decrypts it for real so that the credential path is exercised rather than
+     * bypassed, and a plaintext value would fail the envelope check in
+     * `lib/crypto.ts` exactly as a corrupted row would in production.
+     */
+    razorpayKeyId: string;
+    razorpayKeySecretEnc: string;
+    razorpayWebhookSecretEnc: string;
+    razorpayWebhookToken: string;
   }> = {},
 ) {
   return prisma.clinic.create({
@@ -46,6 +57,16 @@ export async function createTestClinic(
       address: overrides.address || '123 Test Street, Mumbai 400001',
       contactPhone: overrides.contactPhone || `+91${Math.floor(7000000000 + Math.random() * 2999999999)}`,
       ownerId,
+      ...(overrides.razorpayKeyId ? { razorpayKeyId: overrides.razorpayKeyId } : {}),
+      ...(overrides.razorpayKeySecretEnc
+        ? { razorpayKeySecretEnc: overrides.razorpayKeySecretEnc }
+        : {}),
+      ...(overrides.razorpayWebhookSecretEnc
+        ? { razorpayWebhookSecretEnc: overrides.razorpayWebhookSecretEnc }
+        : {}),
+      ...(overrides.razorpayWebhookToken
+        ? { razorpayWebhookToken: overrides.razorpayWebhookToken }
+        : {}),
     },
   });
 }

@@ -7,8 +7,10 @@ import { PermissionService } from '../auth/permission.service.js';
 import { StockMovementService } from '../inventory/stock-movement.service.js';
 import { InvoiceRepository } from './invoice.repository.js';
 import { InvoiceService } from './invoice.service.js';
+import { PaymentService } from './payment.service.js';
 import { StockValidatorService } from './stock-validator.service.js';
 import { createInvoiceController } from './invoice.controller.js';
+import { createPaymentController } from './payment.controller.js';
 
 /**
  * Billing routes — the first consumer of `requirePermission` outside auth.
@@ -52,7 +54,22 @@ export default async function billingRoutes(fastify: FastifyInstance) {
     return new InvoiceService(repository, stockValidator, db);
   };
 
+  /**
+   * The payment side, built the same way and from the same tenant handle.
+   *
+   * `PaymentService` takes its own `InvoiceRepository` rather than sharing the
+   * one inside `buildService`: it needs `recomputePaymentState` and
+   * `getInvoiceDetail`, both stateless reads/writes on the handle, and a shared
+   * instance would couple two services that have no reason to see each other's
+   * state.
+   */
+  const buildPaymentService = (db: TenantPrismaClient) => {
+    const stockValidator = new StockValidatorService(db, new StockMovementService(db));
+    return new PaymentService(new InvoiceRepository(db, stockValidator), db);
+  };
+
   const controller = createInvoiceController(buildService);
+  const paymentController = createPaymentController(buildPaymentService);
 
   // `requirePermission` reads `request.server.permissionService`, and Fastify's
   // plugin encapsulation means auth.routes.ts's decoration never reaches this
@@ -92,4 +109,20 @@ export default async function billingRoutes(fastify: FastifyInstance) {
   fastify.post('/billing/invoices/:invoiceId/void', { preHandler: payHandler, handler: controller.voidHandler });
   fastify.post('/billing/invoices/:invoiceId/mark-paid', { preHandler: payHandler, handler: controller.markPaidHandler });
   fastify.post('/billing/invoices/:invoiceId/mark-unpaid', { preHandler: payHandler, handler: controller.markUnpaidHandler });
+
+  // Payment collection (BIL-05, D-09, D-10, D-11). All three writes sit behind
+  // MANAGE_PAYMENTS: creating a payment link is a money action, not a document
+  // action, even though nothing is captured until the webhook lands.
+  //
+  // No `config: { rateLimit }` override — these keep the global 200/min. A
+  // tighter per-route limit would throttle a busy front desk on a Saturday
+  // morning, and the abuse case (spamming link creation) is already bounded by
+  // the MANAGE_PAYMENTS gate and by every link being audited.
+  fastify.post('/billing/invoices/:invoiceId/payments', { preHandler: payHandler, handler: paymentController.recordPaymentHandler });
+  fastify.post('/billing/invoices/:invoiceId/payments/retry', { preHandler: payHandler, handler: paymentController.retryPaymentLinkHandler });
+  fastify.post('/billing/invoices/:invoiceId/payments/mark-unpaid', { preHandler: payHandler, handler: paymentController.markUnpaidHandler });
+
+  // Viewing a receipt is a read, so it sits behind VIEW_INVOICES — a clinician
+  // who treated the patient can see the receipt without being able to collect.
+  fastify.get('/billing/invoices/:invoiceId/receipts/:receiptId', { preHandler: readHandler, handler: paymentController.getReceiptHandler });
 }
