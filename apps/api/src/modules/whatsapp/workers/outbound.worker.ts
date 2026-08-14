@@ -20,15 +20,33 @@
  * it rethrows unmodified so BullMQ's `attempts`/backoff (already configured
  * on the queue via `WA_JOB_OPTIONS`) does the retrying, and the funnel is
  * never called for a merely-technical hiccup.
+ *
+ * `message.templateKey` selects the send shape (fix for the WHA-03/D-14
+ * dispatch gap): a template-keyed message (reminders, invoices, the
+ * `booking_confirmation` template) calls `provider.sendTemplate`, unchanged
+ * from before. A message with no `templateKey` — the booking flow's
+ * interactive pet/slot pickers and its plain-text fallback replies
+ * (`booking-inbound.handler.ts`), which only ever carry a `body` and an
+ * optional `interactiveOptions` list, never a button set — calls
+ * `provider.sendFreeform` instead. Both branches share the same
+ * provider-result/failure handling tail via `dispatchSend` below, so the
+ * replay-safety, funnel-integration, and retryable/terminal branching stay
+ * identical for both send shapes.
  */
 
 import { Worker, type Job } from 'bullmq';
 import type { Redis } from 'ioredis';
-import type { PrismaClient } from '@prisma/client';
-import type { WaTemplateKey } from '@breeyo/types';
+import type { PrismaClient, WhatsAppMessage, WhatsAppThread } from '@prisma/client';
+import type { WaListRow, WaTemplateKey } from '@breeyo/types';
 import { getTemplate } from '../template-registry.js';
 import { resolveProvider } from '../providers/provider-registry.js';
-import { WaSendError, type WaSendTemplateCommand } from '../providers/wa-provider.port.js';
+import {
+  WaSendError,
+  type WaProvider,
+  type WaSendFreeformCommand,
+  type WaSendResult,
+  type WaSendTemplateCommand,
+} from '../providers/wa-provider.port.js';
 import type { WhatsAppRepository } from '../whatsapp.repository.js';
 import type { DeliveryStatusService, DeliveryStatusFailure } from '../delivery-status.service.js';
 
@@ -93,54 +111,20 @@ async function markNumberInvalid(
 }
 
 /**
- * Dispatches one QUEUED message. Exported as a plain function (Pitfall 7) —
- * `createOutboundWorker` below is the only caller that wraps it in a live
- * BullMQ consumer.
+ * Shared result/failure tail for both send shapes (template and freeform):
+ * records the provider ACK, applies `SENT` through the delivery-status
+ * funnel on success, and on a `WaSendError` either rethrows (retryable) or
+ * records `FAILED` through the funnel (terminal) — identically regardless
+ * of which `provider.send*` method produced the result.
  */
-export async function processOutboundJob(
+async function dispatchSend(
   deps: OutboundWorkerDeps,
-  jobData: OutboundJobData,
+  message: WhatsAppMessage,
+  thread: WhatsAppThread,
+  send: () => Promise<WaSendResult>,
 ): Promise<void> {
-  const message = await deps.prisma.whatsAppMessage.findUnique({ where: { id: jobData.messageId } });
-  if (!message) {
-    // The row is gone or never existed. Nothing to dispatch, nothing to
-    // retry — a thrown error here would just cost BullMQ attempts on a
-    // message that will never exist.
-    return;
-  }
-
-  if (message.status !== 'QUEUED') {
-    // Replay safety: a redelivered/duplicated job for a message that has
-    // already progressed (SENT, FAILED, ...) does nothing.
-    return;
-  }
-
-  const thread = await deps.prisma.whatsAppThread.findUnique({ where: { id: message.threadId } });
-  if (!thread) {
-    // Should not happen (a message always has a thread) — defensive, not a
-    // retry target.
-    return;
-  }
-
-  const def = getTemplate(message.templateKey as WaTemplateKey);
-
-  const provider = await resolveProvider(message.clinicId, {
-    simulatorQueue: deps.simulatorQueue,
-    loadClinicConfig: (clinicId: string) => deps.repository.getOrCreateClinicConfig(clinicId),
-  });
-
-  const cmd: WaSendTemplateCommand = {
-    to: thread.waPhone,
-    templateKey: def.key,
-    languageCode: def.cloud.languageCode,
-    variables: (message.renderedVariables ?? {}) as Record<string, string>,
-    buttons: def.buttons,
-    // Our own row id — enables both provider-side and our-side idempotency.
-    idempotencyKey: message.id,
-  };
-
   try {
-    const result = await provider.sendTemplate(cmd);
+    const result = await send();
 
     await setProviderMessageId(deps.prisma, message.id, result.providerMessageId);
 
@@ -185,6 +169,89 @@ export async function processOutboundJob(
       await markNumberInvalid(deps.repository, message.clinicId, thread.ownerId as string);
     }
   }
+}
+
+function buildTemplateCommand(def: ReturnType<typeof getTemplate>, message: WhatsAppMessage, thread: WhatsAppThread): WaSendTemplateCommand {
+  return {
+    to: thread.waPhone,
+    templateKey: def.key,
+    languageCode: def.cloud.languageCode,
+    variables: (message.renderedVariables ?? {}) as Record<string, string>,
+    buttons: def.buttons,
+    // Our own row id — enables both provider-side and our-side idempotency.
+    idempotencyKey: message.id,
+  };
+}
+
+/**
+ * The booking flow (`booking-inbound.handler.ts`) is, today, the only
+ * producer of a `templateKey`-less outbound message, and it only ever
+ * builds an interactive LIST (the pet/slot pickers) or plain text (the
+ * no-working-hours/fully-booked/no-pets/slot-taken fallbacks) — never a
+ * button set. `buttons` is therefore always `undefined` here; a future
+ * producer of a freeform button send would need this function extended,
+ * not `booking-inbound.handler.ts` alone.
+ */
+function buildFreeformCommand(message: WhatsAppMessage, thread: WhatsAppThread): WaSendFreeformCommand {
+  const rows = (message.interactiveOptions ?? null) as unknown as WaListRow[] | null;
+  return {
+    to: thread.waPhone,
+    text: message.body,
+    list: rows && rows.length > 0 ? { buttonText: 'Choose', rows } : undefined,
+    buttons: undefined,
+    serviceWindowExpiresAt: thread.serviceWindowExpiresAt,
+    // Our own row id — enables both provider-side and our-side idempotency.
+    idempotencyKey: message.id,
+  };
+}
+
+/**
+ * Dispatches one QUEUED message. Exported as a plain function (Pitfall 7) —
+ * `createOutboundWorker` below is the only caller that wraps it in a live
+ * BullMQ consumer.
+ */
+export async function processOutboundJob(
+  deps: OutboundWorkerDeps,
+  jobData: OutboundJobData,
+): Promise<void> {
+  const message = await deps.prisma.whatsAppMessage.findUnique({ where: { id: jobData.messageId } });
+  if (!message) {
+    // The row is gone or never existed. Nothing to dispatch, nothing to
+    // retry — a thrown error here would just cost BullMQ attempts on a
+    // message that will never exist.
+    return;
+  }
+
+  if (message.status !== 'QUEUED') {
+    // Replay safety: a redelivered/duplicated job for a message that has
+    // already progressed (SENT, FAILED, ...) does nothing.
+    return;
+  }
+
+  const thread = await deps.prisma.whatsAppThread.findUnique({ where: { id: message.threadId } });
+  if (!thread) {
+    // Should not happen (a message always has a thread) — defensive, not a
+    // retry target.
+    return;
+  }
+
+  const provider: WaProvider = await resolveProvider(message.clinicId, {
+    simulatorQueue: deps.simulatorQueue,
+    loadClinicConfig: (clinicId: string) => deps.repository.getOrCreateClinicConfig(clinicId),
+  });
+
+  if (message.templateKey) {
+    const def = getTemplate(message.templateKey as WaTemplateKey);
+    const cmd = buildTemplateCommand(def, message, thread);
+    await dispatchSend(deps, message, thread, () => provider.sendTemplate(cmd));
+    return;
+  }
+
+  // No templateKey: a freeform send (the booking flow's interactive
+  // pickers and plain-text fallbacks — see the file header and
+  // `buildFreeformCommand`'s doc comment).
+  const cmd = buildFreeformCommand(message, thread);
+  await dispatchSend(deps, message, thread, () => provider.sendFreeform(cmd));
 }
 
 /**

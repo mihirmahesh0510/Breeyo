@@ -196,6 +196,111 @@ describe('processOutboundJob (WHA-04/05, D-16, Anti-Pattern A5)', () => {
   });
 });
 
+describe('processOutboundJob — freeform dispatch (WHA-03/D-14 fix: booking messages with no templateKey)', () => {
+  let deps: ReturnType<typeof createDeps>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    deps = createDeps();
+    deps.prisma.whatsAppThread.findUnique.mockResolvedValue(
+      buildThread({ serviceWindowExpiresAt: new Date('2026-08-16T00:00:00Z') }),
+    );
+  });
+
+  it('a QUEUED message with no templateKey but a body + interactiveOptions dispatches via provider.sendFreeform (not sendTemplate), and applies SENT through the funnel', async () => {
+    const rows = [{ id: 'booking:slot:abc', title: '10:00 AM', description: '{"bookingId":"b1"}' }];
+    deps.prisma.whatsAppMessage.findUnique.mockResolvedValue(
+      buildMessage({
+        templateKey: null,
+        body: 'Great — pick a time for the appointment:',
+        interactiveOptions: rows,
+        renderedVariables: null,
+      }),
+    );
+
+    const sendFreeform = vi.fn().mockResolvedValue({
+      providerMessageId: 'sim.message-1',
+      resolvedWaId: '919876543210',
+      acceptedStatus: 'ACCEPTED',
+      acceptedAt: new Date('2026-08-15T10:00:00Z'),
+    });
+    const sendTemplate = vi.fn();
+    (resolveProvider as any).mockResolvedValue({ sendFreeform, sendTemplate });
+
+    await processOutboundJob(deps as any, { messageId: MESSAGE_ID });
+
+    expect(sendFreeform).toHaveBeenCalledTimes(1);
+    expect(sendFreeform).toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: '+919876543210',
+        text: 'Great — pick a time for the appointment:',
+        list: { buttonText: 'Choose', rows },
+        buttons: undefined,
+        serviceWindowExpiresAt: new Date('2026-08-16T00:00:00Z'),
+        idempotencyKey: MESSAGE_ID,
+      }),
+    );
+    expect(sendTemplate).not.toHaveBeenCalled();
+
+    expect(deps.deliveryStatusService.apply).toHaveBeenCalledWith(
+      'sim.message-1',
+      'SENT',
+      null,
+      new Date('2026-08-15T10:00:00Z'),
+    );
+    expect(deps.prisma.whatsAppMessage.update).toHaveBeenCalledWith({
+      where: { id: MESSAGE_ID },
+      data: { providerMessageId: 'sim.message-1' },
+    });
+  });
+
+  it('a QUEUED message with no templateKey and no interactiveOptions (plain-text fallback) dispatches via sendFreeform with list undefined', async () => {
+    deps.prisma.whatsAppMessage.findUnique.mockResolvedValue(
+      buildMessage({
+        templateKey: null,
+        body: "We don't have any open slots in the next couple of weeks. Please call the clinic to book a time.",
+        interactiveOptions: null,
+        renderedVariables: null,
+      }),
+    );
+
+    const sendFreeform = vi.fn().mockResolvedValue({
+      providerMessageId: 'sim.message-1',
+      resolvedWaId: null,
+      acceptedStatus: 'ACCEPTED',
+      acceptedAt: new Date('2026-08-15T10:00:00Z'),
+    });
+    (resolveProvider as any).mockResolvedValue({ sendFreeform, sendTemplate: vi.fn() });
+
+    await processOutboundJob(deps as any, { messageId: MESSAGE_ID });
+
+    expect(sendFreeform).toHaveBeenCalledWith(expect.objectContaining({ list: undefined }));
+    expect(deps.deliveryStatusService.apply).toHaveBeenCalledWith(
+      'sim.message-1',
+      'SENT',
+      null,
+      new Date('2026-08-15T10:00:00Z'),
+    );
+  });
+
+  it('a freeform send that fails with a terminal WaSendError applies FAILED through the funnel and does not rethrow', async () => {
+    deps.prisma.whatsAppMessage.findUnique.mockResolvedValue(
+      buildMessage({ templateKey: null, body: 'text', interactiveOptions: null, renderedVariables: null }),
+    );
+    const sendFreeform = vi.fn().mockRejectedValue(
+      new WaSendError('OUTSIDE_SERVICE_WINDOW', 'SIM_131047', false, 'Free-form message requires an open window'),
+    );
+    (resolveProvider as any).mockResolvedValue({ sendFreeform, sendTemplate: vi.fn() });
+
+    await expect(processOutboundJob(deps as any, { messageId: MESSAGE_ID })).resolves.toBeUndefined();
+
+    expect(deps.deliveryStatusService.apply).toHaveBeenCalledTimes(1);
+    const [, status, failure] = deps.deliveryStatusService.apply.mock.calls[0];
+    expect(status).toBe('FAILED');
+    expect(failure).toMatchObject({ code: 'OUTSIDE_SERVICE_WINDOW' });
+  });
+});
+
 describe('createOutboundWorker (Pitfall 7)', () => {
   const originalNodeEnv = process.env.NODE_ENV;
 

@@ -12,6 +12,7 @@ import { WhatsAppRepository } from '../../src/modules/whatsapp/whatsapp.reposito
 import { SendAuthorizationService } from '../../src/modules/whatsapp/send-authorization.service.js';
 import { WhatsAppService } from '../../src/modules/whatsapp/whatsapp.service.js';
 import { DeliveryStatusService } from '../../src/modules/whatsapp/delivery-status.service.js';
+import { processOutboundJob } from '../../src/modules/whatsapp/workers/outbound.worker.js';
 import { InboundRouterService } from '../../src/modules/whatsapp/inbound-router.service.js';
 import { BookingRepository } from '../../src/modules/whatsapp/booking/booking.repository.js';
 import { BookingService } from '../../src/modules/whatsapp/booking/booking.service.js';
@@ -90,6 +91,7 @@ function buildHarness() {
     repository: whatsAppRepo,
     bookingService,
     slotService,
+    outboundQueue: queue as never,
   });
   const inboundRouter = new InboundRouterService({
     repository: whatsAppRepo,
@@ -478,4 +480,70 @@ describe('WhatsApp Booking (WHA-03)', () => {
     );
     expect(slotBack).toBe(true);
   });
+
+  it(
+    'WHA-03/D-14 fix: a "BOOK" message enqueues its slot-offer for real dispatch, and running that job ' +
+      'through the real outbound worker + real SimulatorProvider (no mocked provider) carries the message to ' +
+      'SENT and schedules the simulator\'s own delayed status-transition jobs — proving the booking flow no ' +
+      'longer stalls at QUEUED forever',
+    async () => {
+      const { clinic, owner } = await setupClinicOwnerPet(1);
+      const { inboundRouter, queue } = buildHarness();
+
+      await inboundRouter.route(textEvent('BOOK', owner.mobile), clinic.id);
+
+      const booking = await prisma.whatsAppBookingRequest.findFirst({
+        where: { clinicId: clinic.id, ownerId: owner.id },
+      });
+      const offerMsg = await latestOutboundBookingMessage(clinic.id, booking!.threadId as string);
+      expect(offerMsg!.status).toBe('QUEUED');
+      expect(offerMsg!.templateKey).toBeNull(); // a freeform interactive-list send, not a template
+
+      // The gap being fixed: the handler must enqueue a real dispatch job for
+      // this message, not just persist the row.
+      expect(queue.add).toHaveBeenCalledWith(
+        'send',
+        { messageId: offerMsg!.id },
+        expect.objectContaining({ jobId: `send:${offerMsg!.id}` }),
+      );
+
+      // Now actually run the outbound worker's dispatch function against the
+      // real DB and the real SimulatorProvider (via the real provider
+      // registry's default SIMULATOR config) -- no provider mock -- to prove
+      // the message reaches a provider round-trip and transitions to SENT.
+      const whatsAppRepo = new WhatsAppRepository(prisma);
+      const deliveryStatusService = new DeliveryStatusService(whatsAppRepo, prisma, null);
+      const simulatorQueue = { add: vi.fn().mockResolvedValue(undefined) };
+
+      await processOutboundJob(
+        {
+          prisma,
+          repository: whatsAppRepo,
+          deliveryStatusService,
+          simulatorQueue: simulatorQueue as never,
+          redis: {} as never,
+        },
+        { messageId: offerMsg!.id as string },
+      );
+
+      const sent = await prisma.whatsAppMessage.findUnique({ where: { id: offerMsg!.id } });
+      expect(sent!.status).toBe('SENT');
+      expect(sent!.providerMessageId).toBe(`sim.${offerMsg!.id}`);
+
+      // The SimulatorProvider itself scheduled its own SENT/DELIVERED
+      // status-transition jobs (`simulator.provider.ts`'s
+      // `enqueueStatusTransitions`) -- proof this went through the real
+      // simulator, not a stub.
+      expect(simulatorQueue.add).toHaveBeenCalledWith(
+        'status-transition',
+        { providerMessageId: `sim.${offerMsg!.id}`, status: 'SENT' },
+        expect.objectContaining({ jobId: `status:sim.${offerMsg!.id}:SENT` }),
+      );
+      expect(simulatorQueue.add).toHaveBeenCalledWith(
+        'status-transition',
+        { providerMessageId: `sim.${offerMsg!.id}`, status: 'DELIVERED' },
+        expect.objectContaining({ jobId: `status:sim.${offerMsg!.id}:DELIVERED` }),
+      );
+    },
+  );
 });

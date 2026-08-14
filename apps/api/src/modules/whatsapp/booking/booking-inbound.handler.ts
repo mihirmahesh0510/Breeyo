@@ -27,6 +27,15 @@
  * owner is choosing between, persisted on the outbound message's
  * `interactiveOptions` — `handlePayload` resolves the row id back to that
  * stored slot rather than parsing anything out of the payload itself.
+ *
+ * Fix (post-07-10, WHA-03/D-14): `createOutboundMessage` alone only
+ * persists a QUEUED row — it does not dispatch anything. Every message this
+ * file creates (the pet-picker list, the slot-picker list, and the
+ * no-working-hours/fully-booked/no-pets/slot-taken plain-text fallbacks)
+ * must ALSO enqueue a `whatsapp-outbound` job, exactly like
+ * `WhatsAppService.sendTemplate` does (`whatsapp.service.ts`), or the
+ * message never reaches a provider and the booking flow silently stalls.
+ * `sendText`/`sendList` below both enqueue after creating their message.
  */
 
 import { randomUUID } from 'node:crypto';
@@ -34,6 +43,7 @@ import type { PrismaClient } from '@prisma/client';
 import { WA_CAPABILITY_LIMITS, type WaListRow } from '@breeyo/types';
 import type { BookingInboundHandler, InboundRouteContext } from '../inbound-router.service.js';
 import type { WhatsAppRepository } from '../whatsapp.repository.js';
+import { WA_JOB_OPTIONS } from '../whatsapp-queue.js';
 import { BookingService } from './booking.service.js';
 import { SlotService, type GeneratedSlot } from './slot.service.js';
 
@@ -42,6 +52,9 @@ export interface BookingInboundHandlerDeps {
   repository: WhatsAppRepository;
   bookingService: BookingService;
   slotService: SlotService;
+  /** Same narrow shape as `WhatsAppService`'s `WaOutboundQueueLike` — a
+   * `{ add: vi.fn() }` fake satisfies it in tests without a real Redis. */
+  outboundQueue: import('bullmq').Queue;
 }
 
 interface StoredSlotMeta {
@@ -65,8 +78,23 @@ const PICK_PET_BODY = 'Which pet is this appointment for?';
 const PICK_SLOT_BODY = 'Great — pick a time for the appointment:';
 
 export function createBookingInboundHandler(deps: BookingInboundHandlerDeps): BookingInboundHandler {
+  /**
+   * Enqueues the just-created message for dispatch — the same
+   * `jobId: 'send:' + messageId` + `WA_JOB_OPTIONS` shape
+   * `WhatsAppService.sendTemplate`/`retryMessage` already use, so
+   * `outbound.worker.ts`'s replay-safe `processOutboundJob` picks it up
+   * identically regardless of which code path enqueued it.
+   */
+  async function enqueueOutbound(messageId: string) {
+    await deps.outboundQueue.add(
+      'send',
+      { messageId },
+      { jobId: `send:${messageId}`, ...WA_JOB_OPTIONS },
+    );
+  }
+
   async function sendText(ctx: InboundRouteContext, body: string) {
-    await deps.repository.createOutboundMessage(ctx.clinicId, {
+    const message = await deps.repository.createOutboundMessage(ctx.clinicId, {
       threadId: ctx.threadId,
       channel: 'SIMULATOR',
       body,
@@ -77,6 +105,7 @@ export function createBookingInboundHandler(deps: BookingInboundHandlerDeps): Bo
       lastMessagePreview: body.slice(0, 120),
       lastContextType: 'BOOKING',
     });
+    await enqueueOutbound(message.id as string);
   }
 
   async function sendList(
@@ -85,7 +114,7 @@ export function createBookingInboundHandler(deps: BookingInboundHandlerDeps): Bo
     rows: WaListRow[],
     contextId: string | null = null,
   ) {
-    await deps.repository.createOutboundMessage(ctx.clinicId, {
+    const message = await deps.repository.createOutboundMessage(ctx.clinicId, {
       threadId: ctx.threadId,
       channel: 'SIMULATOR',
       body,
@@ -98,6 +127,7 @@ export function createBookingInboundHandler(deps: BookingInboundHandlerDeps): Bo
       lastMessagePreview: body.slice(0, 120),
       lastContextType: 'BOOKING',
     });
+    await enqueueOutbound(message.id as string);
   }
 
   function buildSlotRows(bookingId: string, slots: GeneratedSlot[]): WaListRow[] {
