@@ -436,3 +436,193 @@ describe('InvoiceService.previewTotals', () => {
     expect(repository.updateDraft).not.toHaveBeenCalled();
   });
 });
+
+// ─── D-07 percentage discounts ──────────────────────────────────────────────
+//
+// `discountValue` is a WHOLE PERCENTAGE of 0-100 on the wire, in the database,
+// and everywhere in between. Nothing multiplies it on the way in, so nothing
+// may divide it as though something had: `10` means 10% off, not 0.1% off.
+//
+// The validator is the proof. `discountGuard` rejects a percent value above
+// 100 and `billing.test.ts` asserts that exactly 100 is accepted as "100% off"
+// (D-40). If the stored basis were percent x 100, then 100 — the largest value
+// the schema will admit — would mean a 1% discount and a half-off invoice would
+// be unrepresentable. A contract whose maximum legal value is 1% is not a
+// contract anyone wrote on purpose.
+
+function draftInput(overrides: Record<string, unknown> = {}) {
+  return {
+    source: 'manual',
+    lineItems: [
+      {
+        lineType: 'service',
+        description: 'Consultation',
+        quantity: 1,
+        unitPricePaise: 100_000, // ₹1000.00
+        taxTreatment: 'taxable',
+        gstRatePercent: 18,
+      },
+    ],
+    ...overrides,
+  };
+}
+
+describe('InvoiceService — percentage discounts are whole percents (D-07)', () => {
+  it('takes ₹100 off a ₹1000 invoice for a 10% invoice-level discount, not ₹1', async () => {
+    const { service, repository } = build();
+
+    await service.createDraft(
+      CLINIC,
+      ACTOR,
+      draftInput({ invoiceDiscountType: 'percent', invoiceDiscountValue: 10 }) as any,
+    );
+
+    const draft = (repository.createDraft.mock.calls[0] as any[])[1];
+    // 10% of 100000 paise is 10000 paise (₹100). Dividing by 10_000 instead of
+    // 100 yields 100 paise (₹1) — a 0.1% discount the customer cannot see.
+    expect(draft.invoiceDiscountPaise).toBe(10_000);
+  });
+
+  it('takes ₹100 off a ₹1000 line for a 10% line-level discount, not ₹1', async () => {
+    const { service, repository } = build();
+
+    await service.createDraft(
+      CLINIC,
+      ACTOR,
+      draftInput({
+        lineItems: [
+          {
+            lineType: 'service',
+            description: 'Consultation',
+            quantity: 1,
+            unitPricePaise: 100_000,
+            taxTreatment: 'taxable',
+            gstRatePercent: 18,
+            discountType: 'percent',
+            discountValue: 10,
+          },
+        ],
+      }) as any,
+    );
+
+    const draft = (repository.createDraft.mock.calls[0] as any[])[1];
+    expect(draft.lineItems[0].lineDiscountPaise).toBe(10_000);
+    expect(draft.lineItems[0].lineTotalPaise).toBe(90_000);
+  });
+
+  it('stores the percentage verbatim, so nothing re-scales it on the way in', async () => {
+    const { service, repository } = build();
+
+    await service.createDraft(
+      CLINIC,
+      ACTOR,
+      draftInput({ invoiceDiscountType: 'percent', invoiceDiscountValue: 10 }) as any,
+    );
+
+    const draft = (repository.createDraft.mock.calls[0] as any[])[1];
+    // The fix belongs in the arithmetic, not at the persistence boundary: a
+    // client that sends 10 must find 10 in the column (no percent x 100).
+    expect(draft.invoiceDiscountValue).toBe(10);
+    expect(draft.invoiceDiscountType).toBe('percent');
+  });
+
+  it('lets the schema maximum of 100 mean a whole-invoice write-off (D-40)', async () => {
+    const { service, repository } = build();
+
+    await service.createDraft(
+      CLINIC,
+      ACTOR,
+      draftInput({ invoiceDiscountType: 'percent', invoiceDiscountValue: 100 }) as any,
+    );
+
+    const draft = (repository.createDraft.mock.calls[0] as any[])[1];
+    expect(draft.invoiceDiscountPaise).toBe(100_000);
+  });
+
+  it('rounds a fractional paise result to the nearest paise', async () => {
+    const { service, repository } = build();
+
+    await service.createDraft(
+      CLINIC,
+      ACTOR,
+      draftInput({
+        lineItems: [
+          {
+            lineType: 'service',
+            description: 'Consultation',
+            quantity: 1,
+            unitPricePaise: 3333,
+            taxTreatment: 'taxable',
+            gstRatePercent: 18,
+            discountType: 'percent',
+            discountValue: 15,
+          },
+        ],
+      }) as any,
+    );
+
+    const draft = (repository.createDraft.mock.calls[0] as any[])[1];
+    // 15% of 3333 is 499.95 paise; money is integer paise (D-31).
+    expect(draft.lineItems[0].lineDiscountPaise).toBe(500);
+  });
+
+  it('leaves flat discounts alone — they were never scaled', async () => {
+    const { service, repository } = build();
+
+    await service.createDraft(
+      CLINIC,
+      ACTOR,
+      draftInput({ invoiceDiscountType: 'flat', invoiceDiscountValue: 2000 }) as any,
+    );
+
+    const draft = (repository.createDraft.mock.calls[0] as any[])[1];
+    expect(draft.invoiceDiscountPaise).toBe(2000);
+  });
+
+  it('never discounts more than the base it applies to', async () => {
+    const { service, repository } = build();
+
+    await service.createDraft(
+      CLINIC,
+      ACTOR,
+      draftInput({ invoiceDiscountType: 'flat', invoiceDiscountValue: 500_000 }) as any,
+    );
+
+    const draft = (repository.createDraft.mock.calls[0] as any[])[1];
+    expect(draft.invoiceDiscountPaise).toBe(100_000);
+  });
+
+  it('applies the same percentage on updateDraft', async () => {
+    const { service, repository } = build();
+
+    await service.updateDraft(CLINIC, INVOICE, ACTOR, {
+      lineItems: draftInput().lineItems,
+      invoiceDiscountType: 'percent',
+      invoiceDiscountValue: 10,
+    } as any);
+
+    const patch = (repository.updateDraft.mock.calls[0] as any[])[2];
+    expect(patch.invoiceDiscountPaise).toBe(10_000);
+  });
+
+  it('applies the same percentage when finalize re-reads a persisted draft', async () => {
+    const { service, repository } = build({
+      invoice: {
+        id: INVOICE,
+        status: 'DRAFT',
+        exceptionFlag: null,
+        invoiceDiscountType: 'percent',
+        invoiceDiscountValue: 10,
+        invoiceDiscountPaise: 0,
+      },
+      lineItems: [lineItem({ quantity: 2, unitPricePaise: 5000 })],
+    });
+
+    await service.finalize(CLINIC, INVOICE, ACTOR, {});
+
+    const c = (repository.finalizeInvoice.mock.calls[0] as any[])[2];
+    // 10% of a 10000-paise net is 1000 paise, leaving 9000 taxable.
+    expect(c.invoiceDiscountPaise).toBe(1000);
+    expect(c.taxableValuePaise).toBe(9000);
+  });
+});
