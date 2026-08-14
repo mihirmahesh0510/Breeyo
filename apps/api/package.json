@@ -6,7 +6,8 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsx watch src/server.ts",
-    "test": "vitest",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "lint": "echo 'no lint configured'",
     "db:migrate": "prisma migrate deploy",
     "db:generate": "prisma generate",
