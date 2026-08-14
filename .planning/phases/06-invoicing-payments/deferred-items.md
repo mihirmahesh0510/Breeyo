@@ -426,6 +426,14 @@ path is declared once. Whoever creates the detail screen must place it at
 `app/(app)/billing/[invoiceId].tsx` — a **sibling** of `(tabs)`, not a child of
 it, for the reason in item 20.
 
+**RESOLVED by plan 06-22.** `app/(app)/billing/[invoiceId].tsx` exists at the
+required path and all three call sites now resolve. The plan's own file list
+said `billing/invoice/[invoiceId].tsx`; this item won, because the three shipped
+call sites already pointed at the one-segment path and moving them would have
+been a wider change than adding the route. `BILLING_ROUTES` gained
+`creditNote(id)` (`billing/credit-note/[invoiceId]`, two segments, so it does
+not compete with the dynamic sibling) and `editDraft(id)`.
+
 ### 20. `BILLING_ROUTES` pointed into a directory that cannot exist (corrected)
 
 Plan 06-14 declared `consultationPicker` and `quickSale` under
@@ -497,6 +505,25 @@ checkbox should not be offered at all (D-34 having removed the decision from the
 user), or the schema should accept `false` and the server should honour it for
 billing-time lines. Plan 06-22 wires the sheet and will hit this immediately;
 whichever way it goes, D-26 and D-34 want reconciling in `06-CONTEXT.md`.
+
+**CLOSED by plan 06-22, first branch taken.** The checkbox is gone. The sheet
+now states `Stock added at billing time will be returned automatically; items
+already given to the patient will not.` and its single confirm sends
+`restoreStock: true`. `VoidConfirmPayload.restoreStock` narrowed from `boolean`
+to the literal `true`, so the opt-out is no longer representable in the
+component's own types either.
+
+The schema was deliberately *not* relaxed to accept `false`: honouring an
+opt-out would mean the server skipping a reversal for a line whose stock it
+knows it added, leaving the inventory figure wrong with no record of why. The
+value stays on the payload so the intent is explicit in the request and the
+audit log (T-06-115).
+
+Which of the two UI-SPEC void toasts appears is now decided by the server's
+`restoredMovementCount`, not by a control: `Invoice voided. Items returned to
+stock.` when something actually came back, `Invoice voided` when nothing did.
+Both spec strings survive, and neither is a claim the stock ledger cannot
+support.
 
 ---
 
