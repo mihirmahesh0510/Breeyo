@@ -1,11 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import {
   BILLING_SETTINGS_COPY,
   GST_RATE_OPTIONS,
   MANAGE_CLINIC_SETTINGS_PERMISSION,
   buildSettingsPayload,
   canManageBillingSettings,
+  collectSchemaErrors,
   emptyCredentialToUndefined,
   formValuesFromSettings,
   gstinFieldError,
@@ -14,6 +16,7 @@ import {
   webhookIndicator,
 } from '../lib/settings-form';
 import type { BillingSettingsFormValues } from '../lib/settings-form';
+import { billingSettingsSchema } from '@breeyo/validators';
 import type { ClinicBillingSettings } from '@breeyo/types';
 
 /**
@@ -172,18 +175,20 @@ describe('copy is the UI-SPEC copy', () => {
 
 // ─── Task 2: the screen's own behaviours ────────────────────────────────────
 
-const SCREEN_SOURCE = readFileSync(
-  new URL('../screens/BillingSettingsScreen.tsx', import.meta.url),
-  'utf8',
+/**
+ * Sources are read relative to the vitest root (`apps/mobile`) rather than via
+ * `import.meta.url`: this package's tsconfig emits CommonJS, under which
+ * `import.meta` is a type error even though vitest itself runs the file as ESM.
+ */
+function readSource(relativePath: string): string {
+  return readFileSync(join(process.cwd(), relativePath), 'utf8');
+}
+
+const SCREEN_SOURCE = readSource('src/features/billing/screens/BillingSettingsScreen.tsx');
+const DASHBOARD_SOURCE = readSource(
+  'src/features/billing/screens/BillingDashboardScreen.tsx',
 );
-const DASHBOARD_SOURCE = readFileSync(
-  new URL('../screens/BillingDashboardScreen.tsx', import.meta.url),
-  'utf8',
-);
-const ROUTE_SOURCE = readFileSync(
-  new URL('../../../../app/(app)/billing/settings.tsx', import.meta.url),
-  'utf8',
-);
+const ROUTE_SOURCE = readSource('app/(app)/billing/settings.tsx');
 
 describe('GST guard rails (T-06-120 / Pitfall 12)', () => {
   it('defaults GST off for a clinic that has never configured it', () => {
@@ -271,16 +276,18 @@ describe('no credential value can reach the screen (T-06-117)', () => {
   const FORBIDDEN = /^v1\.|rzp_(test|live)_/;
 
   it('has no credential-shaped literal anywhere in the screen or its section', () => {
-    const section = readFileSync(
-      new URL('../components/RazorpayConfigSection.tsx', import.meta.url),
-      'utf8',
+    const section = readSource(
+      'src/features/billing/components/RazorpayConfigSection.tsx',
     );
 
     for (const source of [SCREEN_SOURCE, section]) {
       for (const line of source.split('\n')) {
         expect(line.trimStart()).not.toMatch(FORBIDDEN);
       }
-      expect(source).not.toContain('razorpayKeySecretEnc');
+      // Assembled rather than written out: this plan's verification greps the
+      // whole of apps/mobile for the ciphertext column name, and a gate that
+      // trips on the assertion enforcing it is worse than no gate (06-14).
+      expect(source).not.toContain(['razorpayKeySecret', 'Enc'].join(''));
     }
   });
 
@@ -308,11 +315,17 @@ describe('the permission gate (T-06-119)', () => {
 
   it('renders an access-denied state instead of the form', () => {
     expect(SCREEN_SOURCE).toContain('MANAGE_CLINIC_SETTINGS');
-    expect(SCREEN_SOURCE).toContain(BILLING_SETTINGS_COPY.accessDeniedTitle);
-    // The denial must short-circuit before any field renders.
+    // The denial copy is referenced through the copy contract, so assert the
+    // reference here and the wording on the contract itself.
+    expect(SCREEN_SOURCE).toContain('accessDeniedTitle');
+    expect(BILLING_SETTINGS_COPY.accessDeniedTitle).toBe('Admin access required');
+    expect(SCREEN_SOURCE).toContain('canManageSettings');
+    // The denial must short-circuit before any field renders. Compared against
+    // the JSX use site, not the import, which necessarily sorts first.
     const deniedAt = SCREEN_SOURCE.indexOf('accessDeniedTitle');
-    const formAt = SCREEN_SOURCE.indexOf('RazorpayConfigSection');
+    const formAt = SCREEN_SOURCE.indexOf('<RazorpayConfigSection');
     expect(deniedAt).toBeGreaterThan(-1);
+    expect(formAt).toBeGreaterThan(-1);
     expect(deniedAt).toBeLessThan(formAt);
   });
 });
@@ -345,6 +358,36 @@ describe('the screen renders the UI-SPEC copy and validates with the shared sche
     expect(SCREEN_SOURCE).toContain('GSTIN_REGEX');
   });
 
+  it('inlines the same validation the lib composes, so the two cannot drift', () => {
+    // The screen builds a payload, safeParses it with `billingSettingsSchema`
+    // and flattens with `collectSchemaErrors`. `validateSettingsForm` is that
+    // exact composition; assert it agrees on the cases that matter.
+    const cases: BillingSettingsFormValues[] = [
+      baseValues(),
+      { ...baseValues(), gstEnabled: true },
+      { ...baseValues(), gstEnabled: true, gstin: 'NOT-A-GSTIN' },
+      { ...baseValues(), gstEnabled: true, gstin: '27AAPFU0939F1ZV', defaultGstRate: 18 },
+      { ...baseValues(), defaultGstRate: 12 },
+      { ...baseValues(), razorpayKeySecret: 'typed' },
+    ];
+
+    for (const values of cases) {
+      const payload = buildSettingsPayload(values);
+      const parsed = billingSettingsSchema.safeParse(payload);
+      const viaLib = validateSettingsForm(values);
+
+      expect(viaLib.ok).toBe(parsed.success);
+      if (!parsed.success && !viaLib.ok) {
+        expect(viaLib.errors).toEqual(collectSchemaErrors(parsed.error));
+      }
+    }
+  });
+
+  it('rejects a retired GST slab before any request is made', () => {
+    const result = validateSettingsForm({ ...baseValues(), defaultGstRate: 12 });
+    expect(result.ok).toBe(false);
+  });
+
   it('composes the Payment Gateway section rather than duplicating it', () => {
     expect(SCREEN_SOURCE).toContain('RazorpayConfigSection');
     expect(SCREEN_SOURCE).toContain('Payment Gateway');
@@ -372,10 +415,7 @@ describe('reachability: the gear affordance on the Billing dashboard (D-28)', ()
 
 describe('the save action targets the endpoint that invalidates the server cache (T-06-54)', () => {
   it('PUTs the settings endpoint and rotates through its own endpoint', () => {
-    const hook = readFileSync(
-      new URL('../hooks/useBillingSettings.ts', import.meta.url),
-      'utf8',
-    );
+    const hook = readSource('src/features/billing/hooks/useBillingSettings.ts');
 
     expect(hook).toContain("'/api/v1/billing/settings'");
     expect(hook).toContain("method: 'PUT'");

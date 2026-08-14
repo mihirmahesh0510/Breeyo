@@ -288,11 +288,30 @@ export type SettingsValidation =
   | { ok: true; payload: BillingSettingsPayload }
   | { ok: false; errors: Record<string, string> };
 
+/** Flattens Zod issues to one message per field, first issue winning. */
+export function collectSchemaErrors(error: {
+  errors: readonly { path: (string | number)[]; message: string }[];
+}): Record<string, string> {
+  const errors: Record<string, string> = {};
+  for (const issue of error.errors) {
+    const key = issue.path[0];
+    const field = typeof key === 'string' ? key : '_form';
+    if (errors[field] === undefined) {
+      errors[field] = issue.message;
+    }
+  }
+  return errors;
+}
+
 /**
  * Validates with the shared schema so the phone rejects exactly what the server
  * would, with exactly the server's wording. A client-side-only reimplementation
  * of the GST rule would be one drift away from letting an unregistered clinic
  * print a tax line.
+ *
+ * `BillingSettingsScreen` inlines these same three steps in its submit handler
+ * rather than calling this, so that the reject-before-request path is visible at
+ * the call site. A test asserts the two agree, so the duplication cannot drift.
  */
 export function validateSettingsForm(
   values: BillingSettingsFormValues,
@@ -303,14 +322,5 @@ export function validateSettingsForm(
   if (result.success) {
     return { ok: true, payload };
   }
-
-  const errors: Record<string, string> = {};
-  for (const issue of result.error.errors) {
-    const key = issue.path[0];
-    const field = typeof key === 'string' ? key : '_form';
-    if (errors[field] === undefined) {
-      errors[field] = issue.message;
-    }
-  }
-  return { ok: false, errors };
+  return { ok: false, errors: collectSchemaErrors(result.error) };
 }

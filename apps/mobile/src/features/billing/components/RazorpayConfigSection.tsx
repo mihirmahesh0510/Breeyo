@@ -99,11 +99,10 @@ export function RazorpayConfigSection({
   const indicator = webhookIndicator(webhookConfigured, webhookUrl);
 
   return (
+    // The `Payment Gateway` heading is rendered by `BillingSettingsScreen`
+    // alongside its two sibling section headings, so all three read as parallel
+    // in one place rather than one of them hiding inside a child component.
     <View style={styles.section} testID={testID}>
-      <Text variant="titleMedium" style={styles.sectionHeading}>
-        {BILLING_SETTINGS_COPY.paymentGatewaySection}
-      </Text>
-
       {/* --- Public key id --- */}
       <View style={styles.fieldGroup}>
         <Text variant="labelLarge" style={styles.fieldLabel}>
