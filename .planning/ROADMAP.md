@@ -222,8 +222,8 @@ Plans:
 
 **Wave 9** *(blocked on Wave 8 completion)*
 
-- [ ] 06-10-PLAN.md -- Webhook pipeline: raw-body rate-limit-exempt route with timing-safe HMAC and insert-based idempotency, BullMQ worker with clinic-room Socket.IO push, overdue and payment-link-expiry IST crons (BIL-06, D-11, D-23)
-- [ ] 06-11-PLAN.md -- Refunds bounded by captured-minus-pending payments with async gateway completion, credit notes with CN numbering and frozen-rate tax that leave the invoice immutable, 6 endpoints (D-12, D-19, D-22)
+- [x] 06-10-PLAN.md -- Webhook pipeline: raw-body rate-limit-exempt route with timing-safe HMAC and insert-based idempotency, BullMQ worker with clinic-room Socket.IO push, overdue and payment-link-expiry IST crons (BIL-06, D-11, D-23)
+- [x] 06-11-PLAN.md -- Refunds bounded by captured-minus-pending payments with async gateway completion, credit notes with CN numbering and frozen-rate tax that leave the invoice immutable, 6 endpoints (D-12, D-19, D-22)
 
 **Wave 10** *(blocked on Wave 9 completion)*
 
@@ -461,7 +461,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9 -> 10
 | 3. Patient Registration & Walk-in Queue | 8/8 | **Done** | 2026-08-03 (PR #3) |
 | 4. EMR & Clinical Records | 8/8 | Next | - |
 | 5. Inventory Management | 8/8 | Planned | - |
-| 6. Invoicing & Payments | 12/24 | In Progress|  |
+| 6. Invoicing & Payments | 14/24 | In Progress|  |
 | 7. WhatsApp Communication | 16/16 | Planned | - |
 | 8. Scheduling & Calendar | 7/7 | Planned | - |
 | 9. Web Dashboard & Owner Portal | 7/7 | Planned | - |
