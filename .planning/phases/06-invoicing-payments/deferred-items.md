@@ -349,3 +349,42 @@ Suspected cause: shared-database ordering between suites. `vitest.config.ts` set
 `cleanupTestData()` in `beforeEach` against one database; a suite whose teardown
 overlaps the next suite's seed would produce exactly this shape. Worth confirming
 before treating it as flaky-by-nature.
+
+## Found during 06-16 (mobile invoice builder)
+
+### 17. A percentage discount is applied 100x too small by the server
+
+`InvoiceService.resolveInvoiceDiscount` (`apps/api/src/modules/billing/invoice.service.ts:921-930`)
+treats the incoming `discountValue` as a percentage **multiplied by 100**:
+
+```ts
+// percent, stored as percent x 100
+return Math.min(Math.round((basePaise * value) / 10_000), basePaise);
+```
+
+but `createDraft` and `updateDraft` store `parsed.invoiceDiscountValue` /
+`line.discountValue` **verbatim**, with no multiplication anywhere on the way
+in. The scaling `packages/validators/src/billing.ts:120-125` documents ("The
+service multiplies on the way in. Do not send basis points here.") does not
+happen.
+
+Consequence: a client that sends the schema-legal `10` for "10% off" gets
+`base * 10 / 10000` = **0.1%** off. A 10% discount on Rs 5,000 comes out as
+Rs 5 instead of Rs 500.
+
+The client cannot compensate. `discountGuard` in the shared schema rejects a
+`percent` value above 100, so sending `1000` for 10% is unrepresentable — the
+schema and the service disagree about the unit, and the schema is the one both
+sides parse. Plan 06-16 therefore sends a whole percentage (0-100) as the schema
+specifies, which is the correct client behaviour against the documented
+contract.
+
+Fix belongs in `apps/api` (plan 06-06's file): either multiply by 100 at the two
+store sites, or divide by 100 rather than 10,000 in `resolveInvoiceDiscount` and
+correct the comment. Out of scope for 06-16 under the executor's scope boundary
+(a pre-existing defect in another plan's files, in a different app).
+
+**This blocks D-07 end to end** — percentage discounts are silently near-noops
+today — so it wants an owner before Phase 6 closes. Flat discounts are
+unaffected: `type === 'flat'` returns `Math.min(value, basePaise)` with no
+scaling, and that path is correct.
