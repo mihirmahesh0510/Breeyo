@@ -1,5 +1,5 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
-import { recordPaymentSchema } from '@breeyo/validators';
+import { createPaymentLinkSchema, recordPaymentSchema } from '@breeyo/validators';
 import type { TenantPrismaClient } from '../../lib/prisma-rls.js';
 import type { PaymentService } from './payment.service.js';
 import type { BillingActor } from './invoice.repository.js';
@@ -103,6 +103,40 @@ export function createPaymentController(
 
       // Only the four fields the payment sheet renders. The Razorpay response
       // itself never leaves the service (T-06-49).
+      return reply.status(200).send({ data: link });
+    },
+
+    /**
+     * POST /billing/payment-links — D-27 / D-39 combined multi-invoice link.
+     *
+     * Collection-scoped rather than nested under `/billing/invoices/:invoiceId`
+     * because no single invoice owns this request: the subject is the SET, and
+     * nesting it would make one arbitrary member of that set look privileged in
+     * the URL while the body named the rest.
+     *
+     * The client sends invoice ids and, optionally, a contact to bill to. It
+     * sends no amount — the service sums the outstanding balances itself, which
+     * is the same rule the single-invoice path follows and the reason a client
+     * can never propose what an owner owes (T-06-51).
+     */
+    async createCombinedPaymentLinkHandler(request: FastifyRequest, reply: FastifyReply) {
+      const service = buildPaymentService(request.db);
+
+      const body = createPaymentLinkSchema.safeParse(request.body);
+      if (!body.success) {
+        return validationError(reply, body.error.errors);
+      }
+
+      const link = await service.createCombinedPaymentLink(
+        request.user.activeClinicId,
+        body.data.invoiceIds,
+        actorFor(request),
+        {
+          customerName: body.data.customerName,
+          customerContact: body.data.customerContact,
+        },
+      );
+
       return reply.status(200).send({ data: link });
     },
 

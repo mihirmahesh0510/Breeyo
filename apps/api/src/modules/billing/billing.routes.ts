@@ -212,6 +212,15 @@ export default async function billingRoutes(fastify: FastifyInstance) {
   fastify.post('/billing/invoices/:invoiceId/payments/retry', { preHandler: payHandler, handler: paymentController.retryPaymentLinkHandler });
   fastify.post('/billing/invoices/:invoiceId/payments/mark-unpaid', { preHandler: payHandler, handler: paymentController.markUnpaidHandler });
 
+  // D-27 / D-39: one link settling several of an owner's invoices. Behind
+  // MANAGE_PAYMENTS like every other link-creating route — it is the same
+  // authority applied to a set rather than to one invoice, so a Clinician who
+  // cannot open a link for one invoice must not be able to open one for five.
+  //
+  // A collection path, not a nested one: the request's subject is the set of
+  // invoices, which the body names.
+  fastify.post('/billing/payment-links', { preHandler: payHandler, handler: paymentController.createCombinedPaymentLinkHandler });
+
   // Viewing a receipt is a read, so it sits behind VIEW_INVOICES — a clinician
   // who treated the patient can see the receipt without being able to collect.
   fastify.get('/billing/invoices/:invoiceId/receipts/:receiptId', { preHandler: readHandler, handler: paymentController.getReceiptHandler });

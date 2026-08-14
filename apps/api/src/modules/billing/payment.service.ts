@@ -158,6 +158,51 @@ const noPendingPaymentLink = (invoiceId: string) =>
     'NO_PENDING_PAYMENT_LINK',
   );
 
+/**
+ * D-27: an owner may settle several invoices at once, and that is the ONLY
+ * grouping the product recognises. Two owners' invoices behind one link would
+ * produce a single receipt trail for two separate accounts, and a refund on one
+ * of them would have no unambiguous counterparty.
+ *
+ * An invoice with no owner (a D-44 walk-in) is rejected here for the same
+ * reason rather than treated as "no owner, so it matches": two unattributed
+ * counter sales are two different strangers, not one customer.
+ */
+const invoicesNotSameOwner = () =>
+  domainError(
+    'A combined payment link must cover invoices for one pet owner. Unattributed walk-in invoices cannot be combined.',
+    400,
+    'INVOICES_NOT_SAME_OWNER',
+  );
+
+/**
+ * Distinct from `PAYMENT_EXCEEDS_BALANCE`: nothing was over-asked, the invoice
+ * simply has nothing left to collect. `assertPayable` cannot catch this — it
+ * treats `PAID -> PAID` as valid so that a replayed webhook is a no-op rather
+ * than a 409 — but a request to open a NEW link for a settled invoice is not a
+ * replay, it is staff about to hand an owner a QR code for zero rupees.
+ */
+const invoiceAlreadySettled = (reference: string) =>
+  domainError(
+    `Invoice ${reference} is already settled and has nothing left to collect`,
+    409,
+    'INVOICE_ALREADY_SETTLED',
+  );
+
+/**
+ * The balance moved between reading it and writing the payment rows — cash
+ * taken at the counter while the link was being minted, most likely. Raised
+ * inside the transaction so the rows roll back and the caller cancels the link
+ * at the gateway, rather than leaving a live link for a figure that is no
+ * longer owed.
+ */
+const invoiceBalanceChanged = (reference: string) =>
+  domainError(
+    `Invoice ${reference} changed while the payment link was being created. Try again.`,
+    409,
+    'INVOICE_BALANCE_CHANGED',
+  );
+
 // ─── Shapes ─────────────────────────────────────────────────────────────────
 
 export interface SplitPaymentInput {
@@ -193,6 +238,41 @@ export interface PaymentLinkResult {
   shortUrl: string;
   expiresAt: Date;
   amountPaise: number;
+}
+
+/** Per-invoice overrides for a combined link (D-44 allows both to be absent). */
+export interface CombinedPaymentLinkOptions {
+  method?: 'upi' | 'card';
+  customerName?: string;
+  customerContact?: string;
+}
+
+/**
+ * A combined link, plus the breakdown the payment sheet lists.
+ *
+ * `paymentGroupId` is returned because it, not the link id, is what ties the
+ * settlement together: the webhook fans out across the group, and support
+ * tracing "which invoices did this one payment cover" starts here.
+ */
+export interface CombinedPaymentLinkResult extends PaymentLinkResult {
+  paymentGroupId: string;
+  invoices: Array<{
+    invoiceId: string;
+    invoiceNumber: string | null;
+    amountPaise: number;
+  }>;
+}
+
+/** The `invoices` columns a combined-link decision is made from. */
+interface CombinableInvoice {
+  id: string;
+  status: string;
+  invoiceNumber: string | null;
+  balancePaise: number;
+  exceptionFlag: string | null;
+  ownerId: string | null;
+  owner: { name: string | null; mobile: string | null } | null;
+  pet: { name: string | null } | null;
 }
 
 /** The `invoices` columns a payment decision is made from. */
@@ -357,6 +437,183 @@ export class PaymentService {
       shortUrl: link.short_url,
       expiresAt,
       amountPaise,
+    };
+  }
+
+  // ─── Combined multi-invoice links (D-27, D-39) ────────────────────────────
+
+  /**
+   * Opens ONE Razorpay link covering several of an owner's invoices.
+   *
+   * D-27 gives each consultation its own invoice, so a multi-pet owner leaving
+   * the clinic on a Saturday morning may be holding three of them. This is the
+   * path that lets the front desk show a single QR code for the lot.
+   *
+   * ## One link, several rows
+   *
+   * The link is one object at Razorpay; on our side it becomes one `Payment`
+   * row per invoice, all carrying the same `paymentGroupId`. That shape is not
+   * incidental — plan 06-03 relaxed the unique constraint to
+   * `(razorpay_payment_link_id, invoice_id)` to permit it, and plan 06-10's
+   * `resolveLegs` finds the group by that column and settles every invoice in
+   * it from the single `payment_link.paid`. Writing one aggregate row against a
+   * "primary" invoice instead would settle one invoice and silently strand the
+   * rest, and no amount of correct webhook code could recover the association.
+   *
+   * ## What is checked, and why here
+   *
+   * Every guard below asks a question that has no single-invoice equivalent:
+   * do these invoices belong to one owner, is each of them still payable, do
+   * their balances still sum to what we are about to ask for. They run BEFORE
+   * the SDK call so an invalid combination is a 400 or 409 naming the offending
+   * invoice, not a 502 that reads to the front desk as a gateway outage.
+   *
+   * Nothing here marks anything `PAID`. As everywhere else in this file, that
+   * remains the webhook's job (T-06-50).
+   */
+  async createCombinedPaymentLink(
+    clinicId: string,
+    invoiceIds: string[],
+    actor: BillingActor,
+    options: CombinedPaymentLinkOptions = {},
+  ): Promise<CombinedPaymentLinkResult> {
+    // A client that lists the same invoice twice means it once, not twice. The
+    // alternative — billing it twice inside one link — is an overpayment we
+    // would then have to refund by hand.
+    const uniqueIds = [...new Set(invoiceIds)];
+
+    if (uniqueIds.length === 0) {
+      throw domainError(
+        'A combined payment link needs at least one invoice',
+        400,
+        'VALIDATION_ERROR',
+      );
+    }
+
+    const invoices = await this.loadInvoicesForCombinedPayment(clinicId, uniqueIds);
+
+    this.assertOneOwner(invoices);
+    for (const invoice of invoices) {
+      this.assertCombinable(invoice);
+    }
+
+    const amountPaise = invoices.reduce((sum, invoice) => sum + invoice.balancePaise, 0);
+
+    if (amountPaise < RAZORPAY_MIN_AMOUNT_PAISE) {
+      throw amountBelowGatewayMinimum(amountPaise);
+    }
+
+    const method: PaymentMethod = options.method ?? 'upi';
+    const paymentGroupId = randomUUID();
+    // Razorpay's `reference_id` is capped at 40 characters, which fits exactly
+    // one bare UUID. The first invoice carries it so the webhook's
+    // "does this reference resolve to an invoice in this clinic" check has
+    // something to resolve; the group, not this field, is what settles the rest.
+    const primary = invoices[0];
+
+    const rzp = getRazorpayForClinic(await this.loadClinicRazorpayConfig(clinicId));
+    const now = new Date();
+    const expireBy = toRazorpayExpiry(now);
+
+    let link;
+    try {
+      link = await rzp.paymentLink.create({
+        amount: amountPaise,
+        currency: 'INR',
+        // Same reasoning as the single-invoice link, with more at stake: a
+        // partial payment against a combined link would have to be allocated
+        // across several owners' invoices by guesswork.
+        accept_partial: false,
+        description: this.combinedLinkDescription(invoices),
+        reference_id: primary.id,
+        customer: this.buildCustomer({
+          name: options.customerName ?? primary.owner?.name ?? null,
+          mobile: options.customerContact ?? primary.owner?.mobile ?? null,
+        }),
+        // D-16 / D-44, exactly as for a single-invoice link.
+        notify: { sms: false, email: false },
+        reminder_enable: false,
+        expire_by: expireBy,
+        // `paymentGroupId` rides along so a support question about one Razorpay
+        // link can be answered from the gateway dashboard alone.
+        notes: {
+          clinicId,
+          invoiceId: primary.id,
+          paymentGroupId,
+          invoiceCount: String(invoices.length),
+        },
+      });
+    } catch (err) {
+      normalizeRazorpayError(err);
+    }
+
+    const expiresAt = new Date(expireBy * 1000);
+
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        for (const invoice of invoices) {
+          // Re-read under FOR UPDATE. The balances above were read before the
+          // gateway round trip, and cash taken at the counter in that window
+          // would leave this link collecting more than is owed. Bailing out
+          // here rolls the rows back and cancels the link below, which is the
+          // outcome that cannot overcharge anyone.
+          const locked = await this.lockInvoice(tx, clinicId, invoice.id);
+          if (locked.balance_paise !== invoice.balancePaise) {
+            throw invoiceBalanceChanged(invoice.invoiceNumber ?? invoice.id);
+          }
+
+          await tx.payment.create({
+            data: {
+              clinicId,
+              invoiceId: invoice.id,
+              method,
+              channel: 'razorpay',
+              amountPaise: invoice.balancePaise,
+              status: 'pending',
+              razorpayPaymentLinkId: link.id,
+              shortUrl: link.short_url,
+              paymentGroupId,
+              expiresAt,
+              recordedById: actor.userId,
+            },
+          });
+
+          await writeBillingAuditLog(tx, BillingAuditEvent.PAYMENT_LINK_CREATED, {
+            clinicId,
+            userId: actor.userId,
+            invoiceId: invoice.id,
+            // Per invoice, not once for the group: an audit trail read from a
+            // single invoice must show that this invoice was put behind a link,
+            // and `paymentGroupId` is what leads back to its siblings.
+            metadata: {
+              razorpayPaymentLinkId: link.id,
+              amountPaise: invoice.balancePaise,
+              method,
+              expireBy,
+              paymentGroupId,
+              combinedInvoiceCount: invoices.length,
+            },
+          });
+        }
+      });
+    } catch (err) {
+      // T-06-53, amplified: an uncancelled combined link is one an owner could
+      // pay for several invoices none of which would ever settle.
+      await rzp.paymentLink.cancel(link.id).catch(() => undefined);
+      throw err;
+    }
+
+    return {
+      paymentLinkId: link.id,
+      shortUrl: link.short_url,
+      expiresAt,
+      amountPaise,
+      paymentGroupId,
+      invoices: invoices.map((invoice) => ({
+        invoiceId: invoice.id,
+        invoiceNumber: invoice.invoiceNumber,
+        amountPaise: invoice.balancePaise,
+      })),
     };
   }
 
@@ -654,6 +911,100 @@ export class PaymentService {
 
     if (!invoice) throw invoiceNotFound(invoiceId);
     return invoice;
+  }
+
+  /**
+   * Loads every invoice in a combined request, in the order asked for.
+   *
+   * The order is preserved deliberately: the first invoice supplies the
+   * gateway's `reference_id` and the customer block, so "which one is primary"
+   * is the caller's stated first choice rather than whatever the database
+   * happened to return.
+   *
+   * A single query scoped to the clinic, then a per-id presence check. An id
+   * belonging to another clinic is indistinguishable from one that does not
+   * exist, which is the point — a 403 here would confirm the invoice is real.
+   */
+  private async loadInvoicesForCombinedPayment(
+    clinicId: string,
+    invoiceIds: string[],
+  ): Promise<CombinableInvoice[]> {
+    const rows = await this.prisma.invoice.findMany({
+      where: { id: { in: invoiceIds }, clinicId },
+      select: {
+        id: true,
+        status: true,
+        invoiceNumber: true,
+        balancePaise: true,
+        exceptionFlag: true,
+        ownerId: true,
+        owner: { select: { name: true, mobile: true } },
+        pet: { select: { name: true } },
+      },
+    });
+
+    const byId = new Map(rows.map((row) => [row.id, row]));
+
+    return invoiceIds.map((id) => {
+      const row = byId.get(id);
+      if (!row) throw invoiceNotFound(id);
+      return row;
+    });
+  }
+
+  /**
+   * D-27: a combined link settles ONE owner's invoices.
+   *
+   * A lone invoice is exempt — that is the degenerate group of one, and D-44
+   * explicitly allows a walk-in with no owner record to be handed a QR code.
+   * The moment there are two, an owner is required on each and they must match,
+   * because `null === null` is not "the same person".
+   */
+  private assertOneOwner(invoices: CombinableInvoice[]): void {
+    if (invoices.length < 2) return;
+
+    const [first, ...rest] = invoices;
+    if (first.ownerId == null) throw invoicesNotSameOwner();
+    if (rest.some((invoice) => invoice.ownerId !== first.ownerId)) {
+      throw invoicesNotSameOwner();
+    }
+  }
+
+  /**
+   * Whether one invoice may join a combined link.
+   *
+   * Delegates the state question to {@link assertPayable} rather than restating
+   * it, so D-20 keeps a single definition, and re-raises the failure with the
+   * invoice named — with three invoices selected, "an invoice in state VOIDED
+   * cannot receive a payment" is not an actionable message on its own.
+   */
+  private assertCombinable(invoice: CombinableInvoice): void {
+    const reference = invoice.invoiceNumber ?? invoice.id;
+
+    try {
+      this.assertPayable(invoice.status as InvoiceStatus, invoice.exceptionFlag);
+    } catch (err) {
+      const domain = err as DomainError;
+      throw domainError(`Invoice ${reference}: ${domain.message}`, domain.statusCode, domain.code);
+    }
+
+    if (invoice.balancePaise <= 0) {
+      throw invoiceAlreadySettled(reference);
+    }
+  }
+
+  /**
+   * Razorpay caps `description` at 2048 characters, and an owner scanning the
+   * QR sees this text — so it names the invoices being settled rather than the
+   * pets, which may repeat across a multi-pet visit.
+   */
+  private combinedLinkDescription(invoices: CombinableInvoice[]): string {
+    if (invoices.length === 1) {
+      return this.linkDescription(invoices[0]);
+    }
+
+    const numbers = invoices.map((invoice) => invoice.invoiceNumber ?? 'Invoice').join(', ');
+    return `${invoices.length} invoices — ${numbers}`.slice(0, 2048);
   }
 
   /**
