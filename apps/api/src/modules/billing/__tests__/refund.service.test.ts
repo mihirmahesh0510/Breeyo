@@ -18,6 +18,20 @@ import { buildRazorpayMock, type RazorpayMock } from './razorpay-mock.js';
  * `getRazorpayForClinic` is the only thing stubbed out of `razorpay.client.js`;
  * `normalizeRazorpayError` runs for real, because the 502 mapping is one of the
  * behaviours under test.
+ *
+ * ## The double models COMMIT and ROLLBACK, not just call counts (CR-02)
+ *
+ * The `$transaction` stand-in below stages every write its callback performs
+ * and applies them to `durableRefunds()` only when the callback RESOLVES. A
+ * callback that throws discards its writes, exactly as Postgres would. Without
+ * that, a double where `$transaction(fn) => fn(tx)` is the whole implementation
+ * cannot express the one failure that matters here — the gateway accepted, the
+ * enclosing transaction then rolled back, and the record of money that has
+ * genuinely left the account went with it.
+ *
+ * The gateway double is instrumented in the same spirit: it records the
+ * transaction depth it was called at and a snapshot of what was durable at that
+ * moment. Those two facts are what the CR-02 block asserts on.
  */
 
 const rzpMockHolder: { current: RazorpayMock } = { current: buildRazorpayMock() };
@@ -76,20 +90,90 @@ function digitalLeg(amountPaise = 50000): Row {
   };
 }
 
-function build(
-  options: {
-    invoice?: Row | null;
-    payments?: Row[];
-    refunds?: Row[];
-  } = {},
-) {
-  rzpMockHolder.current = buildRazorpayMock();
+const CLINIC_RAZORPAY_CONFIG = {
+  id: CLINIC,
+  razorpayKeyId: 'rzp_test_key',
+  razorpayKeySecretEnc: 'v1.aa.bb.cc',
+  razorpayTestMode: true,
+};
 
+interface BuildOptions {
+  invoice?: Row | null;
+  payments?: Row[];
+  refunds?: Row[];
+  /**
+   * Rejects `payments.refund` with this value, the way the SDK does on a 400.
+   *
+   * Supplied through `build` rather than by reassigning the mock afterwards so
+   * that the depth/durability instrumentation stays installed — a test that
+   * swapped the function out would silently stop recording the two facts the
+   * CR-02 assertions depend on.
+   */
+  gatewayError?: unknown;
+  /**
+   * CR-02, the dangerous half. Every database WRITE attempted after the gateway
+   * has accepted fails: the interactive transaction hit its 5 s timeout, the
+   * pool dropped the connection, the server went away. Real money has moved;
+   * what must survive is whatever was committed before the call.
+   */
+  failDbAfterGateway?: boolean;
+}
+
+function build(options: BuildOptions = {}) {
   const invoice = options.invoice === null ? null : lockedRow(options.invoice ?? {});
   const payments = options.payments ?? [cashLeg()];
   const refunds = options.refunds ?? [];
 
   let created = 0;
+
+  // ── Durability model ──────────────────────────────────────────────────────
+  // `durable` holds only writes that a COMMITTED transaction (or a standalone
+  // statement) performed. Writes staged inside a transaction that later rejects
+  // are dropped on the floor, which is the whole point.
+  const durable = new Map<string, Row>();
+  let staged: Array<() => void> | null = null;
+
+  const state = {
+    txDepth: 0,
+    gatewayCalled: false,
+    /** The `$transaction` nesting depth each gateway call was made at. */
+    txDepthAtGatewayCall: [] as number[],
+    /** What was already durable at the moment of each gateway call. */
+    durableAtGatewayCall: [] as Row[][],
+  };
+
+  function apply(write: () => void) {
+    if (staged) staged.push(write);
+    else write();
+  }
+
+  /** The post-gateway outage. Writes only — a read is not what loses money. */
+  function guardWrite() {
+    if (options.failDbAfterGateway && state.gatewayCalled) {
+      throw new Error('write failed: the connection dropped after the gateway accepted');
+    }
+  }
+
+  function makeRefundWriter() {
+    return {
+      create: vi.fn(async ({ data }: { data: Row }) => {
+        guardWrite();
+        created += 1;
+        const row = { id: `refund-${created}`, razorpayRefundId: null, processedAt: null, ...data };
+        apply(() => durable.set(row.id, { ...row }));
+        return row;
+      }),
+      update: vi.fn(async ({ where, data }: { where: Row; data: Row }) => {
+        guardWrite();
+        const id = where.id as string;
+        apply(() => {
+          const prev = durable.get(id);
+          if (prev) durable.set(id, { ...prev, ...data });
+        });
+        return { id, ...data };
+      }),
+    };
+  }
 
   const tx = {
     $queryRaw: vi.fn(async (_query: unknown) => (invoice ? [invoice] : [])),
@@ -99,42 +183,83 @@ function build(
     },
     refund: {
       findMany: vi.fn(async () => refunds),
-      create: vi.fn(async ({ data }: { data: Row }) => {
-        created += 1;
-        return { id: `refund-${created}`, razorpayRefundId: null, processedAt: null, ...data };
-      }),
-      update: vi.fn(async ({ where, data }: { where: Row; data: Row }) => ({
-        id: where.id,
-        ...data,
-      })),
+      ...makeRefundWriter(),
     },
-    clinic: {
-      findFirst: vi.fn(async () => ({
-        id: CLINIC,
-        razorpayKeyId: 'rzp_test_key',
-        razorpayKeySecretEnc: 'v1.aa.bb.cc',
-        razorpayTestMode: true,
-      })),
-    },
+    clinic: { findFirst: vi.fn(async () => CLINIC_RAZORPAY_CONFIG) },
     billingAuditLog: {
-      create: vi.fn(async (_args: { data: Row }) => ({})),
+      create: vi.fn(async (_args: { data: Row }) => {
+        guardWrite();
+        return {};
+      }),
     },
   };
 
   const prisma = {
-    $transaction: vi.fn(async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
-    invoice: { findFirst: vi.fn(async () => (invoice ? { id: INVOICE, status: invoice.status } : null)) },
+    $transaction: vi.fn(async (fn: (t: typeof tx) => Promise<unknown>) => {
+      guardWrite();
+      const outer = staged;
+      staged = [];
+      state.txDepth += 1;
+      try {
+        const result = await fn(tx);
+        const mine = staged;
+        state.txDepth -= 1;
+        staged = outer;
+        for (const write of mine) write(); // COMMIT
+        return result;
+      } catch (err) {
+        state.txDepth -= 1;
+        staged = outer; // ROLLBACK: `mine` is discarded unapplied
+        throw err;
+      }
+    }),
+    invoice: {
+      findFirst: vi.fn(async () => (invoice ? { id: INVOICE, status: invoice.status } : null)),
+    },
     payment: { findMany: vi.fn(async () => payments) },
-    refund: { findMany: vi.fn(async () => refunds) },
+    refund: { findMany: vi.fn(async () => refunds), ...makeRefundWriter() },
+    clinic: { findFirst: vi.fn(async () => CLINIC_RAZORPAY_CONFIG) },
+    billingAuditLog: {
+      create: vi.fn(async (_args: { data: Row }) => {
+        guardWrite();
+        return {};
+      }),
+    },
   };
 
   const repository = {
-    recomputePaymentState: vi.fn(async () => undefined),
+    recomputePaymentState: vi.fn(async () => {
+      guardWrite();
+    }),
     getInvoiceDetail: vi.fn(async () => ({ id: INVOICE, status: 'PAID', balancePaise: 50000 })),
   };
 
-  const service = new RefundService(repository as never, prisma as never);
-  return { service, repository, prisma, tx, rzp: rzpMockHolder.current };
+  // The gateway double goes on last, wrapping whatever `buildRazorpayMock`
+  // produced, so that every path through the service is observed.
+  rzpMockHolder.current = buildRazorpayMock();
+  const inner = rzpMockHolder.current.payments.refund;
+  rzpMockHolder.current.payments.refund = vi.fn(async (paymentId: string, params: Row) => {
+    state.gatewayCalled = true;
+    state.txDepthAtGatewayCall.push(state.txDepth);
+    state.durableAtGatewayCall.push([...durable.values()].map((row) => ({ ...row })));
+    if ('gatewayError' in options) throw options.gatewayError;
+    return (inner as unknown as (p: string, q: Row) => Promise<unknown>)(paymentId, params);
+  }) as unknown as RazorpayMock['payments']['refund'];
+
+  const logger = { error: vi.fn() };
+
+  const service = new RefundService(repository as never, prisma as never, logger);
+  return {
+    service,
+    repository,
+    prisma,
+    tx,
+    logger,
+    rzp: rzpMockHolder.current,
+    state,
+    /** Everything a committed transaction actually left behind. */
+    durableRefunds: () => [...durable.values()],
+  };
 }
 
 beforeEach(() => {
@@ -239,7 +364,7 @@ describe('RefundService.createRefund — the bound (T-06-66, T-06-67)', () => {
 
 describe('RefundService.createRefund — digital legs settle asynchronously (T-06-68)', () => {
   it('inserts the refund PENDING and leaves it pending even though the SDK resolved', async () => {
-    const { service, tx, rzp } = build({ payments: [digitalLeg(50000)] });
+    const { service, tx, prisma, rzp } = build({ payments: [digitalLeg(50000)] });
 
     const result = await service.createRefund(CLINIC, INVOICE, ACTOR, {
       type: 'full',
@@ -254,8 +379,9 @@ describe('RefundService.createRefund — digital legs settle asynchronously (T-0
     expect(rzp.payments.refund).toHaveBeenCalledTimes(1);
     expect(result.refunds[0].status).toBe('pending');
 
-    // Only the gateway id is written back — never the status.
-    const update = tx.refund.update.mock.calls[0][0];
+    // The write-back is on the non-transactional handle (CR-02): a single
+    // statement, after the reservation has already committed.
+    const update = prisma.refund.update.mock.calls[0][0];
     expect(update.data).toHaveProperty('razorpayRefundId');
     expect(update.data).not.toHaveProperty('status');
     expect(update.data).not.toHaveProperty('processedAt');
@@ -276,22 +402,60 @@ describe('RefundService.createRefund — digital legs settle asynchronously (T-0
     expect(params.notes).toMatchObject({ clinicId: CLINIC, invoiceId: INVOICE });
   });
 
-  it('surfaces an SDK rejection as 502 PAYMENT_GATEWAY_ERROR and rolls the insert back', async () => {
-    const { service, prisma } = build({ payments: [digitalLeg(50000)] });
-    rzpMockHolder.current.payments.refund = vi.fn(async () => {
-      throw {
+  it('surfaces an SDK rejection as 502 PAYMENT_GATEWAY_ERROR and marks the reservation failed', async () => {
+    const { service, repository, durableRefunds } = build({
+      payments: [digitalLeg(50000)],
+      gatewayError: {
         statusCode: 400,
-        error: { code: 'BAD_REQUEST_ERROR', description: 'The refund amount is greater than payment amount' },
-      };
-    }) as unknown as RazorpayMock['payments']['refund'];
+        error: {
+          code: 'BAD_REQUEST_ERROR',
+          description: 'The refund amount is greater than payment amount',
+        },
+      },
+    });
 
     await expect(
       service.createRefund(CLINIC, INVOICE, ACTOR, { type: 'full', amountPaise: 50000 }),
     ).rejects.toMatchObject({ statusCode: 502, code: 'PAYMENT_GATEWAY_ERROR' });
 
-    // The throw propagated out of the transaction callback, so the pending
-    // Refund insert rolls back with it.
-    await expect(prisma.$transaction.mock.results[0].value).rejects.toBeTruthy();
+    // CR-02 changed the shape of this outcome, deliberately. The reservation is
+    // committed before the call, so a rejection can no longer be erased by a
+    // rollback — it is recorded as `failed`, which is not a reserving status and
+    // therefore hands the amount straight back to the bound.
+    const rows = durableRefunds();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ method: 'razorpay', status: 'failed', amountPaise: 50000 });
+    expect(rows[0].failureReason).toEqual(expect.stringContaining('greater than payment amount'));
+
+    // Once for the reservation, once after the failure — the second one is what
+    // releases the amount the pending row had been holding.
+    expect(repository.recomputePaymentState).toHaveBeenCalledTimes(2);
+  });
+
+  it('leaves a cash leg standing when the digital leg of the same refund is refused (D-37)', async () => {
+    const { service, durableRefunds } = build({
+      payments: [cashLeg(100000), digitalLeg(50000)],
+      invoice: { grand_total_paise: 150000 },
+      gatewayError: { statusCode: 400, error: { description: 'refund not permitted' } },
+    });
+
+    await expect(
+      service.createRefund(CLINIC, INVOICE, ACTOR, { type: 'full', amountPaise: 150000 }),
+    ).rejects.toMatchObject({ statusCode: 502 });
+
+    // The notes are already back across the counter. Rolling that fact back
+    // because a gateway refused an unrelated leg would be the refund-side twin
+    // of erasing a collected cash payment when a payment link expires (D-37).
+    const rows = durableRefunds();
+    expect(rows).toHaveLength(2);
+    expect(rows.find((r) => r.method === 'cash')).toMatchObject({
+      status: 'processed',
+      amountPaise: 100000,
+    });
+    expect(rows.find((r) => r.method === 'razorpay')).toMatchObject({
+      status: 'failed',
+      amountPaise: 50000,
+    });
   });
 
   it('refuses a digital leg that never captured a gateway payment id', async () => {
@@ -302,6 +466,193 @@ describe('RefundService.createRefund — digital legs settle asynchronously (T-0
     await expect(
       service.createRefund(CLINIC, INVOICE, ACTOR, { type: 'full', amountPaise: 50000 }),
     ).rejects.toMatchObject({ statusCode: 400, code: 'PAYMENT_NOT_REFUNDABLE' });
+  });
+});
+
+/**
+ * CR-02 — the gateway call must not sit inside the database transaction.
+ *
+ * The old shape called `rzp.payments.refund` from inside a Prisma interactive
+ * transaction that held a `FOR UPDATE` lock on the invoice row, under the
+ * default 5 000 ms timeout. Its own comments reasoned only about the gateway
+ * REJECTING. The unhandled case is the opposite and the expensive one: the
+ * gateway ACCEPTS — real money is on its way to the owner — and the transaction
+ * then fails for any reason at all. Postgres rolls the `refunds` row back, so
+ * there is no local record, `getRefundableAmount` still counts the whole
+ * captured amount as refundable, and the front desk retries into a SECOND
+ * refund of the same money.
+ *
+ * Every other gateway call in the phase is deliberately outside its transaction
+ * with a compensating action (`payment.service.ts` createPaymentLink /
+ * createCombinedPaymentLink). These tests pin the refund path to that pattern.
+ */
+describe('RefundService.createRefund — the gateway call is outside the transaction (CR-02)', () => {
+  it('calls Razorpay with no database transaction open', async () => {
+    const { service, state } = build({ payments: [digitalLeg(50000)] });
+
+    await service.createRefund(CLINIC, INVOICE, ACTOR, { type: 'full', amountPaise: 50000 });
+
+    // Depth 0 — not "a short transaction", not "a transaction with a generous
+    // timeout". No transaction. A network round trip inside a transaction holds
+    // a row lock and a pooled connection for its whole duration.
+    expect(state.txDepthAtGatewayCall).toEqual([0]);
+  });
+
+  it('commits the reserving row BEFORE the call, so the amount is already held', async () => {
+    const { service, state } = build({ payments: [digitalLeg(50000)] });
+
+    await service.createRefund(CLINIC, INVOICE, ACTOR, { type: 'full', amountPaise: 50000 });
+
+    // The pending row is what keeps the bound honest across the round trip: a
+    // concurrent request re-reading `Σ captured − Σ (pending + processed)` sees
+    // this amount already spoken for. Calling the gateway first and writing
+    // afterwards would leave that window open.
+    const durableWhenCalled = state.durableAtGatewayCall[0];
+    expect(durableWhenCalled).toHaveLength(1);
+    expect(durableWhenCalled[0]).toMatchObject({
+      method: 'razorpay',
+      status: 'pending',
+      amountPaise: 50000,
+      paymentId: DIGITAL_PAYMENT,
+    });
+  });
+
+  it('holds every leg before any of them is sent, on a two-leg digital refund', async () => {
+    const SECOND = '55555555-5555-4555-8555-555555555555';
+    const { service, state } = build({
+      payments: [
+        digitalLeg(50000),
+        { ...digitalLeg(30000), id: SECOND, razorpayPaymentId: 'pay_test_def456' },
+      ],
+      invoice: { grand_total_paise: 80000 },
+    });
+
+    await service.createRefund(CLINIC, INVOICE, ACTOR, { type: 'full', amountPaise: 80000 });
+
+    expect(state.txDepthAtGatewayCall).toEqual([0, 0]);
+    // Both reservations are durable before the FIRST call, not one before each.
+    expect(state.durableAtGatewayCall[0]).toHaveLength(2);
+  });
+
+  it('keeps a durable record of the refund when every write after the gateway fails', async () => {
+    const { service, durableRefunds, rzp } = build({
+      payments: [digitalLeg(50000)],
+      failDbAfterGateway: true,
+    });
+
+    // The transaction timed out, the pool dropped the connection, the server
+    // went away — whichever it was, nothing can be written any more. The
+    // operation may fail loudly or return; that is not what is under test.
+    await service
+      .createRefund(CLINIC, INVOICE, ACTOR, { type: 'full', amountPaise: 50000 })
+      .catch(() => undefined);
+
+    expect(rzp.payments.refund).toHaveBeenCalledTimes(1);
+
+    // THE assertion. Money left the account; a row for it survives. Under the
+    // old shape this array was empty and the refund was invisible to us.
+    const rows = durableRefunds();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      clinicId: CLINIC,
+      invoiceId: INVOICE,
+      paymentId: DIGITAL_PAYMENT,
+      method: 'razorpay',
+      status: 'pending',
+      amountPaise: 50000,
+    });
+  });
+
+  it('the surviving row carries the id Razorpay was given, so it can be reconciled', async () => {
+    const { service, durableRefunds, rzp } = build({
+      payments: [digitalLeg(50000)],
+      failDbAfterGateway: true,
+    });
+
+    await service
+      .createRefund(CLINIC, INVOICE, ACTOR, { type: 'full', amountPaise: 50000 })
+      .catch(() => undefined);
+
+    const [, params] = rzp.payments.refund.mock.calls[0] as [string, Record<string, unknown>];
+    const surviving = durableRefunds()[0];
+
+    // `receipt` and `notes.refundId` both carry our primary key, and the row
+    // holding that key is durable. That is the reconciliation route when the
+    // `razorpayRefundId` write-back never landed: the movement is traceable
+    // from either side rather than being an orphan at the gateway.
+    expect(params.receipt).toBe(surviving.id);
+    expect(params.notes).toMatchObject({ refundId: surviving.id });
+  });
+
+  it('a retry after a lost write-back is refused rather than double-refunding', async () => {
+    const { service, durableRefunds } = build({
+      payments: [digitalLeg(50000)],
+      failDbAfterGateway: true,
+    });
+
+    await service
+      .createRefund(CLINIC, INVOICE, ACTOR, { type: 'full', amountPaise: 50000 })
+      .catch(() => undefined);
+
+    // Second attempt, against a database that now holds the surviving pending
+    // row. `pending` is a reserving status, so the bound is zero.
+    const retry = build({
+      payments: [digitalLeg(50000)],
+      refunds: durableRefunds() as Row[],
+    });
+
+    await expect(
+      retry.service.createRefund(CLINIC, INVOICE, ACTOR, { type: 'full', amountPaise: 50000 }),
+    ).rejects.toMatchObject({ statusCode: 400, code: 'REFUND_EXCEEDS_PAID' });
+
+    // The retry never reached the gateway, which is the point: a second live
+    // refund for money already on its way back is unrecoverable.
+    expect(retry.rzp.payments.refund).not.toHaveBeenCalled();
+  });
+
+  it('surfaces a lost write-back rather than swallowing it', async () => {
+    const { service, logger } = build({
+      payments: [digitalLeg(50000)],
+      failDbAfterGateway: true,
+    });
+
+    await service
+      .createRefund(CLINIC, INVOICE, ACTOR, { type: 'full', amountPaise: 50000 })
+      .catch(() => undefined);
+
+    // Nothing can be written, so the audit row cannot be written either. The
+    // logger is the last route out, and a silent unreconciled refund is exactly
+    // the state D-35 and D-36 exist to prevent.
+    expect(logger.error).toHaveBeenCalled();
+    const [, message] = logger.error.mock.calls[0] as [unknown, string];
+    expect(message).toEqual(expect.stringContaining('reconcil'));
+  });
+
+  it('reports the gateway id back to the caller even when it could not be persisted', async () => {
+    const { service } = build({ payments: [digitalLeg(50000)], failDbAfterGateway: true });
+
+    const result = await service
+      .createRefund(CLINIC, INVOICE, ACTOR, { type: 'full', amountPaise: 50000 })
+      .catch(() => null);
+
+    // The gateway accepted, so the refund genuinely is pending. Reporting the
+    // id keeps it visible to a human even in the one case where our own copy
+    // did not land.
+    expect(result?.refunds[0]).toMatchObject({ status: 'pending' });
+    expect(result?.refunds[0].razorpayRefundId).toEqual(expect.stringContaining('rfnd_'));
+  });
+
+  it('never opens a transaction at all when the refund is entirely cash', async () => {
+    const { service, prisma, rzp } = build({ payments: [cashLeg(50000)] });
+
+    await service.createRefund(CLINIC, INVOICE, ACTOR, { type: 'full', amountPaise: 50000 });
+
+    // One transaction: the reservation, which for cash is also the settlement.
+    // No second transaction, because there was no gateway outcome to record.
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(rzp.payments.refund).not.toHaveBeenCalled();
+    // And no credential was decrypted for a refund that has no gateway leg.
+    expect(prisma.clinic.findFirst).not.toHaveBeenCalled();
   });
 });
 

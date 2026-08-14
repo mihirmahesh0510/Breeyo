@@ -85,10 +85,15 @@ export default async function billingRoutes(fastify: FastifyInstance) {
    * is an accounting document that never touches inventory (a return to stock
    * is the separate Phase 5 action). The repository still requires one, so they
    * get their own rather than sharing the invoice service's instance.
+   *
+   * `RefundService` alone takes a logger. Its CR-02 restructure has one branch —
+   * the gateway accepted and the database then refused every write — where the
+   * audit row it would normally leave cannot be written either, and an
+   * unreconciled refund must not vanish silently.
    */
   const buildRefundService = (db: TenantPrismaClient) => {
     const stockValidator = new StockValidatorService(db, new StockMovementService(db));
-    return new RefundService(new InvoiceRepository(db, stockValidator), db);
+    return new RefundService(new InvoiceRepository(db, stockValidator), db, fastify.log);
   };
 
   const buildCreditNoteService = (db: TenantPrismaClient) => {

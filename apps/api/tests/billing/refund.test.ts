@@ -393,7 +393,7 @@ describe('POST /billing/invoices/:invoiceId/refunds — async completion (T-06-6
     expect(after.balancePaise).toBe(50000);
   });
 
-  it('surfaces a gateway rejection as 502 and records no refund at all', async () => {
+  it('surfaces a gateway rejection as 502 and records the attempt as failed', async () => {
     const invoiceId = await splitPaidAndCaptured(50000, 100000);
     const digital = await prisma.payment.findFirstOrThrow({
       where: { clinicId, invoiceId, channel: 'razorpay', status: 'captured' },
@@ -418,8 +418,20 @@ describe('POST /billing/invoices/:invoiceId/refunds — async completion (T-06-6
     expect(response.body.error.code).toBe('PAYMENT_GATEWAY_ERROR');
     expect(response.body.error.message).toContain('greater than payment amount');
 
-    // The pending insert rolled back with the transaction.
-    expect(await prisma.refund.count({ where: { clinicId, invoiceId } })).toBe(0);
+    // CR-02: the reservation is committed before the call, so a refusal can no
+    // longer be erased by a rollback. It is written off as `failed` instead.
+    const refunds = await prisma.refund.findMany({ where: { clinicId, invoiceId } });
+    expect(refunds).toHaveLength(1);
+    expect(refunds[0].status).toBe('failed');
+    expect(refunds[0].failureReason).toContain('greater than payment amount');
+    expect(refunds[0].razorpayRefundId).toBeNull();
+
+    // And `failed` is not a reserving status, so the amount is back in the
+    // bound — a refused refund must not permanently lock money away.
+    const refundable = await request(app.server)
+      .get(`/api/v1/billing/invoices/${invoiceId}/refundable`)
+      .set(auth());
+    expect(refundable.body.data.refundablePaise).toBe(150000);
   });
 
   it('never puts a credential on the wire', async () => {
@@ -437,6 +449,127 @@ describe('POST /billing/invoices/:invoiceId/refunds — async completion (T-06-6
     expect(serialised).not.toContain(PLAINTEXT_SECRET);
     expect(serialised).not.toContain('rzp_test_refund');
     expect(serialised).not.toContain('key_secret');
+  });
+});
+
+/**
+ * CR-02 over HTTP, against a real Postgres.
+ *
+ * The unit suite proves the shape with a `$transaction` double that models
+ * commit and rollback. These two prove the consequence for real: the first
+ * queries the database from INSIDE the gateway call on an independent
+ * connection — a row written by a transaction that has not committed is
+ * invisible there, so seeing it is proof the reservation is durable before the
+ * money moves. The second forces the post-gateway write to fail and checks that
+ * a live refund is still recoverable afterwards.
+ */
+describe('POST /billing/invoices/:invoiceId/refunds — money cannot outrun the record (CR-02)', () => {
+  it('has already committed the pending row by the time Razorpay is called', async () => {
+    const invoiceId = await splitPaidAndCaptured(50000, 100000);
+    const digital = await prisma.payment.findFirstOrThrow({
+      where: { clinicId, invoiceId, channel: 'razorpay', status: 'captured' },
+    });
+
+    // `prisma` here is a second client on its own connection. Under the old
+    // shape the insert sat inside an uncommitted transaction on the request's
+    // connection and this read returned nothing.
+    let visibleDuringCall: Array<{ id: string; status: string; amountPaise: number }> = [];
+    const inner = holder.current.payments.refund;
+    holder.current.payments.refund = vi.fn(async (...args: unknown[]) => {
+      visibleDuringCall = await prisma.refund.findMany({
+        where: { clinicId, invoiceId },
+        select: { id: true, status: true, amountPaise: true },
+      });
+      return (inner as (...a: unknown[]) => unknown)(...args);
+    }) as unknown as RazorpayMock['payments']['refund'];
+
+    const response = await request(app.server)
+      .post(`/api/v1/billing/invoices/${invoiceId}/refunds`)
+      .set(auth())
+      .send({ type: 'partial', amountPaise: 50000, paymentId: digital.id });
+
+    expect(response.status).toBe(201);
+    expect(visibleDuringCall).toHaveLength(1);
+    expect(visibleDuringCall[0]).toMatchObject({ status: 'pending', amountPaise: 50000 });
+    // Same row, not a later one — the reservation is what was sent.
+    expect(visibleDuringCall[0].id).toBe(response.body.data.refunds[0].refundId);
+  });
+
+  it('keeps a recoverable record when the write-back after the gateway fails', async () => {
+    const invoiceId = await splitPaidAndCaptured(50000, 100000);
+    const digital = await prisma.payment.findFirstOrThrow({
+      where: { clinicId, invoiceId, channel: 'razorpay', status: 'captured' },
+    });
+
+    // `Refund.razorpayRefundId` is globally unique, so parking the id the
+    // gateway is about to hand back on an unrelated row makes the write-back
+    // fail with a genuine constraint violation. Any post-gateway failure would
+    // do — a timeout, a dropped connection — but this one is deterministic.
+    const COLLIDING_ID = 'rfnd_test_collide01';
+    const decoyInvoice = await cashPaid(1000);
+    const decoyPayment = await prisma.payment.findFirstOrThrow({
+      where: { clinicId, invoiceId: decoyInvoice },
+    });
+    await prisma.refund.create({
+      data: {
+        clinicId,
+        invoiceId: decoyInvoice,
+        paymentId: decoyPayment.id,
+        method: 'razorpay',
+        amountPaise: 1000,
+        status: 'pending',
+        razorpayRefundId: COLLIDING_ID,
+        createdById: decoyPayment.recordedById as string,
+      },
+    });
+
+    holder.current.payments.refund = vi.fn(async () => ({
+      id: COLLIDING_ID,
+      entity: 'refund',
+      amount: 100000,
+      status: 'processed',
+    })) as unknown as RazorpayMock['payments']['refund'];
+
+    // The WHOLE digital leg, so the retry below has nothing left to draw on and
+    // the bound is the only thing that can refuse it.
+    const response = await request(app.server)
+      .post(`/api/v1/billing/invoices/${invoiceId}/refunds`)
+      .set(auth())
+      .send({ type: 'partial', amountPaise: 100000, paymentId: digital.id });
+
+    // The gateway accepted, so the refund genuinely is pending. Failing the
+    // request would be a lie, and would invite the retry this exists to stop.
+    expect(response.status).toBe(201);
+    expect(response.body.data.refunds[0]).toMatchObject({ status: 'pending' });
+
+    // The money-moved event survived the failed write.
+    const refunds = await prisma.refund.findMany({ where: { clinicId, invoiceId } });
+    expect(refunds).toHaveLength(1);
+    expect(refunds[0]).toMatchObject({ status: 'pending', amountPaise: 100000 });
+    expect(refunds[0].razorpayRefundId).toBeNull();
+
+    // The gap is recorded for a human, keyed by both ids.
+    const unreconciled = await prisma.billingAuditLog.findFirst({
+      where: { clinicId, invoiceId, event: 'REFUND_UNRECONCILED' },
+    });
+    expect(unreconciled).not.toBeNull();
+    expect(unreconciled?.metadata).toMatchObject({
+      razorpayRefundId: COLLIDING_ID,
+      refundId: refunds[0].id,
+      amountPaise: 100000,
+    });
+
+    // And the front desk cannot turn one refund into two: the surviving
+    // `pending` row still reserves the amount.
+    const retry = await request(app.server)
+      .post(`/api/v1/billing/invoices/${invoiceId}/refunds`)
+      .set(auth())
+      .send({ type: 'partial', amountPaise: 100000, paymentId: digital.id });
+
+    expect(retry.status).toBe(400);
+    expect(retry.body.error.code).toBe('REFUND_EXCEEDS_PAID');
+    expect(await prisma.refund.count({ where: { clinicId, invoiceId } })).toBe(1);
+    expect(holder.current.payments.refund).toHaveBeenCalledTimes(1);
   });
 });
 
