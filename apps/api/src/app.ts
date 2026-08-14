@@ -89,14 +89,15 @@ export async function buildApp(
   await app.register(socketPlugin);
   await app.register(import('./modules/queue/queue.routes.js'), { prefix: '/api/v1' });
 
-  // Phase 7 (07-09): the WhatsApp Cloud API webhook. Registered on its own,
-  // after socketPlugin (DeliveryStatusService broadcasts via app.io) and
-  // ahead of 07-12's whatsapp.routes.ts, which has not landed yet — this is
-  // the "or directly in app.ts if 07-12 has not landed" fallback the plan
-  // itself calls out. Its own plugin registration is load-bearing: the
-  // scoped raw-body content-type parser inside must not leak onto any other
-  // route (Pitfall 10; see the file's own header comment).
-  await app.register(import('./modules/whatsapp/whatsapp.webhook.routes.js'), { prefix: '/api/v1' });
+  // Phase 7 (07-12): the WhatsApp module's full composition root -- repositories,
+  // services, the inbound router (with the real booking/reminder handlers),
+  // queues, test-guarded workers, the reminder-sweep scheduler, the read/action
+  // routes, and the webhook plugin (mounted internally as an encapsulated
+  // child). Registered after socketPlugin because DeliveryStatusService
+  // broadcasts via app.io. Replaces 07-09's interim scaffolding, which
+  // constructed this same dependency graph directly in this file before this
+  // plan landed.
+  await app.register(import('./modules/whatsapp/whatsapp.routes.js'), { prefix: '/api/v1' });
 
   // Phase 4: EMR & Clinical Records
   await app.register(import('./modules/emr/emr.routes.js'), { prefix: '/api/v1' });
@@ -149,52 +150,6 @@ export async function buildApp(
     // the two cron modules are not even loaded when the guard is false.
     (await import('./jobs/overdue-invoices.js')).scheduleOverdueInvoices(app.prisma, app.io);
     (await import('./jobs/expire-payment-links.js')).scheduleExpirePaymentLinks(app.prisma, app.io);
-
-    // Phase 7 (07-09): WhatsApp outbound dispatch + simulator workers.
-    // `createOutboundWorker`/`createSimulatorWorker` already guard on
-    // NODE_ENV themselves (Pitfall 7) — this `if (!isTest)` wrapper mirrors
-    // that same precedent one level up, exactly like the billing webhook
-    // worker just above, so no BullMQ `Worker` for either queue is ever
-    // constructed in a test process.
-    const { createWhatsAppQueues } = await import('./modules/whatsapp/whatsapp-queue.js');
-    const { WhatsAppRepository: WaRepositoryCtor } = await import('./modules/whatsapp/whatsapp.repository.js');
-    const { DeliveryStatusService: DeliveryStatusServiceCtor } = await import(
-      './modules/whatsapp/delivery-status.service.js'
-    );
-    const { InboundRouterService: InboundRouterServiceCtor } = await import(
-      './modules/whatsapp/inbound-router.service.js'
-    );
-    const { createOutboundWorker } = await import('./modules/whatsapp/workers/outbound.worker.js');
-    const { createSimulatorWorker } = await import('./modules/whatsapp/workers/simulator.worker.js');
-
-    const waQueues = createWhatsAppQueues(app.redis);
-    const waRepository = new WaRepositoryCtor(app.prisma);
-    const waDeliveryStatusService = new DeliveryStatusServiceCtor(waRepository, app.prisma, app.io);
-    const waInboundRouter = new InboundRouterServiceCtor({
-      repository: waRepository,
-      prisma: app.prisma,
-      deliveryStatusService: waDeliveryStatusService,
-    });
-
-    const waOutboundWorker = createOutboundWorker({
-      prisma: app.prisma,
-      redis: app.redis,
-      repository: waRepository,
-      deliveryStatusService: waDeliveryStatusService,
-      simulatorQueue: waQueues.simulator,
-    });
-    const waSimulatorWorker = createSimulatorWorker({
-      prisma: app.prisma,
-      redis: app.redis,
-      deliveryStatusService: waDeliveryStatusService,
-      inboundRouter: waInboundRouter,
-    });
-
-    app.addHook('onClose', async () => {
-      await waOutboundWorker?.close();
-      await waSimulatorWorker?.close();
-      await waQueues.close();
-    });
   }
 
   return app;
