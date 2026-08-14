@@ -72,6 +72,21 @@ export const BILLING_ROUTES = {
   settings: '/(app)/billing/settings',
   /** One invoice. The builder replaces itself with this on finalize. */
   invoiceDetail: (invoiceId: string) => `/(app)/billing/${invoiceId}`,
+  /**
+   * D-22's credit note against an existing invoice (plan 06-22).
+   *
+   * A two-segment path under `billing/`, so it does not compete with the
+   * one-segment `[invoiceId]` above. Expo Router resolves static segments ahead
+   * of dynamic ones at the same depth, which is also what keeps `settings`,
+   * `new`, `quick-sale` and `from-consultation` reachable now that a dynamic
+   * sibling exists.
+   */
+  creditNote: (invoiceId: string) => `/(app)/billing/credit-note/${invoiceId}`,
+  /**
+   * Reopening a DRAFT in the builder (D-21: only a draft is editable). The
+   * builder route already reads an optional `invoiceId` and hydrates from it.
+   */
+  editDraft: (invoiceId: string) => `/(app)/billing/new?invoiceId=${invoiceId}`,
 } as const;
 
 const COLORS = {

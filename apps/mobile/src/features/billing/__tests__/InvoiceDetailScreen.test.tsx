@@ -91,6 +91,13 @@ const DIGITAL_ONLY: RefundableSummary = {
   legs: [DIGITAL_LEG],
 };
 
+/** `creditNoteSchema` requires a uuid per line, so the fixtures carry real ones. */
+const LINE_IDS = {
+  a: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+  b: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+  c: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+} as const;
+
 function lineItem(id: string, description: string, lineTotalPaise: number) {
   return { id, description, lineTotalPaise };
 }
@@ -398,10 +405,10 @@ describe('the credit note screen', () => {
 
   it('totals only the selected rows', () => {
     const drafts: CreditLineDraft[] = [
-      { ...creditLineFrom(lineItem('a', 'Consult', 59_000)), selected: true },
-      { ...creditLineFrom(lineItem('b', 'Dressing', 20_000)), selected: false },
+      { ...creditLineFrom(lineItem(LINE_IDS.a, 'Consult', 59_000)), selected: true },
+      { ...creditLineFrom(lineItem(LINE_IDS.b, 'Dressing', 20_000)), selected: false },
       {
-        ...creditLineFrom(lineItem('c', 'Deworming', 30_000)),
+        ...creditLineFrom(lineItem(LINE_IDS.c, 'Deworming', 30_000)),
         selected: true,
         amountInput: '100',
       },
@@ -412,21 +419,21 @@ describe('the credit note screen', () => {
 
   it('builds a credit-note body from the selected rows only', () => {
     const drafts: CreditLineDraft[] = [
-      { ...creditLineFrom(lineItem('a', 'Consult', 59_000)), selected: true },
-      { ...creditLineFrom(lineItem('b', 'Dressing', 20_000)), selected: false },
+      { ...creditLineFrom(lineItem(LINE_IDS.a, 'Consult', 59_000)), selected: true },
+      { ...creditLineFrom(lineItem(LINE_IDS.b, 'Dressing', 20_000)), selected: false },
     ];
 
     expect(
       buildCreditNoteInput({ reason: 'incorrect_charge', notes: undefined, drafts }),
     ).toEqual({
       reason: 'incorrect_charge',
-      items: [{ invoiceLineItemId: 'a', creditAmountPaise: 59_000 }],
+      items: [{ invoiceLineItemId: LINE_IDS.a, creditAmountPaise: 59_000 }],
     });
   });
 
   it("requires notes when the reason is Other, with the schema's own message", () => {
     const drafts: CreditLineDraft[] = [
-      { ...creditLineFrom(lineItem('a', 'Consult', 59_000)), selected: true },
+      { ...creditLineFrom(lineItem(LINE_IDS.a, 'Consult', 59_000)), selected: true },
     ];
 
     expect(() => buildCreditNoteInput({ reason: 'other', notes: '  ', drafts })).toThrow(
@@ -439,7 +446,7 @@ describe('the credit note screen', () => {
 
   it('refuses to submit with nothing selected', () => {
     const drafts: CreditLineDraft[] = [
-      creditLineFrom(lineItem('a', 'Consult', 59_000)),
+      creditLineFrom(lineItem(LINE_IDS.a, 'Consult', 59_000)),
     ];
 
     expect(() =>
