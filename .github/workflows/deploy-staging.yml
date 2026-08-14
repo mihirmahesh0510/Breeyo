@@ -59,10 +59,33 @@ jobs:
         env:
           ECR_REGISTRY: ${{ secrets.ECR_REGISTRY }}
           IMAGE_TAG: ${{ github.sha }}
+          STAGING_URL: ${{ secrets.STAGING_URL }}
         run: |
+          set -euo pipefail
+
+          # PUBLIC_API_URL builds the per-clinic Razorpay webhook URL shown to
+          # Admins (BIL-06). It must be the externally reachable API origin,
+          # which is exactly the host the health check below already probes.
+          if [ -z "$STAGING_URL" ]; then
+            echo "STAGING_URL is empty - cannot render PUBLIC_API_URL" >&2
+            exit 1
+          fi
+
           jq --arg IMAGE "$ECR_REGISTRY/breeyo-api:$IMAGE_TAG" \
-            '.containerDefinitions[0].image = $IMAGE' \
+             --arg PUBLIC_API_URL "$STAGING_URL" \
+            '.containerDefinitions[0].image = $IMAGE
+             | .containerDefinitions[0].environment |= map(
+                 if .name == "PUBLIC_API_URL" then .value = $PUBLIC_API_URL else . end
+               )' \
             infra/aws/staging/api-task-definition.json > task-definition.json
+
+          # A leftover PLACEHOLDER would deploy a plausible-but-wrong webhook URL
+          # that fails silently at Razorpay delivery time. Fail loudly instead.
+          if grep -q 'PLACEHOLDER' task-definition.json; then
+            echo "Unrendered PLACEHOLDER remains in task-definition.json:" >&2
+            grep -n 'PLACEHOLDER' task-definition.json >&2
+            exit 1
+          fi
 
       - name: Register ECS task definition
         id: register-task-def

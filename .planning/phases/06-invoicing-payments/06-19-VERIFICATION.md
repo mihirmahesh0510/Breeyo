@@ -329,17 +329,36 @@ whether that behaviour matches the pilot cohort's actual billing practice.
 
 ## 6b. Pre-launch checklist (new, from the 2026-08-14 answers)
 
-Neither item blocks phase completion. Both block **launch**, and both are
-external, third-party-paced work the build cannot complete.
+No item here blocks phase completion. All block **launch**. PL-1 and PL-2 are
+external, third-party-paced work the build cannot complete; PL-3 is an internal
+ops action that must happen in the AWS account, not in the repository.
 
 | ID | Item | Detail | Status |
 |----|------|--------|--------|
 | **PL-1** | Every pilot clinic needs a Razorpay account with completed KYC | Confirmed 2026-08-14 that **0 of 20** have started. D-29 locks per-clinic API keys, so this cannot be centralised — each clinic does its own signup and KYC. Until a clinic completes it, that clinic cannot accept digital payments at all. | **Required before launch. Not started.** |
 | **PL-2** | Write the clinic onboarding runbook | Must cover: create the Razorpay account, complete KYC, generate API keys, paste them into Billing Settings, **and copy the per-clinic webhook URL into their own Razorpay dashboard** with the six required events. The last step is the one that silently breaks BIL-06 when skipped — the payment succeeds and the invoice is never marked paid. Confirmed 2026-08-14 as required before launch, explicitly not deferrable. | **Required before launch. Does not exist.** |
+| **PL-3** | Provision the `BILLING_ENCRYPTION_KEY` SSM parameter in AWS | The staging and production task definitions now reference `/breeyo/staging/BILLING_ENCRYPTION_KEY` and `/breeyo/production/BILLING_ENCRYPTION_KEY` (CR-05 fix). **The referenced parameters do not exist yet** — the repository has no IaC, so every SSM parameter is created by hand, and this one has never been created. An ECS task whose `secrets` block points at a missing parameter **fails to start** with `ResourceNotFoundException`, so this must be done *before* the next deploy, not after. Create as `SecureString` in `ap-south-1` with a fresh 32-byte hex value (`openssl rand -hex 32`), independently per environment. Rotating it later invalidates every stored clinic Razorpay secret. | **Required before next deploy. Not provisioned.** |
 
 The wording a clinic will see if PL-2 is skipped is already in place and states
 the consequence plainly (§6, Q7) — but a warning is a backstop, not a substitute
 for the runbook.
+
+**PL-3 also has an IAM half.** Creating the parameter is not sufficient on its
+own: the ECS **execution** role (`breeyo-staging-ecs-execution-role` and its
+production counterpart) is what fetches `secrets` at task start, and if its
+policy enumerates parameter ARNs individually rather than using a
+`/breeyo/<env>/*` wildcard, it must be extended to cover the new key. The repo
+has no IaC, so the current policy shape cannot be confirmed from here — check it
+in the console. The failure mode is identical either way (`ResourceNotFoundException`
+/ `AccessDeniedException` at task start), so verify both halves together.
+
+**PL-3 ordering caveat.** PL-3 is the one item that makes the deploy *worse*
+before it makes it better: prior to the CR-05 fix the API booted fine and only
+failed when a clinic saved a credential, whereas now a missing parameter stops
+the task from starting at all. That is the correct trade — a container that
+refuses to start is visible in seconds, while the previous behaviour was a 500
+discovered by a clinic mid-onboarding — but it does mean PL-3 must be completed
+before the next `main` push, since staging deploys automatically on push.
 
 ---
 

@@ -590,3 +590,35 @@ from 169-170 to 172-173 only because 06-18 inserted three lines above them.
 
 Wants an owner before Phase 6 closes if the phase's exit criteria include a
 clean mobile typecheck.
+
+---
+
+## Other env vars absent from the ECS task definitions (found during the CR-05 fix)
+
+The CR-05 fix added `BILLING_ENCRYPTION_KEY` and `PUBLIC_API_URL` to both task
+definitions. Auditing `process.env` reads across `apps/api/src` while doing so
+turned up **more** variables the code reads that no task definition declares:
+
+| Variable | Read at | Behaviour when absent |
+|---|---|---|
+| `MSG91_AUTH_KEY` | `modules/auth/auth.service.ts:569` | Guarded by `if (NODE_ENV === 'production' && MSG91_AUTH_KEY)`. In production the guard is **false**, so real OTP SMS is never sent — silently. This is the most consequential of the group. |
+| `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASS` / `EMAIL_FROM` | `modules/auth/email.service.ts` | Transactional email unconfigured in every deployed environment. |
+| `WEB_URL` | `app.ts:43`, `modules/auth/email.service.ts:28,50` | Falls back to `http://localhost:3001` — so the CORS allow-list and every emailed link point at localhost. |
+| `MOBILE_URL` | CORS allow-list | Same class as `WEB_URL`. |
+| `SENTRY_DSN` / `SENTRY_TRACES_SAMPLE_RATE` | `server.ts:7-9` | Guarded by `if`; error reporting is simply off (D-34 expected it on). |
+| `CORS_ORIGIN` | `app.ts` | Falls back to the localhost defaults above. |
+| `API_URL` | `modules/billing/settings.service.ts:156` | Only the `PUBLIC_API_URL` fallback, now moot. Worth noting the comment above it claims `API_URL` is "already present in every environment" — **it is not**, in either task definition. That inaccurate comment is what made CR-05 look safe. |
+
+**Deliberately not fixed here.** CR-05 is a targeted fix for the two variables
+that break BIL-05/BIL-06 outright; the rest are a separate deployment-config
+audit spanning Phases 1-4's features, each needing a real value decision (which
+SMTP provider, which public web origin) that this fix has no basis to make.
+
+For the same reason `REQUIRED_VARS` in `scripts/check-task-def-env.sh` lists
+only variables with **no working fallback** — adding the rows above would make
+the new gate fail on `main` immediately for pre-existing reasons, which is how
+gates get disabled. They should be added to that list as they are provisioned,
+and the gate is the natural place to enforce each one once it has an owner.
+
+`WEB_URL` and `MSG91_AUTH_KEY` deserve owners before launch: the first makes
+password-reset links unusable, the second means no OTP delivery at all.

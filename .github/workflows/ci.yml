@@ -65,6 +65,13 @@ jobs:
           node-version: 22
           cache: pnpm
 
+      # CR-05: the test suite runs against a local .env, so a variable the code
+      # requires can be missing from the ECS task definitions with every test
+      # still green -- exactly how BIL-05/BIL-06 shipped unable to start in any
+      # deployed environment. A static JSON check, no database or deps needed.
+      - name: Task definition env parity gate
+        run: bash scripts/check-task-def-env.sh
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
