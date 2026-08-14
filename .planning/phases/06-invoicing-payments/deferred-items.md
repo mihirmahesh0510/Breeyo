@@ -442,3 +442,58 @@ pushes over the tab bar.
 
 **Plan 06-18 must create Quick Sale at `app/(app)/billing/quick-sale.tsx`**, not
 under `(tabs)`. The constant is already pointing there.
+
+---
+
+## Found during 06-17 (invoice detail hooks and components)
+
+### 1. `markPaidBodySchema` is not shared, so the client cannot parse before it sends
+
+Six of the seven money-state writes in `usePaymentMutations` validate their body
+with the same schema object the Fastify handler parses, imported from
+`@breeyo/validators`: `recordPaymentSchema`, `voidInvoiceSchema`,
+`refundInputSchema`, `creditNoteSchema`. `POST /billing/invoices/:id/mark-paid`
+is the exception. Its schema lives at
+`apps/api/src/modules/billing/billing.schema.ts:55` as `markPaidBodySchema` and
+is not re-exported by the shared package, so `lib/payment-mutations.ts` carries
+a type-only `MarkPaidInput` interface and no runtime parse.
+
+Writing a second copy of the schema on the client is the exact drift every other
+body in that module exists to avoid — the two would agree until one of them
+changed — so the type-only contract is deliberate rather than an oversight.
+
+Fix: move `markPaidBodySchema` into `packages/validators/src/billing.ts`
+alongside `recordPaymentSchema` and have `billing.schema.ts` re-export it, then
+swap the type-only interface for a `parseMarkPaidInput`. It touches a shared
+package and the API module, which is outside a mobile-only plan's scope and
+would conflict with sibling plans executing in the same wave.
+
+Impact today is low: the body is three fields, two optional, and the server's
+parse is the control. It is a consistency and fail-fast gap, not a correctness
+one.
+
+### 2. `voidInvoiceSchema` accepts `restoreStock: true` only, but the UI asks the question
+
+**Resolved 2026-08-14, same day:** 06-CONTEXT.md's D-34 now states explicitly
+that the void confirmation UI should be a single confirm action, not a
+checkbox — D-26's original yes/no prompt is superseded now that restoration is
+fully automatic and deterministic by item provenance. Plan 06-22 should build
+the confirm-only sheet described there, not the checkbox this item originally
+flagged as unresolved.
+
+D-26 promised the vet the choice "Return dispensed items to stock?" and
+`VoidConfirmSheet` renders it. D-34 then narrowed the behaviour: the server
+decides *which* movements reverse (billing-time lines yes, consultation-dispensed
+drugs no), and `voidInvoiceSchema` was tightened to `z.literal(true)`
+accordingly, so an opt-out is unrepresentable on the wire.
+
+The sheet still reports the checkbox value unchanged to its caller (T-06-115
+requires exactly that), and `parseVoidInput` rejects `false` loudly rather than
+coercing it — a silently-ignored opt-out would leave a vet believing stock stayed
+deducted when it did not.
+
+That leaves a real product question this plan cannot settle alone: either the
+checkbox should not be offered at all (D-34 having removed the decision from the
+user), or the schema should accept `false` and the server should honour it for
+billing-time lines. Plan 06-22 wires the sheet and will hit this immediately;
+whichever way it goes, D-26 and D-34 want reconciling in `06-CONTEXT.md`.
