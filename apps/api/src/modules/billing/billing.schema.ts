@@ -68,7 +68,18 @@ export const receiptParamsSchema = z.object({
   receiptId: z.string().uuid(),
 });
 
+/**
+ * D-22 credit-note detail and PDF. Only the credit-note id travels in the path:
+ * a credit note is addressable in its own right (it has its own CN number and
+ * its own retention obligation), and the service scopes the lookup by clinic so
+ * another tenant's id reads as absent.
+ */
+export const creditNoteParamsSchema = z.object({
+  creditNoteId: z.string().uuid(),
+});
+
 export type InvoiceParams = z.infer<typeof invoiceParamsSchema>;
+export type CreditNoteParams = z.infer<typeof creditNoteParamsSchema>;
 export type ReceiptParams = z.infer<typeof receiptParamsSchema>;
 export type PreviewTotalsBody = z.infer<typeof previewTotalsBodySchema>;
 export type MarkPaidBody = z.infer<typeof markPaidBodySchema>;

@@ -8,9 +8,13 @@ import { StockMovementService } from '../inventory/stock-movement.service.js';
 import { InvoiceRepository } from './invoice.repository.js';
 import { InvoiceService } from './invoice.service.js';
 import { PaymentService } from './payment.service.js';
+import { RefundService } from './refund.service.js';
+import { CreditNoteService } from './credit-note.service.js';
 import { StockValidatorService } from './stock-validator.service.js';
 import { createInvoiceController } from './invoice.controller.js';
 import { createPaymentController } from './payment.controller.js';
+import { createRefundController } from './refund.controller.js';
+import { createCreditNoteController } from './credit-note.controller.js';
 
 /**
  * Billing routes — the first consumer of `requirePermission` outside auth.
@@ -68,8 +72,28 @@ export default async function billingRoutes(fastify: FastifyInstance) {
     return new PaymentService(new InvoiceRepository(db, stockValidator), db);
   };
 
+  /**
+   * The two money-back services (D-12, D-22), built the same way.
+   *
+   * Neither needs the stock validator — a refund moves money, and a credit note
+   * is an accounting document that never touches inventory (a return to stock
+   * is the separate Phase 5 action). The repository still requires one, so they
+   * get their own rather than sharing the invoice service's instance.
+   */
+  const buildRefundService = (db: TenantPrismaClient) => {
+    const stockValidator = new StockValidatorService(db, new StockMovementService(db));
+    return new RefundService(new InvoiceRepository(db, stockValidator), db);
+  };
+
+  const buildCreditNoteService = (db: TenantPrismaClient) => {
+    const stockValidator = new StockValidatorService(db, new StockMovementService(db));
+    return new CreditNoteService(new InvoiceRepository(db, stockValidator), db);
+  };
+
   const controller = createInvoiceController(buildService);
   const paymentController = createPaymentController(buildPaymentService);
+  const refundController = createRefundController(buildRefundService);
+  const creditNoteController = createCreditNoteController(buildCreditNoteService);
 
   // `requirePermission` reads `request.server.permissionService`, and Fastify's
   // plugin encapsulation means auth.routes.ts's decoration never reaches this
@@ -125,4 +149,25 @@ export default async function billingRoutes(fastify: FastifyInstance) {
   // Viewing a receipt is a read, so it sits behind VIEW_INVOICES — a clinician
   // who treated the patient can see the receipt without being able to collect.
   fastify.get('/billing/invoices/:invoiceId/receipts/:receiptId', { preHandler: readHandler, handler: paymentController.getReceiptHandler });
+
+  // Money back out (BIL-03, BIL-07, D-12, D-22, D-42).
+  //
+  // Both writes sit behind MANAGE_PAYMENTS rather than CREATE_INVOICES. A
+  // refund sends real money out of the clinic and a credit note reduces what
+  // the owner owes; both are money-state changes, which D-05 reserves to Front
+  // Desk and Admin. A Clinician who can raise an invoice for the consultation
+  // they performed must not also be able to write its value off (T-06-73).
+  //
+  // The reads sit behind VIEW_INVOICES, matching the receipt route: seeing that
+  // a refund happened is part of reading the invoice.
+  fastify.post('/billing/invoices/:invoiceId/refunds', { preHandler: payHandler, handler: refundController.createRefundHandler });
+  fastify.get('/billing/invoices/:invoiceId/refunds', { preHandler: readHandler, handler: refundController.listRefundsHandler });
+  // Fixed suffix, so it cannot be shadowed by the `:receiptId` pattern above.
+  // Returns the server-computed maximum so the mobile RefundAmountInput never
+  // derives a money figure of its own.
+  fastify.get('/billing/invoices/:invoiceId/refundable', { preHandler: readHandler, handler: refundController.getRefundableHandler });
+
+  fastify.post('/billing/invoices/:invoiceId/credit-notes', { preHandler: payHandler, handler: creditNoteController.issueCreditNoteHandler });
+  fastify.get('/billing/invoices/:invoiceId/credit-notes', { preHandler: readHandler, handler: creditNoteController.listCreditNotesHandler });
+  fastify.get('/billing/credit-notes/:creditNoteId', { preHandler: readHandler, handler: creditNoteController.getCreditNoteHandler });
 }

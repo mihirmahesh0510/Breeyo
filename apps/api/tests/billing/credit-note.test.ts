@@ -55,14 +55,22 @@ beforeEach(async () => {
   const frontDesk = await createTestUser({ fullName: 'Front Desk' });
   const clinician = await createTestUser({ fullName: 'Clinician' });
 
-  const clinic = await createTestClinic(frontDesk.id, {
-    name: 'Credit Notes Clinic',
-    gstEnabled: true,
-    gstin: '29ABCDE1234F1Z5',
-    stateCode: '29',
-    defaultGstRate: 18,
-  });
+  const clinic = await createTestClinic(frontDesk.id, { name: 'Credit Notes Clinic' });
   clinicId = clinic.id;
+
+  // The GST registration is applied here rather than through `createTestClinic`
+  // so the shared factory stays owned by plan 06-09. Without it every line
+  // finalizes at zero tax and the frozen-rate assertion below would pass
+  // vacuously — which is the failure mode that test exists to catch.
+  await prisma.clinic.update({
+    where: { id: clinicId },
+    data: {
+      gstEnabled: true,
+      gstin: '29ABCDE1234F1Z5',
+      stateCode: '29',
+      defaultGstRate: 18,
+    },
+  });
 
   await createTestClinicMember(frontDesk.id, clinic.id, 'FrontDesk');
   await createTestClinicMember(clinician.id, clinic.id, 'Clinician');
