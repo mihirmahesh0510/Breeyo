@@ -120,7 +120,7 @@ describe('WhatsAppService.sendTemplate (WHA-02/WHA-05, Pattern 2)', () => {
     expect(createCall.renderedVariables).toMatchObject({ owner_name: 'Asha' });
   });
 
-  it('enqueues exactly one job on the outbound queue after the transaction commits, with jobId send:<messageId>', async () => {
+  it('enqueues exactly one job on the outbound queue after the transaction commits, with jobId send-<messageId>', async () => {
     await service.sendTemplate(
       {
         ownerId: OWNER_ID,
@@ -136,7 +136,7 @@ describe('WhatsAppService.sendTemplate (WHA-02/WHA-05, Pattern 2)', () => {
     const [name, data, opts] = queue.add.mock.calls[0];
     expect(name).toBe('send');
     expect(data).toEqual({ messageId: MESSAGE_ID });
-    expect(opts.jobId).toBe(`send:${MESSAGE_ID}`);
+    expect(opts.jobId).toBe(`send-${MESSAGE_ID}`);
   });
 
   it('never calls a provider (no provider dependency exists on this service at all)', async () => {
@@ -296,7 +296,7 @@ describe('WhatsAppService.retryMessage (Anti-Pattern A7)', () => {
     expect(queue.add).toHaveBeenCalledWith(
       'send',
       { messageId: 'retry-1' },
-      expect.objectContaining({ jobId: 'send:retry-1' }),
+      expect.objectContaining({ jobId: 'send-retry-1' }),
     );
   });
 

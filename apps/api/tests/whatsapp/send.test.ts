@@ -86,7 +86,7 @@ describe('WhatsApp Send (WHA-05)', () => {
     const [name, data, opts] = queue.add.mock.calls[0];
     expect(name).toBe('send');
     expect(data).toEqual({ messageId });
-    expect(opts.jobId).toBe(`send:${messageId}`);
+    expect(opts.jobId).toBe(`send-${messageId}`);
   });
 
   it('sending the same owner+phone twice reuses the same thread rather than creating a duplicate', async () => {

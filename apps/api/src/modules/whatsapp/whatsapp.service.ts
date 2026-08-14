@@ -185,10 +185,21 @@ export class WhatsAppService {
     // Enqueue AFTER commit — the row is the source of truth, the job is a
     // nudge. jobId is deduplicated on the row id so a retried HTTP request
     // or a requeued job can never double-send (T-07-08-09).
+    //
+    // Fix (07-12, found via a real HTTP integration test against a real
+    // BullMQ queue — every prior test here used a `{ add: vi.fn() }` fake,
+    // which never exercised BullMQ's own validation): a `jobId` containing
+    // exactly ONE `:` throws `Custom Id cannot contain :`
+    // (`bullmq/classes/job.js`'s `validateOptions`, which only allows a
+    // colon-bearing id when it splits into exactly three parts, for legacy
+    // repeatable-job compatibility). `send:<uuid>` has exactly one colon and
+    // has never actually reached a real queue before this plan wired one
+    // end-to-end — hyphen keeps the same dedup-on-row-id intent without
+    // tripping that check.
     await this.outboundQueue.add(
       'send',
       { messageId },
-      { jobId: `send:${messageId}`, ...WA_JOB_OPTIONS },
+      { jobId: `send-${messageId}`, ...WA_JOB_OPTIONS },
     );
 
     // D-13: the send proceeds regardless, but a missing/withdrawn consent
@@ -244,7 +255,7 @@ export class WhatsAppService {
     await this.outboundQueue.add(
       'send',
       { messageId: retry.id },
-      { jobId: `send:${retry.id}`, ...WA_JOB_OPTIONS },
+      { jobId: `send-${retry.id}`, ...WA_JOB_OPTIONS },
     );
 
     return { messageId: retry.id as string };

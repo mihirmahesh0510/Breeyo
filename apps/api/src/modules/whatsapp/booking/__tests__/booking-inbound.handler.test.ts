@@ -66,7 +66,7 @@ describe('createBookingInboundHandler — outbound dispatch (WHA-03/D-14 fix)', 
     expect(deps.outboundQueue.add).toHaveBeenCalledWith(
       'send',
       { messageId: 'msg-1' },
-      { jobId: 'send:msg-1', ...WA_JOB_OPTIONS },
+      { jobId: 'send-msg-1', ...WA_JOB_OPTIONS },
     );
   });
 
@@ -81,7 +81,7 @@ describe('createBookingInboundHandler — outbound dispatch (WHA-03/D-14 fix)', 
     expect(deps.outboundQueue.add).toHaveBeenCalledWith(
       'send',
       { messageId: 'msg-1' },
-      { jobId: 'send:msg-1', ...WA_JOB_OPTIONS },
+      { jobId: 'send-msg-1', ...WA_JOB_OPTIONS },
     );
   });
 
@@ -95,7 +95,7 @@ describe('createBookingInboundHandler — outbound dispatch (WHA-03/D-14 fix)', 
     expect(deps.outboundQueue.add).toHaveBeenCalledWith(
       'send',
       { messageId: 'msg-1' },
-      { jobId: 'send:msg-1', ...WA_JOB_OPTIONS },
+      { jobId: 'send-msg-1', ...WA_JOB_OPTIONS },
     );
   });
 
@@ -116,7 +116,7 @@ describe('createBookingInboundHandler — outbound dispatch (WHA-03/D-14 fix)', 
     expect(deps.outboundQueue.add).toHaveBeenCalledWith(
       'send',
       { messageId: 'msg-1' },
-      { jobId: 'send:msg-1', ...WA_JOB_OPTIONS },
+      { jobId: 'send-msg-1', ...WA_JOB_OPTIONS },
     );
   });
 
@@ -138,7 +138,7 @@ describe('createBookingInboundHandler — outbound dispatch (WHA-03/D-14 fix)', 
     expect(deps.outboundQueue.add).toHaveBeenCalledWith(
       'send',
       { messageId: 'msg-1' },
-      { jobId: 'send:msg-1', ...WA_JOB_OPTIONS },
+      { jobId: 'send-msg-1', ...WA_JOB_OPTIONS },
     );
   });
 
@@ -175,13 +175,13 @@ describe('createBookingInboundHandler — outbound dispatch (WHA-03/D-14 fix)', 
       1,
       'send',
       { messageId: 'msg-1' },
-      { jobId: 'send:msg-1', ...WA_JOB_OPTIONS },
+      { jobId: 'send-msg-1', ...WA_JOB_OPTIONS },
     );
     expect(deps.outboundQueue.add).toHaveBeenNthCalledWith(
       2,
       'send',
       { messageId: 'msg-2' },
-      { jobId: 'send:msg-2', ...WA_JOB_OPTIONS },
+      { jobId: 'send-msg-2', ...WA_JOB_OPTIONS },
     );
   });
 });

@@ -37,12 +37,24 @@ import { ReminderTaskRepository } from './reminders/reminder-task.repository.js'
 import { ReminderTaskService, createReminderReplyHandler } from './reminders/reminder-task.service.js';
 import { registerReminderSweep } from './reminders/reminder-sweep.job.js';
 import whatsappWebhookRoutes from './whatsapp.webhook.routes.js';
+import { PermissionService } from '../auth/permission.service.js';
 import { authenticate } from '../../middleware/authenticate.js';
 import { tenantContext } from '../../middleware/tenant-context.js';
 import { requirePermission } from '../../middleware/authorize.js';
 
 export default async function whatsappRoutes(fastify: FastifyInstance): Promise<void> {
   const isTest = process.env.NODE_ENV === 'test';
+
+  // Fastify's plugin encapsulation means auth.routes.ts's/clinic.routes.ts's
+  // own `fastify.decorate('permissionService', ...)` never reaches this
+  // sibling plugin's scope, so `requirePermission`'s
+  // `request.server.permissionService` read would otherwise be undefined
+  // here. Decorate locally, matching clinic.routes.ts/inventory.routes.ts's
+  // own copy of this exact pattern (inventory.routes.ts's own header comment
+  // documents the same bug, found via live E2E testing).
+  if (!fastify.hasDecorator('permissionService')) {
+    fastify.decorate('permissionService', new PermissionService(fastify.prisma, fastify.redis));
+  }
 
   // ─── Repositories (fastify.prisma — the admin role; see file header) ─────
   const repository = new WhatsAppRepository(fastify.prisma);

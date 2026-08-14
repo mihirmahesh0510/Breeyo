@@ -505,7 +505,7 @@ describe('WhatsApp Booking (WHA-03)', () => {
       expect(queue.add).toHaveBeenCalledWith(
         'send',
         { messageId: offerMsg!.id },
-        expect.objectContaining({ jobId: `send:${offerMsg!.id}` }),
+        expect.objectContaining({ jobId: `send-${offerMsg!.id}` }),
       );
 
       // Now actually run the outbound worker's dispatch function against the

@@ -293,10 +293,13 @@ export async function runReminderSweep(deps: ReminderSweepDeps): Promise<SweepRe
   const stranded = await deps.sourceRepo.findStrandedQueuedMessages(null, 30);
   for (const message of stranded) {
     try {
+      // Hyphen, not colon (07-12 fix — see `whatsapp.service.ts`'s identical
+      // comment): a single-colon `jobId` throws BullMQ's own `Custom Id
+      // cannot contain :` validation.
       await deps.outboundQueue.add(
         'send',
         { messageId: message.id },
-        { jobId: `send:${message.id}`, ...WA_JOB_OPTIONS },
+        { jobId: `send-${message.id}`, ...WA_JOB_OPTIONS },
       );
       report.requeued += 1;
     } catch (err) {

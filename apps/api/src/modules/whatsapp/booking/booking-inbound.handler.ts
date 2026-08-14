@@ -80,16 +80,19 @@ const PICK_SLOT_BODY = 'Great — pick a time for the appointment:';
 export function createBookingInboundHandler(deps: BookingInboundHandlerDeps): BookingInboundHandler {
   /**
    * Enqueues the just-created message for dispatch — the same
-   * `jobId: 'send:' + messageId` + `WA_JOB_OPTIONS` shape
+   * `jobId: 'send-' + messageId` + `WA_JOB_OPTIONS` shape
    * `WhatsAppService.sendTemplate`/`retryMessage` already use, so
    * `outbound.worker.ts`'s replay-safe `processOutboundJob` picks it up
-   * identically regardless of which code path enqueued it.
+   * identically regardless of which code path enqueued it. Hyphen, not
+   * colon (07-12 fix — see `whatsapp.service.ts`'s identical comment: a
+   * single-colon `jobId` throws BullMQ's `Custom Id cannot contain :`,
+   * only ever caught once a real Queue was wired end-to-end).
    */
   async function enqueueOutbound(messageId: string) {
     await deps.outboundQueue.add(
       'send',
       { messageId },
-      { jobId: `send:${messageId}`, ...WA_JOB_OPTIONS },
+      { jobId: `send-${messageId}`, ...WA_JOB_OPTIONS },
     );
   }
 

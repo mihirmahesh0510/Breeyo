@@ -243,7 +243,7 @@ describe('runReminderSweep — requeue stranded messages (Pitfall 1)', () => {
     expect(deps.outboundQueue.add).toHaveBeenCalledWith(
       'send',
       { messageId: 'stranded-1' },
-      expect.objectContaining({ jobId: 'send:stranded-1' }),
+      expect.objectContaining({ jobId: 'send-stranded-1' }),
     );
     expect(report.requeued).toBe(1);
   });
