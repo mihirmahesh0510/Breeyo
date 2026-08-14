@@ -16,6 +16,7 @@ import type {
 } from '@breeyo/types';
 import type { TenantPrismaClient, TenantTransactionClient } from '../../lib/prisma-rls.js';
 import { BillingAuditEvent, writeBillingAuditLog } from '../../lib/billing-audit-log.js';
+import { resolveDiscountPaise } from './money.js';
 import { nextDocumentNumber } from './numbering.service.js';
 import type { StockPlanLine, StockValidatorService } from './stock-validator.service.js';
 
@@ -136,12 +137,27 @@ export interface DraftInvoiceData {
   lineItems: DraftLineItemData[];
 }
 
+/**
+ * The invoice-level discount as an EDIT rather than a value (CR-01).
+ *
+ * The field being absent from {@link UpdateDraftData} means the request did not
+ * mention the discount and the stored one stands. The field being present with
+ * `type: null` means the client asked for it to be removed. Those two are
+ * different requests and the previous `?? undefined` mapping collapsed them into
+ * one, which is why a discount could never be cleared.
+ *
+ * The absolute paise figure is deliberately NOT part of this shape: it is
+ * derived from the taxable base and is recomputed by the repository under the
+ * row lock, from the lines it is actually about to persist.
+ */
+export interface InvoiceDiscountEdit {
+  type: DiscountType | null;
+  value: number | null;
+}
+
 export interface UpdateDraftData {
-  invoiceDiscountType?: DiscountType | null;
-  invoiceDiscountValue?: number | null;
-  invoiceDiscountPaise?: number;
-  subtotalPaise?: number;
-  lineDiscountPaise?: number;
+  /** Absent = leave the stored discount alone. Present = set or clear it. */
+  invoiceDiscount?: InvoiceDiscountEdit;
   dueDate?: Date | null;
   notes?: string | null;
   /** When present, line items are replaced wholesale rather than diffed. */
@@ -352,42 +368,121 @@ export class InvoiceRepository {
   }
 
   /**
-   * Returns false when the row was not a draft. The guard is `status: 'DRAFT'`
-   * inside the WHERE clause rather than a service-level check, so an invoice
-   * that finalized between the caller's read and this write is still rejected
-   * (D-21, T-06-39).
+   * Edits a draft in ONE transaction, under the same `FOR UPDATE` lock that
+   * `finalizeInvoice` takes. Returns false when the row is no longer a draft.
+   *
+   * ## Why this is one transaction and not two (CR-03)
+   *
+   * It used to be two: an `updateMany` for the header, which committed on its
+   * own, and then a *separate* transaction that replaced the line items with
+   * `WHERE (clinic_id, invoice_id)` — no status predicate, no lock. Both halves
+   * looked safe in isolation, and the pair was not. A PATCH whose header update
+   * landed while the invoice was still a draft, followed by a finalize that
+   * completed entirely before the second transaction opened, would delete the
+   * frozen tax snapshot the finalize had just written onto a numbered document
+   * and replace it with unfrozen rows. The invoice keeps its number, its
+   * `grand_total_paise` and its GST heads, and its line items no longer add up
+   * to any of them.
+   *
+   * Holding the invoice row from the first statement closes that window in both
+   * directions: a concurrent finalize blocks here rather than interleaving, and
+   * a finalize that got there first leaves this lock matching zero rows — under
+   * READ COMMITTED the `status = 'DRAFT'` predicate is re-evaluated against the
+   * committed row version once the lock is released — so the caller gets a clean
+   * `INVOICE_NOT_DRAFT` and not one line item is touched.
+   *
+   * ## Why the totals are recomputed here (CR-01)
+   *
+   * `subtotal_paise`, `line_discount_paise` and `invoice_discount_paise` are all
+   * derived from the line items, and finalize FREEZES them onto a permanent
+   * document. Accepting them from the caller made them stale the moment the
+   * lines moved: a 10% discount computed against a 1,000-rupee base survived as
+   * an absolute 100 rupees after the draft was edited down to 200, becoming a
+   * silent 50% discount. They are therefore read back from the rows this
+   * transaction has just written, never from the request, so the header and the
+   * lines cannot disagree.
    */
   async updateDraft(clinicId: string, invoiceId: string, data: UpdateDraftData): Promise<boolean> {
-    const { count } = await this.prisma.invoice.updateMany({
-      where: { id: invoiceId, clinicId, status: 'DRAFT' },
-      data: {
-        invoiceDiscountType: data.invoiceDiscountType ?? undefined,
-        invoiceDiscountValue: data.invoiceDiscountValue ?? undefined,
-        invoiceDiscountPaise: data.invoiceDiscountPaise ?? undefined,
-        subtotalPaise: data.subtotalPaise ?? undefined,
-        lineDiscountPaise: data.lineDiscountPaise ?? undefined,
-        dueDate: data.dueDate ?? undefined,
-        notes: data.notes ?? undefined,
-      },
-    });
+    return this.prisma.$transaction(async (tx) => {
+      // (1) Lock first, scoped to DRAFT. Everything below happens under it.
+      const locked = await tx.$queryRaw<
+        Array<{
+          id: string;
+          invoice_discount_type: string | null;
+          invoice_discount_value: number | null;
+        }>
+      >(Prisma.sql`
+        SELECT id, invoice_discount_type, invoice_discount_value
+        FROM invoices
+        WHERE id = ${invoiceId}::uuid
+          AND clinic_id = ${clinicId}::uuid
+          AND status = 'DRAFT'
+        FOR UPDATE
+      `);
 
-    if (count === 0) return false;
+      const row = locked[0];
+      if (!row) return false;
 
-    // Line items are replaced wholesale rather than diffed (deleteMany then
-    // createMany), matching how emr.repository.ts replaces a consultation's
-    // child rows on finalize.
-    if (data.lineItems) {
-      await this.prisma.$transaction(async (tx) => {
+      // (2) Replace the line items wholesale rather than diffing them, matching
+      // how emr.repository.ts replaces a consultation's child rows — but inside
+      // the lock, so the rows being replaced are provably still a draft's.
+      if (data.lineItems) {
         await tx.invoiceLineItem.deleteMany({ where: { clinicId, invoiceId } });
-        if (data.lineItems!.length > 0) {
+        if (data.lineItems.length > 0) {
           await tx.invoiceLineItem.createMany({
-            data: data.lineItems!.map((line) => this.toLineItemRow(clinicId, invoiceId, line)),
+            data: data.lineItems.map((line) => this.toLineItemRow(clinicId, invoiceId, line)),
           });
         }
-      });
-    }
+      }
 
-    return true;
+      // (3) The taxable base, from the rows that are now persisted. Read back
+      // rather than carried in from the caller: if the two ever disagreed, the
+      // header would be the lie and the lines the truth.
+      const lines = await tx.invoiceLineItem.findMany({
+        where: { clinicId, invoiceId },
+        select: { quantity: true, unitPricePaise: true, lineDiscountPaise: true },
+      });
+
+      const subtotalPaise = lines.reduce(
+        (sum, line) => sum + line.unitPricePaise * line.quantity,
+        0,
+      );
+      const lineDiscountPaise = lines.reduce((sum, line) => sum + line.lineDiscountPaise, 0);
+
+      // (4) An absent `invoiceDiscount` means the request did not mention the
+      // discount, which is NOT the same as clearing it — the stored type and
+      // value stand. The ABSOLUTE figure is recomputed either way, because the
+      // base above may have moved even when the discount itself did not.
+      const discount: InvoiceDiscountEdit = data.invoiceDiscount ?? {
+        type: (row.invoice_discount_type as DiscountType | null) ?? null,
+        value: row.invoice_discount_value ?? null,
+      };
+
+      const invoiceDiscountPaise = resolveDiscountPaise(
+        subtotalPaise - lineDiscountPaise,
+        discount.type,
+        discount.value,
+      );
+
+      // `where: { id }` alone is sound here and only here: this transaction has
+      // held the row since statement (1).
+      await tx.invoice.update({
+        where: { id: invoiceId },
+        data: {
+          invoiceDiscountType: discount.type,
+          invoiceDiscountValue: discount.value,
+          invoiceDiscountPaise,
+          subtotalPaise,
+          lineDiscountPaise,
+          // Presence, not truthiness: `notes: null` clears the note, and an
+          // absent key leaves it alone. The same distinction as the discount.
+          ...(data.dueDate !== undefined ? { dueDate: data.dueDate } : {}),
+          ...(data.notes !== undefined ? { notes: data.notes } : {}),
+        },
+      });
+
+      return true;
+    });
   }
 
   async deleteDraft(clinicId: string, invoiceId: string): Promise<boolean> {

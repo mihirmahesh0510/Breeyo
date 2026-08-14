@@ -276,13 +276,95 @@ interface CombinableInvoice {
 }
 
 /** The `invoices` columns a payment decision is made from. */
-interface LockedInvoiceRow {
+export interface LockedInvoiceRow {
   id: string;
   status: string;
   grand_total_paise: number;
   balance_paise: number;
   exception_flag: string | null;
   invoice_number: string | null;
+}
+
+// ─── Shared collection guards ───────────────────────────────────────────────
+//
+// Module-level rather than private methods, for the same reason
+// `issuePaymentReceipt` above is: a second consumer exists that holds no
+// `PaymentService`. `InvoiceService.markPaid` is the D-10 mark-paid control, and
+// it shipped without either of these — no lock and no bound — which is CR-04. A
+// re-implementation over there is precisely how the two paths would end up
+// enforcing different rules about the same money.
+
+/**
+ * Takes the invoice row under a `FOR UPDATE` lock.
+ *
+ * The lock is what makes the balance guard meaningful: without it, two
+ * concurrent collections both read the same balance, both pass, and the invoice
+ * ends up overpaid. Since hotfix 06-00b the lock is genuinely held to commit on
+ * the tenant client.
+ */
+export async function lockInvoiceForPayment(
+  tx: TenantTransactionClient,
+  clinicId: string,
+  invoiceId: string,
+): Promise<LockedInvoiceRow> {
+  const rows = await tx.$queryRaw<LockedInvoiceRow[]>(Prisma.sql`
+    SELECT id, status, grand_total_paise, balance_paise, exception_flag, invoice_number
+    FROM invoices
+    WHERE id = ${invoiceId}::uuid
+      AND clinic_id = ${clinicId}::uuid
+    FOR UPDATE
+  `);
+
+  const row = rows[0];
+  if (!row) throw invoiceNotFound(invoiceId);
+  return row;
+}
+
+/**
+ * Whether an invoice in this state can receive money at all.
+ *
+ * Expressed through the shared transition table rather than a local list, so
+ * D-20 has one definition. `FINALIZED` is the single special case: it is the
+ * transient post-finalize state that the reducer normally resolves within the
+ * finalize transaction itself, and its table row lists only `UNPAID` and
+ * `VOIDED`. Money arriving in that window is still real money.
+ *
+ * `DRAFT` fails here, which is the point — a draft carries no number and no
+ * frozen tax, so it is not yet a record of account against which anything can be
+ * received. `VOIDED` fails too; a late payment on a voided invoice is handled by
+ * the webhook's D-35 path, not by staff collecting at the counter.
+ */
+export function assertInvoicePayable(status: InvoiceStatus, exceptionFlag: string | null): void {
+  if (isInvoiceActionBlocked(exceptionFlag)) {
+    throw billingExceptionUnresolved(exceptionFlag as string);
+  }
+
+  if (status === 'FINALIZED') return;
+
+  if (
+    isValidInvoiceTransition(status, 'PAID') ||
+    isValidInvoiceTransition(status, 'PARTIALLY_PAID')
+  ) {
+    return;
+  }
+
+  throw invalidStateTransition(status);
+}
+
+/** Guards a locked row: exception flag, then state, then amount. */
+export function assertInvoiceCollectable(
+  invoice: LockedInvoiceRow,
+  amountPaise: number,
+): void {
+  assertInvoicePayable(invoice.status as InvoiceStatus, invoice.exception_flag);
+
+  if (amountPaise <= 0) {
+    throw domainError('A payment amount must be positive', 400, 'VALIDATION_ERROR');
+  }
+
+  if (amountPaise > invoice.balance_paise) {
+    throw paymentExceedsBalance(amountPaise, invoice.balance_paise);
+  }
 }
 
 // ─── Service ────────────────────────────────────────────────────────────────
@@ -868,30 +950,13 @@ export class PaymentService {
     return issuePaymentReceipt(tx, clinicId, invoiceId, payment, now);
   }
 
-  /**
-   * Takes the invoice row under a `FOR UPDATE` lock.
-   *
-   * The lock is what makes the balance guard meaningful: without it, two
-   * concurrent collections both read the same balance, both pass, and the
-   * invoice ends up overpaid. Since hotfix 06-00b the lock is genuinely held to
-   * commit on the tenant client.
-   */
+  /** Delegates to {@link lockInvoiceForPayment}; see the note there. */
   private async lockInvoice(
     tx: TenantTransactionClient,
     clinicId: string,
     invoiceId: string,
   ): Promise<LockedInvoiceRow> {
-    const rows = await tx.$queryRaw<LockedInvoiceRow[]>(Prisma.sql`
-      SELECT id, status, grand_total_paise, balance_paise, exception_flag, invoice_number
-      FROM invoices
-      WHERE id = ${invoiceId}::uuid
-        AND clinic_id = ${clinicId}::uuid
-      FOR UPDATE
-    `);
-
-    const row = rows[0];
-    if (!row) throw invoiceNotFound(invoiceId);
-    return row;
+    return lockInvoiceForPayment(tx, clinicId, invoiceId);
   }
 
   private async loadInvoiceForPayment(clinicId: string, invoiceId: string) {
@@ -1028,48 +1093,14 @@ export class PaymentService {
     return clinic;
   }
 
-  /** Guards a locked row: exception flag, then state, then amount. */
+  /** Delegates to {@link assertInvoiceCollectable}; see the note there. */
   private assertCollectable(invoice: LockedInvoiceRow, amountPaise: number): void {
-    this.assertPayable(invoice.status as InvoiceStatus, invoice.exception_flag);
-
-    if (amountPaise <= 0) {
-      throw domainError('A payment amount must be positive', 400, 'VALIDATION_ERROR');
-    }
-
-    if (amountPaise > invoice.balance_paise) {
-      throw paymentExceedsBalance(amountPaise, invoice.balance_paise);
-    }
+    assertInvoiceCollectable(invoice, amountPaise);
   }
 
-  /**
-   * Whether an invoice in this state can receive money at all.
-   *
-   * Expressed through the shared transition table rather than a local list, so
-   * D-20 has one definition. `FINALIZED` is the single special case: it is the
-   * transient post-finalize state that the reducer normally resolves within the
-   * finalize transaction itself, and its table row lists only `UNPAID` and
-   * `VOIDED`. Money arriving in that window is still real money.
-   *
-   * `DRAFT` fails here, which is the point — a draft carries no number and no
-   * frozen tax, so it is not yet a record of account against which anything can
-   * be received. `VOIDED` fails too; a late payment on a voided invoice is
-   * handled by the webhook's D-35 path, not by staff collecting at the counter.
-   */
+  /** Delegates to {@link assertInvoicePayable}; see the note there. */
   private assertPayable(status: InvoiceStatus, exceptionFlag: string | null): void {
-    if (isInvoiceActionBlocked(exceptionFlag)) {
-      throw billingExceptionUnresolved(exceptionFlag as string);
-    }
-
-    if (status === 'FINALIZED') return;
-
-    if (
-      isValidInvoiceTransition(status, 'PAID') ||
-      isValidInvoiceTransition(status, 'PARTIALLY_PAID')
-    ) {
-      return;
-    }
-
-    throw invalidStateTransition(status);
+    assertInvoicePayable(status, exceptionFlag);
   }
 
   /**

@@ -81,10 +81,15 @@ function firstArg(fn: { mock: { calls: unknown[][] } }): any {
   return fn.mock.calls[0][0];
 }
 
-function createHarness(options: { lockedRows?: unknown[] } = {}) {
+function createHarness(
+  options: { lockedRows?: unknown[]; persistedLines?: unknown[] } = {},
+) {
   const rawQueries: CapturedSql[] = [];
   const rawExecutes: CapturedSql[] = [];
-  const lockedRows = options.lockedRows ?? [{ id: INVOICE }];
+  const lockedRows = options.lockedRows ?? [
+    { id: INVOICE, invoice_discount_type: null, invoice_discount_value: null },
+  ];
+  const persistedLines = options.persistedLines ?? [];
 
   const tx = {
     $queryRaw: vi.fn(async (query: Prisma.Sql | TemplateStringsArray, ...values: unknown[]) => {
@@ -114,6 +119,7 @@ function createHarness(options: { lockedRows?: unknown[] } = {}) {
       update: vi.fn(async () => ({})),
       deleteMany: vi.fn(async () => ({ count: 0 })),
       createMany: vi.fn(async () => ({ count: 0 })),
+      findMany: vi.fn(async () => persistedLines),
     },
     payment: {
       findMany: vi.fn(async () => []),
@@ -179,21 +185,115 @@ describe('InvoiceRepository.findUninvoicedDispensedMovements', () => {
   });
 });
 
-describe('InvoiceRepository draft immutability', () => {
-  it('scopes updateDraft to DRAFT at the query layer and reports zero rows affected', async () => {
-    const { repository, prisma } = createHarness();
-    prisma.invoice.updateMany = vi.fn(async () => ({ count: 0 })) as any;
+/**
+ * CR-03. The header update and the line-item replacement used to be two
+ * independent units of work: `invoice.updateMany` committed on its own, and the
+ * replacement then ran in a later transaction whose WHERE clause named only
+ * `(clinicId, invoiceId)` — no status, no lock. A PATCH whose header update
+ * landed while the invoice was still a draft could therefore delete the frozen
+ * tax snapshot of an invoice that a concurrent finalize had numbered in between.
+ */
+describe('InvoiceRepository.updateDraft — draft immutability under concurrency', () => {
+  const percentLine = { quantity: 1, unitPricePaise: 100_000, lineDiscountPaise: 0 };
 
-    const updated = await repository.updateDraft(CLINIC, INVOICE, { notes: 'hello' });
+  it('takes a FOR UPDATE lock scoped to a DRAFT invoice before touching anything', async () => {
+    const { repository, rawQueries } = createHarness();
 
-    expect(updated).toBe(false);
-    expect(prisma.invoice.updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: expect.objectContaining({ id: INVOICE, clinicId: CLINIC, status: 'DRAFT' }),
-      }),
-    );
+    await repository.updateDraft(CLINIC, INVOICE, { notes: 'hello' });
+
+    const lock = rawQueries[0].sql;
+    expect(lock).toContain('FROM invoices');
+    expect(lock).toContain('FOR UPDATE');
+    expect(lock).toContain("status = 'DRAFT'");
   });
 
+  it('reports zero rows affected, and touches no line item, when the lock finds no draft', async () => {
+    const { repository, tx } = createHarness({ lockedRows: [] });
+
+    const updated = await repository.updateDraft(CLINIC, INVOICE, {
+      notes: 'hello',
+      lineItems: [],
+    });
+
+    expect(updated).toBe(false);
+    // The whole point: a finalized invoice's frozen lines are never deleted,
+    // not even momentarily inside a transaction that later rolls back.
+    expect(tx.invoiceLineItem.deleteMany).not.toHaveBeenCalled();
+    expect(tx.invoiceLineItem.createMany).not.toHaveBeenCalled();
+    expect(tx.invoice.update).not.toHaveBeenCalled();
+  });
+
+  it('replaces the line items on the same transaction handle as the header update', async () => {
+    const { repository, prisma, tx } = createHarness();
+
+    await repository.updateDraft(CLINIC, INVOICE, {
+      notes: 'hello',
+      lineItems: [
+        {
+          lineType: 'service',
+          sortOrder: 0,
+          description: 'Consultation',
+          quantity: 1,
+          unitPricePaise: 50_000,
+          lineDiscountPaise: 0,
+          taxTreatment: 'exempt',
+          gstRatePercent: 0,
+          lineTotalPaise: 50_000,
+        },
+      ],
+    });
+
+    // Exactly one unit of work — not a header commit followed by a separate,
+    // unguarded replacement.
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(tx.invoiceLineItem.deleteMany).toHaveBeenCalledTimes(1);
+    expect(tx.invoiceLineItem.createMany).toHaveBeenCalledTimes(1);
+    expect(tx.invoice.update).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * CR-01. `invoice_discount_paise` is the ABSOLUTE figure finalize freezes onto
+   * the permanent document. It is derived from the taxable base, so it has to be
+   * recomputed whenever the base moves — not only when the request happens to
+   * restate the discount type.
+   */
+  it('recomputes the absolute discount from the persisted lines even when the patch never mentions it', async () => {
+    const { repository, tx } = createHarness({
+      lockedRows: [
+        { id: INVOICE, invoice_discount_type: 'percent', invoice_discount_value: 10 },
+      ],
+      persistedLines: [{ ...percentLine, unitPricePaise: 20_000 }],
+    });
+
+    await repository.updateDraft(CLINIC, INVOICE, { notes: 'edited' });
+
+    const update = firstArg(tx.invoice.update);
+    expect(update.data.invoiceDiscountType).toBe('percent');
+    expect(update.data.invoiceDiscountValue).toBe(10);
+    expect(update.data.subtotalPaise).toBe(20_000);
+    expect(update.data.invoiceDiscountPaise).toBe(2_000);
+  });
+
+  it('clears type, value and the absolute amount when the discount is explicitly nulled', async () => {
+    const { repository, tx } = createHarness({
+      lockedRows: [
+        { id: INVOICE, invoice_discount_type: 'percent', invoice_discount_value: 10 },
+      ],
+      persistedLines: [percentLine],
+    });
+
+    await repository.updateDraft(CLINIC, INVOICE, {
+      invoiceDiscount: { type: null, value: null },
+    });
+
+    const update = firstArg(tx.invoice.update);
+    expect(update.data.invoiceDiscountType).toBeNull();
+    expect(update.data.invoiceDiscountValue).toBeNull();
+    expect(update.data.invoiceDiscountPaise).toBe(0);
+  });
+});
+
+describe('InvoiceRepository draft immutability', () => {
   it('scopes deleteDraft to DRAFT at the query layer', async () => {
     const { repository, prisma } = createHarness();
 

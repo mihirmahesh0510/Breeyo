@@ -91,6 +91,38 @@ export function fromPaise(paise: number): string {
 }
 
 /**
+ * Resolves a discount declaration — a type and a basis value — into an absolute
+ * number of paise, bounded by the base it is taken from.
+ *
+ * `value` is a WHOLE PERCENTAGE of 0-100 when `type` is `percent`, and is
+ * already paise when `type` is `flat` (D-07). Nothing scales it on the way in,
+ * so nothing may unscale it here: `invoiceLineItemInputSchema` rejects a percent
+ * above 100 and admits exactly 100 as a full write-off (D-40), which is only
+ * coherent if 100 means 100%. Dividing by 10_000 would cap the largest legal
+ * discount at 1% and silently turn every "10% off" into "0.1% off".
+ *
+ * The line-level and invoice-level discount rules are the same rule, and this is
+ * the one implementation of it. It lives in `money.ts` rather than on
+ * `InvoiceService` because the repository has to re-derive the invoice-level
+ * figure under its row lock, from the lines it is about to persist (CR-01), and
+ * a second copy over there is exactly how the two would drift apart.
+ *
+ * A null type or a null value is "no discount", which is the same answer the
+ * caller wants for a cleared discount and for one that was never set.
+ */
+export function resolveDiscountPaise(
+  basePaise: number,
+  type: string | null | undefined,
+  value: number | null | undefined,
+): number {
+  if (type == null || value == null) return 0;
+  if (basePaise <= 0) return 0;
+  if (type === 'flat') return Math.min(value, basePaise);
+  // Percent of the base, rounded to whole paise (D-31) and never exceeding it.
+  return Math.min(Math.round((basePaise * value) / 100), basePaise);
+}
+
+/**
  * Cached at module scope deliberately. Constructing an `Intl.NumberFormat` is
  * the expensive part of formatting, and the billing dashboard formats one amount
  * per invoice row. The instance is immutable and therefore safe to share.

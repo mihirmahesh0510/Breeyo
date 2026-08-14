@@ -24,7 +24,7 @@ import type { TenantPrismaClient } from '../../lib/prisma-rls.js';
 import { BillingAuditEvent, writeBillingAuditLog } from '../../lib/billing-audit-log.js';
 import { allocateInvoiceDiscount, computeInvoiceTax } from './gst.service.js';
 import type { TaxableLine } from './gst.service.js';
-import { toPaise } from './money.js';
+import { resolveDiscountPaise, toPaise } from './money.js';
 import type {
   BillingActor,
   DispensedMovementRow,
@@ -38,6 +38,7 @@ import type {
   StockPlanLine,
   StockValidatorService,
 } from './stock-validator.service.js';
+import { assertInvoiceCollectable, lockInvoiceForPayment } from './payment.service.js';
 import { getRazorpayForClinic } from './razorpay.client.js';
 
 /**
@@ -194,7 +195,7 @@ export class InvoiceService {
     const lineItems: DraftLineItemData[] = parsed.lineItems.map((line, index) => {
       const unitPricePaise = line.unitPricePaise;
       const gross = unitPricePaise * line.quantity;
-      const lineDiscountPaise = this.resolveLineDiscount(
+      const lineDiscountPaise = resolveDiscountPaise(
         gross,
         line.discountType ?? null,
         line.discountValue ?? null,
@@ -237,7 +238,7 @@ export class InvoiceService {
       0,
     );
     const lineDiscountPaise = lineItems.reduce((sum, line) => sum + line.lineDiscountPaise, 0);
-    const invoiceDiscountPaise = this.resolveInvoiceDiscount(
+    const invoiceDiscountPaise = resolveDiscountPaise(
       subtotalPaise - lineDiscountPaise,
       parsed.invoiceDiscountType ?? null,
       parsed.invoiceDiscountValue ?? null,
@@ -270,9 +271,16 @@ export class InvoiceService {
   }
 
   /**
-   * Replaces a draft wholesale. The repository's update is scoped to
-   * `status: 'DRAFT'`, so a zero-row result means the invoice finalized in the
-   * meantime — D-21's only corrections are void-and-reissue or a credit note.
+   * Replaces a draft wholesale. The repository's update runs under a `FOR
+   * UPDATE` lock scoped to `status: 'DRAFT'`, so a false result means the
+   * invoice finalized in the meantime — D-21's only corrections are
+   * void-and-reissue or a credit note.
+   *
+   * Nothing derived is computed here. The sub-total, the line-discount total and
+   * the absolute invoice discount are the repository's to derive, from the rows
+   * it persists, inside the lock (CR-01). This method's job is to turn the
+   * request into line rows and to say what the client *meant* about the
+   * discount — set it, clear it, or leave it alone.
    */
   async updateDraft(
     clinicId: string,
@@ -283,13 +291,11 @@ export class InvoiceService {
     const parsed = updateDraftInvoiceSchema.parse(input);
 
     let lineItems: DraftLineItemData[] | undefined;
-    let subtotalPaise: number | undefined;
-    let lineDiscountPaise: number | undefined;
 
     if (parsed.lineItems) {
       lineItems = parsed.lineItems.map((line, index) => {
         const gross = line.unitPricePaise * line.quantity;
-        const discount = this.resolveLineDiscount(
+        const discount = resolveDiscountPaise(
           gross,
           line.discountType ?? null,
           line.discountValue ?? null,
@@ -312,23 +318,24 @@ export class InvoiceService {
           lineTotalPaise: gross - discount,
         };
       });
-      subtotalPaise = lineItems.reduce((sum, l) => sum + l.unitPricePaise * l.quantity, 0);
-      lineDiscountPaise = lineItems.reduce((sum, l) => sum + l.lineDiscountPaise, 0);
     }
 
+    // CR-01. Key PRESENCE, not truthiness. Zod does not synthesise absent
+    // optional keys, so `in` separates the three intents a PATCH can carry:
+    // an absent key leaves the stored discount alone, an explicit null clears
+    // it, and a value sets it. The old `?? null` mapping turned "absent" into
+    // "clear", the repository then turned "clear" back into "leave alone", and
+    // between them a discount could never be removed at all.
+    const invoiceDiscount =
+      'invoiceDiscountType' in parsed || 'invoiceDiscountValue' in parsed
+        ? {
+            type: parsed.invoiceDiscountType ?? null,
+            value: parsed.invoiceDiscountValue ?? null,
+          }
+        : undefined;
+
     const updated = await this.repository.updateDraft(clinicId, invoiceId, {
-      invoiceDiscountType: parsed.invoiceDiscountType ?? null,
-      invoiceDiscountValue: parsed.invoiceDiscountValue ?? null,
-      invoiceDiscountPaise:
-        subtotalPaise != null && parsed.invoiceDiscountType
-          ? this.resolveInvoiceDiscount(
-              subtotalPaise - (lineDiscountPaise ?? 0),
-              parsed.invoiceDiscountType,
-              parsed.invoiceDiscountValue ?? null,
-            )
-          : undefined,
-      subtotalPaise,
-      lineDiscountPaise,
+      invoiceDiscount,
       dueDate: parsed.dueDate ? new Date(parsed.dueDate) : undefined,
       notes: parsed.notes ?? undefined,
       lineItems,
@@ -656,6 +663,31 @@ export class InvoiceService {
    *
    * The payment row and the derived status are written in one transaction, so
    * the invoice's status can never disagree with the rows it is derived from.
+   *
+   * ## The lock and the bound (CR-04)
+   *
+   * Everything read before the transaction is advisory. The figures that decide
+   * how much money to record are re-read under `FOR UPDATE` and re-guarded with
+   * exactly the helpers `payment.service.ts` applies to every other collection
+   * path — `recordCashPayment`, the split cash leg, the payment-link creation.
+   * This method shipped with neither, and the omission was not cosmetic:
+   *
+   *   * **No bound.** `amountPaise` came straight from the request and was
+   *     written verbatim, so a figure larger than the balance drove
+   *     `balance_paise` negative. `recomputePaymentState` then correctly flagged
+   *     the invoice `overpayment` (D-36) — and D-36's resolve endpoint does not
+   *     exist yet (`deferred-items.md` #15), so `assertNoUnresolvedException`
+   *     blocks void, refund, credit note and every further payment on that
+   *     invoice from then on. A typo at the counter permanently bricked an
+   *     invoice.
+   *   * **No lock.** Two staff tapping "mark paid" at once both read the same
+   *     outstanding balance, both passed, and both wrote a full payment row.
+   *     Same terminal state, no typo required.
+   *
+   * D-36 is for the overpayment we cannot prevent — two legs genuinely racing to
+   * settle. Keeping the preventable kind off that list is what keeps it
+   * meaningful, because every entry on it is then a real race rather than
+   * something someone could have caught at the counter.
    */
   async markPaid(
     clinicId: string,
@@ -678,17 +710,28 @@ export class InvoiceService {
     }
 
     // PAID -> PAID is an accepted no-op (duplicate webhook, double tap); there
-    // is nothing left to collect, so no second payment row is written.
+    // is nothing left to collect, so no second payment row is written. Checked
+    // again under the lock below, where it is authoritative.
     if (current === 'PAID') {
       return this.repository.getInvoiceDetail(clinicId, invoiceId);
     }
 
-    const outstanding =
-      ((invoice as { grandTotalPaise?: number }).grandTotalPaise ?? 0) -
-      ((invoice as { amountPaidPaise?: number }).amountPaidPaise ?? 0);
-    const amountPaise = input.amountPaise ?? outstanding;
-
     await this.prisma.$transaction(async (tx) => {
+      const locked = await lockInvoiceForPayment(tx, clinicId, invoiceId);
+
+      // The invoice settled between the read above and this lock — a concurrent
+      // mark-paid, a webhook capture, a credit note. Same accepted no-op, now
+      // decided on a row nobody else can be changing.
+      if (locked.status === 'PAID') return;
+
+      // Omitting the amount means "settle what is outstanding", and the only
+      // trustworthy figure for that is the locked balance. `balance_paise` also
+      // nets off credit notes, which the previous `grandTotal - amountPaid`
+      // arithmetic ignored.
+      const amountPaise = input.amountPaise ?? locked.balance_paise;
+
+      assertInvoiceCollectable(locked, amountPaise);
+
       await tx.payment.create({
         data: {
           clinicId,
@@ -883,6 +926,24 @@ export class InvoiceService {
     return { tax, discounted, subtotalPaise, lineDiscountPaise };
   }
 
+  /**
+   * The invoice-level discount finalize will freeze, in paise.
+   *
+   * CR-01: the DECLARATION wins over the stored absolute figure. `type` and
+   * `value` are what staff agreed with the owner — "10% off" — and
+   * `invoice_discount_paise` is a derived cache of that intent against a
+   * particular base. Reading the cache first, as this used to, meant finalize
+   * froze whatever base happened to be current when the discount was last
+   * restated: a 10% discount set against 1,000 rupees survived as an absolute
+   * 100 rupees onto a draft later edited down to 200, i.e. a 50% discount on a
+   * permanent legal document. Recomputing from the declaration against the lines
+   * actually being taxed makes that unrepresentable, whatever any earlier writer
+   * left in the column.
+   *
+   * A stored absolute with no declaration behind it is still honoured — a flat
+   * amount written by a path that did not record its basis — but bounded by the
+   * base, so it can never exceed the invoice it discounts.
+   */
   private invoiceDiscountFor(invoice: unknown, lineItems: readonly PersistedLineItem[]): number {
     const record = invoice as {
       invoiceDiscountType?: string | null;
@@ -890,52 +951,22 @@ export class InvoiceService {
       invoiceDiscountPaise?: number | null;
     };
 
-    if (record.invoiceDiscountPaise != null && record.invoiceDiscountPaise > 0) {
-      return record.invoiceDiscountPaise;
-    }
-
     const netPaise = lineItems.reduce(
       (sum, line) => sum + line.unitPricePaise * line.quantity - line.lineDiscountPaise,
       0,
     );
 
-    return this.resolveInvoiceDiscount(
-      netPaise,
-      record.invoiceDiscountType ?? null,
-      record.invoiceDiscountValue ?? null,
-    );
-  }
+    if (record.invoiceDiscountType != null && record.invoiceDiscountValue != null) {
+      return resolveDiscountPaise(
+        netPaise,
+        record.invoiceDiscountType,
+        record.invoiceDiscountValue,
+      );
+    }
 
-  /**
-   * `percent` values are a whole percentage of 0-100; `flat` values are already
-   * paise (D-07). The line-level and invoice-level rules are the same rule, so
-   * they share one implementation and cannot drift apart.
-   */
-  private resolveLineDiscount(
-    grossPaise: number,
-    type: string | null,
-    value: number | null,
-  ): number {
-    return this.resolveInvoiceDiscount(grossPaise, type, value);
-  }
-
-  /**
-   * `value` is a WHOLE PERCENTAGE, in the same units the client sent and the
-   * column stores — nothing scales it on the way in, so nothing may unscale it
-   * here. `invoiceLineItemInputSchema` rejects a percent above 100 and admits
-   * exactly 100 as a full write-off (D-40), which is only coherent if 100 means
-   * 100%: dividing by 10_000 would cap the largest legal discount at 1% and
-   * silently turn every "10% off" into "0.1% off".
-   */
-  private resolveInvoiceDiscount(
-    basePaise: number,
-    type: string | null,
-    value: number | null,
-  ): number {
-    if (type == null || value == null) return 0;
-    if (type === 'flat') return Math.min(value, basePaise);
-    // percent of the base, rounded to whole paise (D-31) and never exceeding it
-    return Math.min(Math.round((basePaise * value) / 100), basePaise);
+    const stored = record.invoiceDiscountPaise ?? 0;
+    if (stored <= 0) return 0;
+    return Math.min(stored, Math.max(netPaise, 0));
   }
 
   private resolveInterState(

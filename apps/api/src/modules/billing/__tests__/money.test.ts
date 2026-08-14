@@ -5,6 +5,7 @@ import {
   fromPaise,
   formatPaiseINR,
   allocateProRata,
+  resolveDiscountPaise,
 } from '../money.js';
 
 describe('toPaise', () => {
@@ -208,5 +209,51 @@ describe('allocateProRata', () => {
     expect(() =>
       allocateProRata(1_000_000_000, [10_000_000_000, 1]),
     ).toThrow(/safe integer|precision/i);
+  });
+});
+
+/**
+ * The D-07 discount rule, in the one place it now lives. It used to be a private
+ * method on `InvoiceService`; CR-01 needed the repository to re-derive the
+ * invoice-level figure under its row lock, and a second copy over there is how
+ * the line-level and invoice-level rules would have drifted apart.
+ */
+describe('resolveDiscountPaise', () => {
+  it('reads a percent value as a WHOLE percentage, never basis points', () => {
+    // The bug this pins: dividing by 10_000 would make the first case 100,
+    // capping the largest legal discount at 1% and silently turning every
+    // "10% off" into "0.1% off".
+    expect(resolveDiscountPaise(100_000, 'percent', 10)).toBe(10_000);
+    expect(resolveDiscountPaise(20_000, 'percent', 10)).toBe(2_000);
+  });
+
+  it('admits exactly 100 as a full write-off (D-40)', () => {
+    expect(resolveDiscountPaise(100_000, 'percent', 100)).toBe(100_000);
+  });
+
+  it('rounds a fractional percentage to whole paise (D-31)', () => {
+    // 15% of 3333 paise is 499.95.
+    expect(resolveDiscountPaise(3_333, 'percent', 15)).toBe(500);
+  });
+
+  it('treats a flat value as paise and does not scale it', () => {
+    expect(resolveDiscountPaise(100_000, 'flat', 2_000)).toBe(2_000);
+  });
+
+  it('never discounts more than the base, in either mode', () => {
+    expect(resolveDiscountPaise(100_000, 'flat', 500_000)).toBe(100_000);
+    expect(resolveDiscountPaise(20_000, 'flat', 30_000)).toBe(20_000);
+  });
+
+  it('is zero when either half of the declaration is missing', () => {
+    expect(resolveDiscountPaise(100_000, null, 10)).toBe(0);
+    expect(resolveDiscountPaise(100_000, 'percent', null)).toBe(0);
+    expect(resolveDiscountPaise(100_000, undefined, undefined)).toBe(0);
+  });
+
+  it('is zero against an empty or negative base rather than going negative', () => {
+    expect(resolveDiscountPaise(0, 'percent', 10)).toBe(0);
+    expect(resolveDiscountPaise(0, 'flat', 5_000)).toBe(0);
+    expect(resolveDiscountPaise(-100, 'flat', 5_000)).toBe(0);
   });
 });
