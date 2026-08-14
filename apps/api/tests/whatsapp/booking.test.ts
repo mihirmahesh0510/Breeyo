@@ -20,6 +20,7 @@ import { SlotService } from '../../src/modules/whatsapp/booking/slot.service.js'
 import { createBookingInboundHandler } from '../../src/modules/whatsapp/booking/booking-inbound.handler.js';
 import { getTodayIST, addDaysIST } from '../../src/lib/ist-date.js';
 import type { WaInboundEvent } from '../../src/modules/whatsapp/providers/wa-provider.port.js';
+import { processSimulatorJob } from '../../src/modules/whatsapp/workers/simulator.worker.js';
 
 /**
  * Real-database integration suite (07-10 Task 3). Per the plan and the
@@ -544,6 +545,80 @@ describe('WhatsApp Booking (WHA-03)', () => {
         { providerMessageId: `sim.${offerMsg!.id}`, status: 'DELIVERED' },
         expect.objectContaining({ jobId: `status:sim.${offerMsg!.id}:DELIVERED` }),
       );
+    },
+  );
+
+  it(
+    'D-14/D-15 self-driving demo: a multi-pet owner texting BOOK gets the pet-picker dispatched through the ' +
+      "real SimulatorProvider, which schedules its own auto-reply job -- running THAT job (no manually-authored " +
+      'inbound event) auto-picks the first pet and the flow proceeds on its own straight to the slot-picker',
+    async () => {
+      const { clinic, owner, pets } = await setupClinicOwnerPet(2);
+      const { inboundRouter } = buildHarness();
+
+      await inboundRouter.route(textEvent('BOOK', owner.mobile), clinic.id);
+
+      const thread = await prisma.whatsAppThread.findFirst({ where: { clinicId: clinic.id, ownerId: owner.id } });
+      const petPickerMsg = await prisma.whatsAppMessage.findFirst({
+        where: { clinicId: clinic.id, threadId: thread!.id, direction: 'OUTBOUND' },
+        orderBy: { createdAt: 'desc' },
+      });
+      expect(petPickerMsg!.templateKey).toBeNull(); // a freeform interactive-list send, not a template
+
+      // Dispatch it for real -- the same real outbound worker + real
+      // SimulatorProvider round-trip as the test above, but this time
+      // capturing what the provider itself schedules on the simulator queue.
+      const whatsAppRepo = new WhatsAppRepository(prisma);
+      const deliveryStatusService = new DeliveryStatusService(whatsAppRepo, prisma, null);
+      const simulatorQueue = { add: vi.fn().mockResolvedValue(undefined) };
+
+      await processOutboundJob(
+        {
+          prisma,
+          repository: whatsAppRepo,
+          deliveryStatusService,
+          simulatorQueue: simulatorQueue as never,
+          redis: {} as never,
+        },
+        { messageId: petPickerMsg!.id as string },
+      );
+
+      // The gap this closes: SimulatorProvider.sendFreeform must schedule its
+      // own auto-reply job for an interactive list, exactly like sendTemplate
+      // already does for buttons.
+      const providerMessageId = `sim.${petPickerMsg!.id}`;
+      expect(simulatorQueue.add).toHaveBeenCalledWith(
+        'auto-reply',
+        expect.objectContaining({ providerMessageId }),
+        expect.objectContaining({ jobId: `auto-reply:${providerMessageId}` }),
+      );
+      const [, autoReplyJobData] = simulatorQueue.add.mock.calls.find(([name]) => name === 'auto-reply')!;
+
+      // Run the exact job the provider scheduled -- through the real worker
+      // function and the real (bookingHandler-wired) InboundRouterService --
+      // with NO test-authored LIST_REPLY event anywhere in this test.
+      await processSimulatorJob(
+        {
+          prisma,
+          redis: {} as never,
+          deliveryStatusService,
+          inboundRouter,
+        },
+        { name: 'auto-reply', ...(autoReplyJobData as Record<string, unknown>) } as never,
+      );
+
+      const booking = await prisma.whatsAppBookingRequest.findFirst({
+        where: { clinicId: clinic.id, ownerId: owner.id },
+      });
+      expect(booking).not.toBeNull();
+      expect(booking!.petId).toBe(pets[0].id); // D-15: the simulator always picks the FIRST row
+      expect(booking!.state).toBe('AWAITING_SLOT_CHOICE');
+
+      // The flow proceeded automatically all the way to a fresh slot-picker.
+      const slotOfferMsg = await latestOutboundBookingMessage(clinic.id, thread!.id);
+      const slotRows = slotOfferMsg!.interactiveOptions as { id: string }[];
+      expect(slotRows.length).toBeGreaterThan(0);
+      expect(slotRows.every((r) => r.id.startsWith('booking:slot:'))).toBe(true);
     },
   );
 });

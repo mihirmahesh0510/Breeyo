@@ -122,6 +122,31 @@ describe('processSimulatorJob (WHA-04/05, D-14)', () => {
     expect(event).toMatchObject({ kind: 'BUTTON_REPLY', payload: 'booking:confirm:1' });
   });
 
+  it("processSimulatorJob({ name: 'auto-reply', list, ... }) with no templateKey builds and routes a LIST_REPLY event (D-14/D-15)", async () => {
+    await processSimulatorJob(deps as any, {
+      name: 'auto-reply',
+      providerMessageId: OUTBOUND_PROVIDER_MESSAGE_ID,
+      buttons: [],
+      list: {
+        rows: [
+          { id: 'booking:pet:11111111-1111-1111-1111-111111111111', title: 'Bruno' },
+          { id: 'booking:pet:22222222-2222-2222-2222-222222222222', title: 'Milo' },
+        ],
+      },
+    });
+
+    expect(deps.inboundRouter.route).toHaveBeenCalledTimes(1);
+    const [event, clinicId, channel] = deps.inboundRouter.route.mock.calls[0];
+    expect(clinicId).toBe(CLINIC_ID);
+    expect(channel).toBe('SIMULATOR');
+    expect(event).toMatchObject({
+      kind: 'LIST_REPLY',
+      rowId: 'booking:pet:11111111-1111-1111-1111-111111111111',
+      label: 'Bruno',
+      replyToProviderMessageId: OUTBOUND_PROVIDER_MESSAGE_ID,
+    });
+  });
+
   it('does nothing when the outbound message no longer exists', async () => {
     deps.prisma.whatsAppMessage.findFirst.mockResolvedValue(null);
 

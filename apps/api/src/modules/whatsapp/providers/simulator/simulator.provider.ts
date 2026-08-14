@@ -117,6 +117,31 @@ export class SimulatorProvider implements WaProvider {
     const providerMessageId = `sim.${cmd.idempotencyKey}`;
     await this.enqueueStatusTransitions(providerMessageId);
 
+    // D-14/D-15 fix: a freeform send that offers something to choose from
+    // (the booking flow's dynamically generated pet/slot-picker lists, or a
+    // button set) needs the exact same auto-reply scheduling `sendTemplate`
+    // already gets, or the simulator never answers it and the demo booking
+    // flow stalls forever at that prompt. A plain-text-only freeform send
+    // (e.g. "sorry, that slot was just taken") has nothing to choose, so no
+    // auto-reply is scheduled for it — the flow's next list prompt is what
+    // actually needs one.
+    const hasListRows = (cmd.list?.rows.length ?? 0) > 0;
+    const hasButtons = (cmd.buttons?.length ?? 0) > 0;
+    if (this.config.autoReplyEnabled && (hasListRows || hasButtons)) {
+      await this.simulatorQueue.add(
+        'auto-reply',
+        {
+          providerMessageId,
+          buttons: cmd.buttons ?? [],
+          list: cmd.list ? { rows: cmd.list.rows } : undefined,
+        },
+        {
+          delay: this.config.autoReplyDelaySeconds * 1000,
+          jobId: `auto-reply:${providerMessageId}`,
+        },
+      );
+    }
+
     return this.buildAck(providerMessageId, cmd.to);
   }
 

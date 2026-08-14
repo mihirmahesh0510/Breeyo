@@ -258,6 +258,63 @@ describe('SimulatorProvider.sendFreeform', () => {
       provider.sendFreeform(createFreeformCommand({ serviceWindowExpiresAt: new Date(Date.now() + 60 * 60 * 1000) })),
     ).resolves.toMatchObject({ acceptedStatus: 'ACCEPTED' });
   });
+
+  it('enqueues an auto-reply job carrying the list rows when a list is offered and autoReplyEnabled (D-14)', async () => {
+    const queue = createQueue();
+    const provider = new SimulatorProvider(
+      createConfig({ autoReplyEnabled: true, autoReplyDelaySeconds: 20 }),
+      queue as unknown as Queue,
+    );
+    const rows = [
+      { id: 'booking:pet:11111111-1111-1111-1111-111111111111', title: 'Bruno' },
+      { id: 'booking:pet:22222222-2222-2222-2222-222222222222', title: 'Milo' },
+    ];
+
+    const result = await provider.sendFreeform(
+      createFreeformCommand({ idempotencyKey: 'msg-list', list: { buttonText: 'Choose', rows } }),
+    );
+
+    expect(queue.add).toHaveBeenCalledWith(
+      'auto-reply',
+      expect.objectContaining({ providerMessageId: result.providerMessageId, list: { rows } }),
+      expect.objectContaining({ delay: 20_000, jobId: `auto-reply:${result.providerMessageId}` }),
+    );
+  });
+
+  it('enqueues an auto-reply job when buttons (no list) are offered and autoReplyEnabled (parity with the template path)', async () => {
+    const queue = createQueue();
+    const provider = new SimulatorProvider(createConfig({ autoReplyEnabled: true }), queue as unknown as Queue);
+    const buttons = [{ id: 'booking:confirm:1', title: 'Confirm' }];
+
+    const result = await provider.sendFreeform(createFreeformCommand({ idempotencyKey: 'msg-btn', buttons }));
+
+    expect(queue.add).toHaveBeenCalledWith(
+      'auto-reply',
+      expect.objectContaining({ providerMessageId: result.providerMessageId, buttons }),
+      expect.objectContaining({ jobId: `auto-reply:${result.providerMessageId}` }),
+    );
+  });
+
+  it('enqueues NO auto-reply job for a plain-text freeform send with neither list nor buttons (nothing to choose)', async () => {
+    const queue = createQueue();
+    const provider = new SimulatorProvider(createConfig({ autoReplyEnabled: true }), queue as unknown as Queue);
+
+    await provider.sendFreeform(createFreeformCommand({ idempotencyKey: 'msg-plain' }));
+
+    const autoReplyCalls = queue.add.mock.calls.filter(([name]) => name === 'auto-reply');
+    expect(autoReplyCalls).toHaveLength(0);
+  });
+
+  it('enqueues no auto-reply job for a list/button send when autoReplyEnabled is false', async () => {
+    const queue = createQueue();
+    const provider = new SimulatorProvider(createConfig({ autoReplyEnabled: false }), queue as unknown as Queue);
+    const rows = [{ id: 'booking:pet:1', title: 'Bruno' }];
+
+    await provider.sendFreeform(createFreeformCommand({ list: { buttonText: 'Choose', rows } }));
+
+    const autoReplyCalls = queue.add.mock.calls.filter(([name]) => name === 'auto-reply');
+    expect(autoReplyCalls).toHaveLength(0);
+  });
 });
 
 describe('SimulatorProvider.uploadMedia', () => {

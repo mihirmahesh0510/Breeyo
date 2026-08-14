@@ -15,16 +15,26 @@
  */
 
 import type { WaTemplateKey } from '@breeyo/types';
-import type { WaButtonSpec, WaInboundEvent } from '../wa-provider.port.js';
+import type { WaButtonSpec, WaInboundEvent, WaListRow } from '../wa-provider.port.js';
 
 export interface SimulatedReplyInput {
   /** The provider message id of the outbound message this reply answers. */
   outboundProviderMessageId: string;
   /** The owner's wa_id (plus-less), mirroring Meta's inbound `from`. */
   from: string;
-  templateKey: WaTemplateKey;
+  /**
+   * Absent for a freeform send (the booking flow's pet/slot pickers and
+   * plain-text fallbacks) — present only for a template send.
+   */
+  templateKey?: WaTemplateKey;
   /** The buttons the outbound message offered, if any. */
   buttons: WaButtonSpec[];
+  /**
+   * The rows a freeform interactive-list send offered, if any (the booking
+   * flow's pet/slot pickers — a dynamically generated list, never one of
+   * the six fixed templates, so it cannot travel via `templateKey`).
+   */
+  list?: { rows: WaListRow[] };
   occurredAt: Date;
 }
 
@@ -46,16 +56,46 @@ const TEMPLATE_ACK_TEXT: Record<WaTemplateKey, string> = {
 };
 
 /**
+ * Used only when `templateKey` is absent AND neither a list nor buttons were
+ * offered — a plain-text-only freeform send. `SimulatorProvider.sendFreeform`
+ * never schedules an auto-reply job for that shape (nothing to choose), so
+ * this path should rarely if ever be hit in practice; it exists so this
+ * function never crashes on an unexpected input shape.
+ */
+const GENERIC_ACK_TEXT = 'Thanks, got it!';
+
+/**
  * Builds the simulator's auto-reply to an outbound message.
  *
- * If the outbound message offered buttons, the reply is a `BUTTON_REPLY`
- * that always picks the positive/first option (D-15): the first button
- * whose id starts with `booking:confirm:`, or — if none does — the first
- * button offered. Otherwise the reply is a short fixed `TEXT`
- * acknowledgement keyed by template.
+ * Precedence, all deterministic (D-15 — zero randomness for any offered
+ * choice):
+ *   1. If the outbound message offered an interactive LIST (the booking
+ *      flow's dynamically generated pet/slot pickers — never one of the six
+ *      fixed templates), the reply is a `LIST_REPLY` that always picks the
+ *      FIRST row offered.
+ *   2. Else if it offered buttons, the reply is a `BUTTON_REPLY` that always
+ *      picks the positive/first option: the first button whose id starts
+ *      with `booking:confirm:`, or — if none does — the first button
+ *      offered.
+ *   3. Otherwise the reply is a short fixed `TEXT` acknowledgement keyed by
+ *      template, or a generic fallback if there is no template key either.
  */
 export function buildSimulatedReply(input: SimulatedReplyInput): WaInboundEvent {
   const providerMessageId = `sim-reply.${input.outboundProviderMessageId}`;
+
+  if (input.list && input.list.rows.length > 0) {
+    const firstRow = input.list.rows[0];
+
+    return {
+      kind: 'LIST_REPLY',
+      providerMessageId,
+      from: input.from,
+      rowId: firstRow.id,
+      label: firstRow.title,
+      replyToProviderMessageId: input.outboundProviderMessageId,
+      occurredAt: input.occurredAt,
+    };
+  }
 
   if (input.buttons.length > 0) {
     const positive =
@@ -76,7 +116,7 @@ export function buildSimulatedReply(input: SimulatedReplyInput): WaInboundEvent 
     kind: 'TEXT',
     providerMessageId,
     from: input.from,
-    text: TEMPLATE_ACK_TEXT[input.templateKey],
+    text: input.templateKey ? TEMPLATE_ACK_TEXT[input.templateKey] : GENERIC_ACK_TEXT,
     replyToProviderMessageId: input.outboundProviderMessageId,
     occurredAt: input.occurredAt,
   };

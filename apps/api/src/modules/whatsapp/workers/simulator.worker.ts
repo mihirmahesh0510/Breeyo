@@ -20,7 +20,7 @@
 import { Worker, type Job } from 'bullmq';
 import type { Redis } from 'ioredis';
 import type { PrismaClient } from '@prisma/client';
-import type { WaButtonSpec, WaDeliveryStatus, WaTemplateKey } from '@breeyo/types';
+import type { WaButtonSpec, WaDeliveryStatus, WaListRow, WaTemplateKey } from '@breeyo/types';
 import { buildSimulatedReply } from '../providers/simulator/simulator-reply.js';
 import { toWaId } from '../../../lib/phone.js';
 import type { DeliveryStatusService } from '../delivery-status.service.js';
@@ -28,7 +28,15 @@ import type { InboundRouterService } from '../inbound-router.service.js';
 
 export type SimulatorJobData =
   | { name: 'status-transition'; providerMessageId: string; status: WaDeliveryStatus }
-  | { name: 'auto-reply'; providerMessageId: string; templateKey: WaTemplateKey; buttons: WaButtonSpec[] };
+  | {
+      name: 'auto-reply';
+      providerMessageId: string;
+      /** Present for a template send; absent for a freeform list/button send. */
+      templateKey?: WaTemplateKey;
+      buttons: WaButtonSpec[];
+      /** Present when the outbound freeform send offered an interactive list. */
+      list?: { rows: WaListRow[] };
+    };
 
 export interface SimulatorWorkerDeps {
   // The admin `PrismaClient`, matching every other WhatsApp collaborator —
@@ -77,6 +85,7 @@ export async function processSimulatorJob(
     from: toWaId(thread.waPhone),
     templateKey: jobData.templateKey,
     buttons: jobData.buttons,
+    list: jobData.list,
     occurredAt: new Date(),
   });
 

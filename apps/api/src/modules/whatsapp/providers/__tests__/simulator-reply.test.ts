@@ -80,3 +80,58 @@ describe('buildSimulatedReply — determinism (D-15)', () => {
     expect(first).toEqual(second);
   });
 });
+
+describe('buildSimulatedReply — interactive lists (D-14, D-15)', () => {
+  it('always picks the FIRST row of an offered list, deterministically', () => {
+    const rows = [
+      { id: 'booking:pet:11111111-1111-1111-1111-111111111111', title: 'Bruno' },
+      { id: 'booking:pet:22222222-2222-2222-2222-222222222222', title: 'Milo' },
+      { id: 'booking:pet:33333333-3333-3333-3333-333333333333', title: 'Rex' },
+    ];
+
+    const event = buildSimulatedReply(createInput({ templateKey: undefined, buttons: [], list: { rows } }));
+
+    expect(event.kind).toBe('LIST_REPLY');
+    if (event.kind === 'LIST_REPLY') {
+      expect(event.rowId).toBe('booking:pet:11111111-1111-1111-1111-111111111111');
+      expect(event.label).toBe('Bruno');
+      expect(event.replyToProviderMessageId).toBe('sim.msg-1');
+    }
+  });
+
+  it('returns identical output for identical list input, with no randomness', () => {
+    const input = createInput({
+      templateKey: undefined,
+      buttons: [],
+      list: { rows: [{ id: 'booking:slot:1', title: '10:00 AM' }] },
+    });
+
+    const first = buildSimulatedReply(input);
+    const second = buildSimulatedReply(input);
+
+    expect(first).toEqual(second);
+  });
+
+  it('prefers the list over buttons when (hypothetically) both are present', () => {
+    const event = buildSimulatedReply(
+      createInput({
+        templateKey: undefined,
+        buttons: [{ id: 'booking:confirm:1', title: 'Confirm' }],
+        list: { rows: [{ id: 'booking:pet:1', title: 'Bruno' }] },
+      }),
+    );
+
+    expect(event.kind).toBe('LIST_REPLY');
+  });
+});
+
+describe('buildSimulatedReply — fallback safety', () => {
+  it('falls back to a generic TEXT acknowledgement when there is no templateKey, list, or buttons', () => {
+    const event = buildSimulatedReply(createInput({ templateKey: undefined, buttons: [] }));
+
+    expect(event.kind).toBe('TEXT');
+    if (event.kind === 'TEXT') {
+      expect(event.text).toBe('Thanks, got it!');
+    }
+  });
+});
