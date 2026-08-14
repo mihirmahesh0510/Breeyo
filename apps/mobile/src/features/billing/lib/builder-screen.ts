@@ -242,12 +242,22 @@ export interface DraftPayloadInput {
 /**
  * The create/update draft body.
  *
- * Every optional is assigned conditionally rather than set to `null`, because
+ * Most optionals are assigned conditionally rather than set to `null`, because
  * the shared schema's `.optional()` accepts an absent key and rejects a null
  * one — and because on the PATCH path an absent key means "unchanged" while a
  * present one means "set to this". Sending `dueDate: null` where the user
  * simply never touched the stepper would overwrite the clinic's default-due-days
  * offset with nothing.
+ *
+ * The invoice-level discount is the deliberate exception (CR-01), and the reason
+ * is that the builder is the WHOLE draft, not a delta. The store is hydrated
+ * from the invoice and every save replaces its line items wholesale, so "the
+ * store has no discount" is a positive statement about what this invoice should
+ * be — not an absence of information. Omitting the pair told the server
+ * "unchanged", which is why a discount, once applied, could never be taken off
+ * from this screen: the user cleared it, the request said nothing about it, and
+ * it survived onto the finalized document. Both halves are sent together
+ * because the shared `discountGuard` rejects half a discount in either spelling.
  *
  * The result is parsed by `createInvoiceSchema`, which carries no money field of
  * any kind and strips every key it does not declare. That parse is what makes
@@ -258,13 +268,13 @@ export function buildDraftPayload(input: DraftPayloadInput): CreateInvoiceInput 
   const body: Record<string, unknown> = {
     source: input.source,
     lineItems: toInvoiceLineItemInputs(input.lines),
+    invoiceDiscountType: input.invoiceDiscountType,
+    invoiceDiscountValue: input.invoiceDiscountValue,
   };
 
   if (input.petId) body.petId = input.petId;
   if (input.ownerId) body.ownerId = input.ownerId;
   if (input.consultationId) body.consultationId = input.consultationId;
-  if (input.invoiceDiscountType) body.invoiceDiscountType = input.invoiceDiscountType;
-  if (input.invoiceDiscountValue !== null) body.invoiceDiscountValue = input.invoiceDiscountValue;
   if (input.dueDate) body.dueDate = input.dueDate;
   if (input.notes.trim()) body.notes = input.notes;
 

@@ -283,6 +283,48 @@ describe('the Save Draft request body', () => {
     expect('dueDate' in body).toBe(false);
     expect('notes' in body).toBe(false);
   });
+
+  /**
+   * CR-01. The builder sends the whole draft, so "no discount in the store" is a
+   * statement about what this invoice should be, not an absence of information.
+   * Omitting the pair meant "leave the stored discount alone", and a discount
+   * cleared on this screen therefore survived onto the finalized document.
+   */
+  it('sends an explicit null discount pair so clearing a discount actually clears it', () => {
+    const body = buildDraftPayload({
+      lines: [SERVICE_LINE],
+      invoiceDiscountType: null,
+      invoiceDiscountValue: null,
+      dueDate: null,
+      notes: '',
+      petId: null,
+      ownerId: null,
+      consultationId: null,
+      source: 'manual',
+    });
+
+    expect('invoiceDiscountType' in body).toBe(true);
+    expect(body.invoiceDiscountType).toBeNull();
+    expect('invoiceDiscountValue' in body).toBe(true);
+    expect(body.invoiceDiscountValue).toBeNull();
+  });
+
+  it('still carries a set discount as a type/value pair', () => {
+    const body = buildDraftPayload({
+      lines: [SERVICE_LINE],
+      invoiceDiscountType: 'percent',
+      invoiceDiscountValue: 10,
+      dueDate: null,
+      notes: '',
+      petId: null,
+      ownerId: null,
+      consultationId: null,
+      source: 'manual',
+    });
+
+    expect(body.invoiceDiscountType).toBe('percent');
+    expect(body.invoiceDiscountValue).toBe(10);
+  });
 });
 
 // ─── 6. T-06-102: the finalize body has no total-shaped key ─────────────────

@@ -592,7 +592,16 @@ describe('InvoiceService — percentage discounts are whole percents (D-07)', ()
     expect(draft.invoiceDiscountPaise).toBe(100_000);
   });
 
-  it('applies the same percentage on updateDraft', async () => {
+  /**
+   * CR-01 moved the arithmetic. `updateDraft` no longer computes the absolute
+   * figure: the repository derives it under its row lock, from the lines it is
+   * about to persist, because a figure computed out here goes stale the moment
+   * the lines move. What the service still owns is the client's INTENT, and the
+   * three intents a PATCH can carry must survive the trip intact — the
+   * percentage arithmetic itself is asserted in `money.test.ts` and against the
+   * persisted rows in `invoice.repository.test.ts`.
+   */
+  it('forwards a restated discount to the repository as a declaration, not an amount', async () => {
     const { service, repository } = build();
 
     await service.updateDraft(CLINIC, INVOICE, ACTOR, {
@@ -602,7 +611,25 @@ describe('InvoiceService — percentage discounts are whole percents (D-07)', ()
     } as any);
 
     const patch = (repository.updateDraft.mock.calls[0] as any[])[2];
-    expect(patch.invoiceDiscountPaise).toBe(10_000);
+    expect(patch.invoiceDiscount).toEqual({ type: 'percent', value: 10 });
+    // A stale absolute is exactly what CR-01 removed; it must not reappear.
+    expect(patch).not.toHaveProperty('invoiceDiscountPaise');
+  });
+
+  it('forwards an explicit null pair as a clear, and omission as "leave it alone"', async () => {
+    const { service, repository } = build();
+
+    await service.updateDraft(CLINIC, INVOICE, ACTOR, {
+      invoiceDiscountType: null,
+      invoiceDiscountValue: null,
+    } as any);
+    expect((repository.updateDraft.mock.calls[0] as any[])[2].invoiceDiscount).toEqual({
+      type: null,
+      value: null,
+    });
+
+    await service.updateDraft(CLINIC, INVOICE, ACTOR, { notes: 'no discount mentioned' } as any);
+    expect((repository.updateDraft.mock.calls[1] as any[])[2].invoiceDiscount).toBeUndefined();
   });
 
   it('applies the same percentage when finalize re-reads a persisted draft', async () => {

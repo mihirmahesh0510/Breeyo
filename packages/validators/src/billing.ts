@@ -126,27 +126,36 @@ export type ServiceCatalogUpdateInput = z.infer<typeof serviceCatalogUpdateSchem
  * at all, and it is enforced against the same units the service reads.
  */
 function discountGuard(
-  discountType: string | undefined,
-  discountValue: number | undefined,
+  discountType: string | null | undefined,
+  discountValue: number | null | undefined,
   ctx: z.RefinementCtx,
   typeField: string,
   valueField: string,
 ): void {
-  if (discountType !== undefined && discountValue === undefined) {
+  // `null` and `undefined` both mean "there is no discount here", and the pair
+  // must agree either way. They differ only in what the SERVICE does with them
+  // — an omitted key leaves the stored discount alone, an explicit null removes
+  // it (CR-01) — and that distinction is drawn on key presence, not on this
+  // guard. Half a discount is incoherent in both spellings: `{type: null,
+  // value: 5000}` is neither a discount nor a removal.
+  const hasType = discountType != null;
+  const hasValue = discountValue != null;
+
+  if (hasType && !hasValue) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: [valueField],
       message: 'A discount type requires a discount value',
     });
   }
-  if (discountValue !== undefined && discountType === undefined) {
+  if (hasValue && !hasType) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: [typeField],
       message: 'A discount value requires a discount type',
     });
   }
-  if (discountType === 'percent' && discountValue !== undefined && discountValue > 100) {
+  if (discountType === 'percent' && hasValue && (discountValue as number) > 100) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       path: [valueField],
@@ -190,14 +199,22 @@ const createInvoiceBaseSchema = z.object({
   consultationId: z.string().uuid().optional(),
   source: z.enum(INVOICE_SOURCES).default('manual'),
   lineItems: z.array(invoiceLineItemInputSchema).min(1),
-  invoiceDiscountType: z.enum(DISCOUNT_TYPES).optional(),
-  invoiceDiscountValue: z.number().int().nonnegative().optional(),
+  // Nullable as well as optional (CR-01). On a POST the two spellings mean the
+  // same thing — there is no prior discount to leave alone — and accepting both
+  // is what lets the mobile builder send ONE payload shape to both the POST and
+  // the PATCH. On the PATCH they diverge, and that divergence is the fix: see
+  // `updateDraftInvoiceSchema`.
+  invoiceDiscountType: z.enum(DISCOUNT_TYPES).nullable().optional(),
+  invoiceDiscountValue: z.number().int().nonnegative().nullable().optional(),
   dueDate: z.string().datetime().optional(),
   notes: z.string().max(1000).optional(),
 });
 
 function invoiceDiscountGuard(
-  value: { invoiceDiscountType?: string; invoiceDiscountValue?: number },
+  value: {
+    invoiceDiscountType?: string | null;
+    invoiceDiscountValue?: number | null;
+  },
   ctx: z.RefinementCtx,
 ): void {
   discountGuard(
@@ -212,7 +229,23 @@ function invoiceDiscountGuard(
 export const createInvoiceSchema = createInvoiceBaseSchema.superRefine(invoiceDiscountGuard);
 export type CreateInvoiceInput = z.infer<typeof createInvoiceSchema>;
 
-/** PATCH on a DRAFT (D-21: only a draft is editable). */
+/**
+ * PATCH on a DRAFT (D-21: only a draft is editable).
+ *
+ * A PATCH carries three distinguishable intents about the invoice-level
+ * discount where a POST carries two (CR-01):
+ *
+ *   * key absent  — "I am not editing the discount"; the stored one stands
+ *   * key null    — "remove the discount"
+ *   * key present — "the discount is now this"
+ *
+ * Before the base fields were nullable, Zod rejected `null` outright and the
+ * only spelling the wire accepted was omission — indistinguishable from leaving
+ * the discount alone. An invoice-level discount was therefore unremovable once
+ * applied. Zod does not synthesise absent optional keys, so the service
+ * separates the first two cases with a plain `in` check on the parsed object;
+ * a schema that defaulted the field to `null` would re-collapse them.
+ */
 export const updateDraftInvoiceSchema = createInvoiceBaseSchema
   .partial()
   .superRefine(invoiceDiscountGuard);

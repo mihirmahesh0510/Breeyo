@@ -273,7 +273,7 @@ describe('InvoiceService state guards — manual payment status (BIL-03)', () =>
     await service.markPaid(CLINIC, INVOICE, ACTOR, { method: 'cash' });
 
     expect(prisma.tx.$queryRaw).toHaveBeenCalled();
-    const sql = (prisma.tx.$queryRaw.mock.calls[0][0] as { sql: string }).sql;
+    const sql = (prisma.tx.$queryRaw.mock.calls[0] as unknown as [{ sql: string }])[0].sql;
     expect(sql).toContain('FROM invoices');
     expect(sql).toContain('FOR UPDATE');
   });
@@ -290,7 +290,9 @@ describe('InvoiceService state guards — manual payment status (BIL-03)', () =>
 
     await service.markPaid(CLINIC, INVOICE, ACTOR, { method: 'cash' });
 
-    const created = prisma.tx.payment.create.mock.calls[0][0] as { data: { amountPaise: number } };
+    const created = (
+      prisma.tx.payment.create.mock.calls[0] as unknown as [{ data: { amountPaise: number } }]
+    )[0];
     expect(created.data.amountPaise).toBe(6000);
   });
 
