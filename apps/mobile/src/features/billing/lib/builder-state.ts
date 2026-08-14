@@ -14,7 +14,7 @@
  * total (T-06-102, T-06-103).
  */
 
-import type { StockShortfall } from '@breeyo/types';
+import type { DiscountType, StockShortfall } from '@breeyo/types';
 import { ApiClientError } from '../../../lib/api';
 
 // ─── Search and preview timing ──────────────────────────────────────────────
@@ -88,4 +88,159 @@ export function stockShortfallsFrom(error: unknown): StockShortfall[] {
   if (!Array.isArray(raw)) return [];
 
   return raw.filter(isStockShortfall);
+}
+
+// ─── Line gross (display only) ──────────────────────────────────────────────
+
+/**
+ * The `Amount` column of a line-item row: unit price times quantity.
+ *
+ * This is the one multiplication the builder performs on a money value, and it
+ * is bounded on every side that matters:
+ *
+ *  * Both operands are integers, so the product is exact — there is no rounding
+ *    decision to get wrong and nothing to drift from.
+ *  * It is **gross**. It excludes the line discount, the pro-rated invoice
+ *    discount and every tax head, so it is not a total of anything and is not
+ *    comparable to the server's `lineTotalPaise`.
+ *  * It is never sent. The request body carries `unitPricePaise` and `quantity`
+ *    as separate fields (see `invoiceLineItemInputSchema`) and the server does
+ *    its own multiplication.
+ *
+ * It exists because 06-UI-SPEC's line-item row specifies an `Amount` column and
+ * a line that has not been saved yet has no server-computed figure to show.
+ */
+export function lineGrossPaise(line: { unitPricePaise: number; quantity: number }): number {
+  return line.unitPricePaise * line.quantity;
+}
+
+// ─── Due date (D-23) ────────────────────────────────────────────────────────
+
+const MS_PER_DAY = 86_400_000;
+
+/** Midnight UTC of the calendar day `date` falls on. */
+function startOfDayUtc(date: Date): number {
+  return Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
+}
+
+/**
+ * `now + days`, normalised to midnight so that two invoices raised on the same
+ * day carry the same due date regardless of the hour.
+ *
+ * A negative offset is clamped to today: an invoice that falls due before it
+ * was raised is immediately overdue, which would flag it on the dashboard the
+ * moment it is finalized.
+ *
+ * The server applies the clinic's `defaultDueDays` itself when the request
+ * omits `dueDate` (`InvoiceService.computeDueDate`), so this is only used once
+ * the user has moved the picker off the default.
+ */
+export function dueDateFromOffset(days: number, now: Date = new Date()): string {
+  const safeDays = Number.isFinite(days) && days > 0 ? Math.floor(days) : 0;
+  return new Date(startOfDayUtc(now) + safeDays * MS_PER_DAY).toISOString();
+}
+
+/** The inverse, for rendering a hydrated draft's due date back on the stepper. */
+export function offsetFromDueDate(
+  dueDate: string | null | undefined,
+  now: Date = new Date(),
+): number | null {
+  if (!dueDate) return null;
+
+  const parsed = new Date(dueDate);
+  if (Number.isNaN(parsed.getTime())) return null;
+
+  return Math.round((startOfDayUtc(parsed) - startOfDayUtc(now)) / MS_PER_DAY);
+}
+
+// ─── Rupee input (T-06-105) ─────────────────────────────────────────────────
+
+export type RupeeParseResult = { ok: true; paise: number } | { ok: false; error: string };
+
+/** Digits, optionally a decimal point and one or two more digits. Nothing else. */
+const RUPEE_PATTERN = /^(\d+)(?:\.(\d{1,2}))?$/;
+
+export const RUPEE_ERRORS = {
+  empty: 'Enter an amount',
+  malformed: 'Enter a number, for example 250 or 250.50',
+  tooPrecise: 'Amounts go to two decimal places',
+} as const;
+
+/**
+ * The ONLY place in the builder where a rupee figure the user typed becomes
+ * paise. Every other money value in this feature is already integer paise from
+ * the server, and every display goes through `formatPaiseINR`.
+ *
+ * The conversion is done with integer arithmetic on the two digit groups rather
+ * than by multiplying a parsed float, because `0.29 * 100` is
+ * `28.999999999999996` and `Math.round` of a chain of such values is how a
+ * clinic ends up a paisa short on a reconciliation. The pattern also rejects
+ * exponent notation, a leading sign and a second decimal point, all of which
+ * `Number()` would happily accept and silently reinterpret.
+ *
+ * Three or more decimal places are rejected rather than rounded: `10.005`
+ * entered on a price field is a typo, and choosing a rounding direction on the
+ * user's behalf is choosing which way the clinic loses money.
+ */
+export function parseRupeesToPaise(raw: string): RupeeParseResult {
+  const trimmed = raw.trim();
+  if (trimmed === '') return { ok: false, error: RUPEE_ERRORS.empty };
+
+  const match = RUPEE_PATTERN.exec(trimmed);
+  if (!match) {
+    // Distinguish "too many decimals" from "not a number at all" so the inline
+    // error tells the user what to change.
+    const tooPrecise = /^\d+\.\d{3,}$/.test(trimmed);
+    return { ok: false, error: tooPrecise ? RUPEE_ERRORS.tooPrecise : RUPEE_ERRORS.malformed };
+  }
+
+  const [, rupees, fraction = ''] = match;
+  const paiseDigits = fraction.padEnd(2, '0');
+
+  return { ok: true, paise: Number(rupees) * 100 + Number(paiseDigits) };
+}
+
+// ─── Discount input (T-06-104, D-07, D-40) ──────────────────────────────────
+
+export type DiscountParseResult =
+  | { ok: true; type: DiscountType; value: number }
+  | { ok: false; error: string };
+
+export const DISCOUNT_ERRORS = {
+  /** Quoted from `discountGuard` in `@breeyo/validators` so both sides agree. */
+  percentTooLarge: 'A percentage discount cannot exceed 100',
+  percentNotWhole: 'Enter a whole percentage',
+  empty: 'Enter a discount',
+} as const;
+
+/**
+ * Validates what the user typed into a discount field and normalises it to the
+ * unit the shared schema expects — a whole percentage for `percent`, integer
+ * paise for `flat`.
+ *
+ * It does **not** apply the discount. The type and value are reported upward
+ * and sent to the server, which applies them, pro-rates the invoice-level share
+ * across lines and recomputes tax on the result. A client that applied its own
+ * discount would produce a figure the server disagrees with the moment the
+ * pro-rating rounds differently (T-06-103).
+ *
+ * D-40 sets no approval threshold: 100% is a legal input for Front Desk and
+ * Admin alike, so the only rejection here is of a value the schema itself
+ * cannot carry.
+ */
+export function parseDiscountInput(type: DiscountType, raw: string): DiscountParseResult {
+  const trimmed = raw.trim();
+  if (trimmed === '') return { ok: false, error: DISCOUNT_ERRORS.empty };
+
+  if (type === 'flat') {
+    const parsed = parseRupeesToPaise(trimmed);
+    return parsed.ok ? { ok: true, type, value: parsed.paise } : parsed;
+  }
+
+  if (!/^\d+$/.test(trimmed)) return { ok: false, error: DISCOUNT_ERRORS.percentNotWhole };
+
+  const percent = Number(trimmed);
+  if (percent > 100) return { ok: false, error: DISCOUNT_ERRORS.percentTooLarge };
+
+  return { ok: true, type, value: percent };
 }

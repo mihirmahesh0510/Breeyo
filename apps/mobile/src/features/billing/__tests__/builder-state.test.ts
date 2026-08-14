@@ -4,6 +4,9 @@ import {
   CATALOG_SEARCH_DEBOUNCE_MS,
   CATALOG_SEARCH_MIN_CHARS,
   PREVIEW_TOTALS_DEBOUNCE_MS,
+  dueDateFromOffset,
+  lineGrossPaise,
+  offsetFromDueDate,
   shouldPreviewTotals,
   stockShortfallsFrom,
 } from '../lib/builder-state';
@@ -86,5 +89,59 @@ describe('stockShortfallsFrom (BIL-02, T-06-106)', () => {
     });
 
     expect(stockShortfallsFrom(error)).toEqual(shortfalls);
+  });
+});
+
+describe('lineGrossPaise', () => {
+  it('multiplies two integers and stays an integer', () => {
+    expect(lineGrossPaise({ unitPricePaise: 12_500, quantity: 3 })).toBe(37_500);
+    expect(Number.isInteger(lineGrossPaise({ unitPricePaise: 7, quantity: 3 }))).toBe(true);
+  });
+
+  it('is zero for a free line', () => {
+    expect(lineGrossPaise({ unitPricePaise: 0, quantity: 4 })).toBe(0);
+  });
+
+  it('ignores the discount — the server applies discounts, this is gross only', () => {
+    expect(
+      lineGrossPaise({
+        unitPricePaise: 50_000,
+        quantity: 1,
+        discountType: 'percent',
+        discountValue: 50,
+      } as never),
+    ).toBe(50_000);
+  });
+});
+
+describe('due date offset', () => {
+  const today = new Date('2026-08-14T09:30:00.000Z');
+
+  it('resolves an offset in days to an ISO instant', () => {
+    expect(dueDateFromOffset(7, today)).toBe('2026-08-21T00:00:00.000Z');
+  });
+
+  it('treats a zero offset as due today', () => {
+    expect(dueDateFromOffset(0, today)).toBe('2026-08-14T00:00:00.000Z');
+  });
+
+  it('crosses a month boundary', () => {
+    expect(dueDateFromOffset(30, new Date('2026-08-20T23:00:00.000Z'))).toBe(
+      '2026-09-19T00:00:00.000Z',
+    );
+  });
+
+  it('round-trips back to the same offset', () => {
+    expect(offsetFromDueDate(dueDateFromOffset(15, today), today)).toBe(15);
+    expect(offsetFromDueDate(dueDateFromOffset(0, today), today)).toBe(0);
+  });
+
+  it('returns null for an absent or unparseable due date', () => {
+    expect(offsetFromDueDate(null, today)).toBeNull();
+    expect(offsetFromDueDate('not a date', today)).toBeNull();
+  });
+
+  it('refuses a negative offset — an invoice cannot fall due before it exists', () => {
+    expect(dueDateFromOffset(-1, today)).toBe('2026-08-14T00:00:00.000Z');
   });
 });
