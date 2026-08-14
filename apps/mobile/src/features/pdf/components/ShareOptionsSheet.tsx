@@ -254,3 +254,132 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
 });
+
+// ─── Phase 6: the D-16 three-action sheet for a billing document ────────────
+//
+// Added alongside `ShareOptionsSheet` rather than folded into it. That
+// component's contract is `consultationId` + `visitType` and it calls the four
+// Phase 4 generators itself; a billing document has neither, and three of its
+// four Phase 4 call sites would have had to grow props they have no value for.
+// Nothing above this line changed.
+
+/**
+ * D-16's three actions, with the labels 06-UI-SPEC.md's Invoice Detail Screen
+ * copy table specifies. They are three genuinely different operations, not
+ * three routes to the same share sheet:
+ *
+ *   Print    → native print dialog, thermal or A4, no file written
+ *   Share    → PDF written, native share sheet (WhatsApp, mail, …)
+ *   Download → PDF written to app storage, nothing opened
+ */
+const BILLING_DOCUMENT_OPTIONS: ShareOption[] = [
+  {
+    key: 'print',
+    label: 'Print',
+    description: 'Send to a thermal or regular printer',
+    icon: 'pr',
+  },
+  {
+    key: 'share',
+    label: 'Share',
+    description: 'Send the PDF via WhatsApp or another app',
+    icon: 'sh',
+  },
+  {
+    key: 'download',
+    label: 'Download',
+    description: 'Save the PDF to this device',
+    icon: 'dl',
+  },
+];
+
+interface BillingShareOptionsSheetProps {
+  visible: boolean;
+  /** e.g. `Invoice #INV-202608-0001`. */
+  title: string;
+  isGenerating: boolean;
+  error: string | null;
+  onPrint: () => Promise<void> | void;
+  onShare: () => Promise<void> | void;
+  onDownload: () => Promise<void> | void;
+  onClose: () => void;
+}
+
+export function BillingShareOptionsSheet({
+  visible,
+  title,
+  isGenerating,
+  error,
+  onPrint,
+  onShare,
+  onDownload,
+  onClose,
+}: BillingShareOptionsSheetProps) {
+  const handleOptionPress = async (key: string) => {
+    try {
+      if (key === 'print') await onPrint();
+      else if (key === 'share') await onShare();
+      else if (key === 'download') await onDownload();
+      onClose();
+    } catch {
+      // The caller's useGeneratePdf state holds the message; leave the sheet
+      // open so the error below is actually read.
+    }
+  };
+
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="slide"
+      onRequestClose={onClose}
+    >
+      <Pressable style={styles.overlay} onPress={onClose}>
+        <View style={styles.sheet} onStartShouldSetResponder={() => true}>
+          <View style={styles.handle} />
+          <Text style={styles.title}>{title}</Text>
+
+          {isGenerating ? (
+            <View style={styles.generatingContainer}>
+              <ActivityIndicator size="large" color="#2E7D32" />
+              <Text style={styles.generatingText}>Generating PDF...</Text>
+            </View>
+          ) : (
+            <>
+              {BILLING_DOCUMENT_OPTIONS.map((option) => (
+                <TouchableOpacity
+                  key={option.key}
+                  style={styles.option}
+                  onPress={() => handleOptionPress(option.key)}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.optionIcon}>
+                    <Text style={styles.optionIconText}>
+                      {option.icon.toUpperCase()}
+                    </Text>
+                  </View>
+                  <View style={styles.optionContent}>
+                    <Text style={styles.optionLabel}>{option.label}</Text>
+                    <Text style={styles.optionDescription}>
+                      {option.description}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              ))}
+
+              {error ? (
+                <View style={styles.errorContainer}>
+                  <Text style={styles.errorText}>{error}</Text>
+                </View>
+              ) : null}
+            </>
+          )}
+
+          <TouchableOpacity style={styles.cancelButton} onPress={onClose}>
+            <Text style={styles.cancelText}>Cancel</Text>
+          </TouchableOpacity>
+        </View>
+      </Pressable>
+    </Modal>
+  );
+}
