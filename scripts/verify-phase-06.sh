@@ -159,7 +159,12 @@ run_named() { # run_named <label> <runner-fn> <args...>
   out="$("$runner" "$@" 2>&1)"
   rc=$?
   # "Tests  123 passed (123)" / "Tests  4 passed | 1 skipped (5)"
-  LAST_TEST_COUNT="$(printf '%s\n' "$out" | grep -oE '^[[:space:]]*Tests[[:space:]]+[0-9]+ passed' | grep -oE '[0-9]+' | tail -1)"
+  # Vitest emits ANSI color codes even when stdout is captured (observed on
+  # GitHub Actions runners), which land between "Tests" and the count and
+  # break a plain-text match. Strip them before applying the regex.
+  local plain
+  plain="$(printf '%s\n' "$out" | sed -E $'s/\x1b\\[[0-9;]*[a-zA-Z]//g')"
+  LAST_TEST_COUNT="$(printf '%s\n' "$plain" | grep -oE '^[[:space:]]*Tests[[:space:]]+[0-9]+ passed' | grep -oE '[0-9]+' | tail -1)"
   LAST_TEST_COUNT="${LAST_TEST_COUNT:-0}"
   if [ "$rc" -ne 0 ]; then
     printf '%s\n' "$out" | tail -40
