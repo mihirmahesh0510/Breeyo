@@ -3,6 +3,7 @@ import type { PrismaClient } from '@prisma/client';
 import type { Server } from 'socket.io';
 import { SOCKET_EVENTS } from '@breeyo/types';
 import { QueueRepository } from '../modules/queue/queue.repository.js';
+import { getTodayIST } from '../lib/ist-date.js';
 
 /**
  * Schedules midnight auto-archive of queue entries.
@@ -20,7 +21,7 @@ export function scheduleMidnightArchive(prisma: PrismaClient, io: Server) {
   cron.schedule(
     '0 0 * * *',
     async () => {
-      const today = QueueRepository.getTodayIST();
+      const today = getTodayIST();
 
       try {
         const repository = new QueueRepository(prisma);
