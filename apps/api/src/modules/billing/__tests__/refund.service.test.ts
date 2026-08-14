@@ -92,7 +92,7 @@ function build(
   let created = 0;
 
   const tx = {
-    $queryRaw: vi.fn(async () => (invoice ? [invoice] : [])),
+    $queryRaw: vi.fn(async (_query: unknown) => (invoice ? [invoice] : [])),
     payment: {
       findMany: vi.fn(async () => payments),
       findFirst: vi.fn(async () => payments[0] ?? null),
@@ -116,7 +116,9 @@ function build(
         razorpayTestMode: true,
       })),
     },
-    billingAuditLog: { create: vi.fn(async () => ({})) },
+    billingAuditLog: {
+      create: vi.fn(async (_args: { data: Row }) => ({})),
+    },
   };
 
   const prisma = {
