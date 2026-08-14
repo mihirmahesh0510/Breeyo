@@ -174,6 +174,12 @@ describe('WA_BUTTON_PAYLOAD_PATTERN — D-09', () => {
     ).toBe(true);
   });
 
+  it('matches a well-formed booking:pet:<uuid> payload (D-21 pet selection)', () => {
+    expect(
+      WA_BUTTON_PAYLOAD_PATTERN.test('booking:pet:3f2504e0-4f89-11d3-9a0c-0305e82c3301'),
+    ).toBe(true);
+  });
+
   it('matches the bare book:start / STOP / BOOK keywords', () => {
     expect(WA_BUTTON_PAYLOAD_PATTERN.test('book:start')).toBe(true);
     expect(WA_BUTTON_PAYLOAD_PATTERN.test('STOP')).toBe(true);

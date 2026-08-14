@@ -69,6 +69,22 @@ const WEEKDAY_KEYS = [
   'saturday',
 ] as const;
 
+/**
+ * A `@db.Date` column stores only a calendar date — Postgres/Prisma drop
+ * the time-of-day on write and reconstruct the value at UTC midnight of
+ * that SAME calendar date on read. An in-memory `getTodayIST`/`addDaysIST`
+ * value is deliberately NOT UTC midnight (it is `Date.UTC(y, m, d, -5, -30)`
+ * — 18:30 UTC on the preceding UTC calendar day, so it is IST-midnight
+ * anchored). Both representations carry the identical UTC calendar-date
+ * component for "the same day", so comparing `.getTime()` directly between
+ * a DB-round-tripped `WhatsAppSlotHold.slotDate` and a freshly-generated
+ * `addDaysIST` value NEVER matches even for the intended same day — this
+ * key normalizes both to that shared UTC calendar-date string instead.
+ */
+function dateOnlyKey(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
+
 function parseHHMM(value: string): number {
   const [h, m] = value.split(':').map((part) => Number(part));
   return h * 60 + m;
@@ -191,9 +207,9 @@ export class SlotService {
       select: { slotDate: true, slotStartMinutes: true },
     });
 
-    const heldByDate = new Map<number, number[]>();
+    const heldByDate = new Map<string, number[]>();
     for (const hold of holds) {
-      const key = hold.slotDate.getTime();
+      const key = dateOnlyKey(hold.slotDate);
       const list = heldByDate.get(key) ?? [];
       list.push(hold.slotStartMinutes);
       heldByDate.set(key, list);
@@ -205,7 +221,7 @@ export class SlotService {
       const dayHours = parsed.data.hours[weekdayKeyIST(date)];
       if (!dayHours) continue; // no entry for this weekday — treat as closed
 
-      const heldMinutes = heldByDate.get(date.getTime()) ?? [];
+      const heldMinutes = heldByDate.get(dateOnlyKey(date)) ?? [];
       const daySlots = generateSlotsForDay(date, dayHours, durationMinutes, heldMinutes, now);
 
       for (const slot of daySlots) {

@@ -179,7 +179,11 @@ const UUID_SEGMENT = '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4
  * quick-reply, so those actions are not even expressible as an inbound
  * payload. This is the structural enforcement of D-09, not a runtime check
  * that could be bypassed by a crafted payload.
+ *
+ * D-21: `booking:pet:<uuid>` is also allowed — before offering slots, a
+ * multi-pet owner is asked which pet the appointment is for, and their
+ * reply is a row payload in this same `booking:<action>:<uuid>` shape.
  */
 export const WA_BUTTON_PAYLOAD_PATTERN = new RegExp(
-  `^(?:book:start|STOP|BOOK|booking:(?:confirm|slot):${UUID_SEGMENT})$`,
+  `^(?:book:start|STOP|BOOK|booking:(?:confirm|slot|pet):${UUID_SEGMENT})$`,
 );
