@@ -1089,7 +1089,11 @@ model CreditNoteLineItem {
 /// conflict target the upsert needs.
 model InvoiceNumberCounter {
   clinicId String @map("clinic_id") @db.Uuid
-  docType  String @map("doc_type") // INV | CN
+  // INV (invoices, D-15) | CN (credit notes, D-19) | RCT (payment receipts,
+  // D-13, added by plan 06-09). Free-text by design: the primary key below
+  // scopes the counter, so a new document type is a data addition rather than
+  // a migration.
+  docType  String @map("doc_type")
 
   /// The RESET SCOPE key, not a display field.
   ///

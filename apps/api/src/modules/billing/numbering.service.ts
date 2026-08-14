@@ -37,8 +37,19 @@ import { QueueRepository } from '../queue/queue.repository.js';
  * `VarChar(12)` for exactly this reason.
  */
 
-/** `INV` for tax invoices and bills of supply, `CN` for credit notes (D-19). */
-export type DocumentType = 'INV' | 'CN';
+/**
+ * `INV` for tax invoices and bills of supply, `CN` for credit notes (D-19),
+ * `RCT` for payment receipts (D-13, added by plan 06-09).
+ *
+ * The Rule 46(b) reasoning above applies to `INV` and `CN`. `RCT` reuses this
+ * allocator not because a receipt is a record of account, but because
+ * `payment_receipts.receipt_number` is unique per clinic and this is the
+ * project's only allocator that is both collision-free under concurrency and
+ * rollback-safe — a receipt number burnt by a payment that rolled back would be
+ * merely untidy, but a *duplicate* one violates the constraint and fails the
+ * write.
+ */
+export type DocumentType = 'INV' | 'CN' | 'RCT';
 
 /**
  * The subset of a Prisma transaction handle this module needs.

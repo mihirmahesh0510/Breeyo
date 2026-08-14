@@ -201,8 +201,25 @@ export type InvoiceLineType = (typeof INVOICE_LINE_TYPES)[number];
 export const DISCOUNT_TYPES = ['percent', 'flat'] as const;
 export type DiscountType = (typeof DISCOUNT_TYPES)[number];
 
-/** `invoice_number_counters.doc_type` (D-15, D-19). */
-export const DOCUMENT_NUMBER_TYPES = ['INV', 'CN'] as const;
+/**
+ * `invoice_number_counters.doc_type` (D-15, D-19, D-13).
+ *
+ * `RCT` (payment receipts, D-13) was added by plan 06-09. The column is a plain
+ * `String` whose primary key is `(clinic_id, doc_type, period)`, so a third
+ * value is a data addition, not a migration.
+ *
+ * Receipts reuse the invoice counter mechanism deliberately: `payment_receipts`
+ * carries `@@unique([clinicId, receiptNumber])`, and the counter row is the
+ * project's only gap-free, rollback-safe allocator. A second mechanism — a
+ * sequence, a timestamp, a random suffix — would either burn numbers on a
+ * rolled-back payment or collide under concurrency.
+ *
+ * Note that CGST Rule 46(b) consecutiveness governs `INV` and `CN` only. A
+ * receipt is an acknowledgement of money received, not a record of account, so
+ * gap-freeness here is an operational nicety rather than a statutory duty; it
+ * comes for free from reusing the counter.
+ */
+export const DOCUMENT_NUMBER_TYPES = ['INV', 'CN', 'RCT'] as const;
 export type DocumentNumberType = (typeof DOCUMENT_NUMBER_TYPES)[number];
 
 /**
