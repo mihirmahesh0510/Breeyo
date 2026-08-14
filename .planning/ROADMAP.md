@@ -227,8 +227,8 @@ Plans:
 
 **Wave 10** *(blocked on Wave 9 completion)*
 
-- [ ] 06-12-PLAN.md -- Dashboard aggregate (D-24's four cards + RPT-01 patients-seen-today, IST-bounded, two queries), service catalog CRUD with soft deactivation, billing settings with presence-only credential reads and a webhook health flag (RPT-01, D-02, D-29)
-- [ ] 06-13-PLAN.md -- D-03 best-effort draft-invoice hook in the consultation finalize path (ungated, non-blocking, idempotent) and the D-04 Quick Sale create-and-finalize endpoint with row-locked stock
+- [x] 06-12-PLAN.md -- Dashboard aggregate (D-24's four cards + RPT-01 patients-seen-today, IST-bounded, two queries), service catalog CRUD with soft deactivation, billing settings with presence-only credential reads and a webhook health flag (RPT-01, D-02, D-29)
+- [x] 06-13-PLAN.md -- D-03 best-effort draft-invoice hook in the consultation finalize path (ungated, non-blocking, idempotent) and the D-04 Quick Sale create-and-finalize endpoint with row-locked stock
 
 **Wave 11** *(blocked on Wave 10 completion)*
 
@@ -461,7 +461,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9 -> 10
 | 3. Patient Registration & Walk-in Queue | 8/8 | **Done** | 2026-08-03 (PR #3) |
 | 4. EMR & Clinical Records | 8/8 | Next | - |
 | 5. Inventory Management | 8/8 | Planned | - |
-| 6. Invoicing & Payments | 14/24 | In Progress|  |
+| 6. Invoicing & Payments | 16/24 | In Progress|  |
 | 7. WhatsApp Communication | 16/16 | Planned | - |
 | 8. Scheduling & Calendar | 7/7 | Planned | - |
 | 9. Web Dashboard & Owner Portal | 7/7 | Planned | - |
