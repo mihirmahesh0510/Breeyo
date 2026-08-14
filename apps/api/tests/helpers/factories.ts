@@ -152,6 +152,15 @@ export async function createTestConsultation(
     visitType: string;
     status: string;
     assessment: string;
+    /**
+     * RPT-01 (D-33): the dashboard counts distinct pets over consultations
+     * whose `finalizedAt` falls inside the IST day, so a suite exercising the
+     * timezone boundary has to be able to place this instant deliberately.
+     * Defaults to null, matching the `draft` default status above — a draft
+     * consultation has not been finalized and must not carry a timestamp
+     * claiming it was.
+     */
+    finalizedAt: Date | null;
   }> = {},
 ) {
   return prisma.consultation.create({
@@ -162,6 +171,7 @@ export async function createTestConsultation(
       visitType: overrides.visitType || 'general',
       status: overrides.status || 'draft',
       assessment: overrides.assessment,
+      finalizedAt: overrides.finalizedAt ?? null,
     },
   });
 }
