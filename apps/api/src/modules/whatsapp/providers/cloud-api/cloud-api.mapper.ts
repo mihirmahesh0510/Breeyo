@@ -6,9 +6,10 @@
  * Meta-shaped JSON object in the codebase is constructed inside this file
  * and nowhere else. No service, controller or repository may build a
  * `messaging_product` envelope. The six Meta request/response interfaces
- * below are hand-written locally — no third-party WhatsApp types package is
- * added (07-RESEARCH § Package Legitimacy Audit rejected
- * `@whatsapp-cloudapi/types` for low adoption and unwanted type coupling).
+ * below are hand-written locally — no third-party WhatsApp Cloud API types
+ * package is added (07-RESEARCH § Package Legitimacy Audit rejected the
+ * scoped types package under evaluation for low adoption and unwanted type
+ * coupling).
  *
  * Pure functions only: no I/O, no `fetch`, no clock beyond `new Date()` for
  * `acceptedAt`. `cloud-api.provider.ts` (07-07 Task 3) is the only caller.
