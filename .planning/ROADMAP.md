@@ -218,7 +218,7 @@ Plans:
 
 **Wave 8** *(blocked on Wave 7 completion)*
 
-- [ ] 06-09-PLAN.md -- Payments: per-clinic Razorpay client factory with credential decryption and 502 error normalisation, cash/split/Payment Link collection with a 16-minute expiry buffer, receipt records, 4 payment endpoints (BIL-05)
+- [x] 06-09-PLAN.md -- Payments: per-clinic Razorpay client factory with credential decryption and 502 error normalisation, cash/split/Payment Link collection with a 16-minute expiry buffer, receipt records, 4 payment endpoints (BIL-05)
 
 **Wave 9** *(blocked on Wave 8 completion)*
 
@@ -461,7 +461,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9 -> 10
 | 3. Patient Registration & Walk-in Queue | 8/8 | **Done** | 2026-08-03 (PR #3) |
 | 4. EMR & Clinical Records | 8/8 | Next | - |
 | 5. Inventory Management | 8/8 | Planned | - |
-| 6. Invoicing & Payments | 11/24 | In Progress|  |
+| 6. Invoicing & Payments | 12/24 | In Progress|  |
 | 7. WhatsApp Communication | 16/16 | Planned | - |
 | 8. Scheduling & Calendar | 7/7 | Planned | - |
 | 9. Web Dashboard & Owner Portal | 7/7 | Planned | - |
