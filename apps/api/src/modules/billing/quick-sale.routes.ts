@@ -58,4 +58,19 @@ export default async function quickSaleRoutes(fastify: FastifyInstance) {
     preHandler: [authenticate, tenantContext, requirePermission('CREATE_INVOICES')],
     handler: controller.createHandler,
   });
+
+  /**
+   * The cart's live total. Registered BEFORE nothing in particular — the paths
+   * are distinct literals, so no ordering constraint applies.
+   *
+   * Gated on `CREATE_INVOICES` like its sibling rather than on a read
+   * permission. It prices the clinic's own stock and is only ever reached from
+   * the counter screen, so anyone who may see this figure may also commit it;
+   * a weaker gate would expose the clinic's selling prices to a role that
+   * cannot transact on them.
+   */
+  fastify.post('/billing/quick-sale/preview', {
+    preHandler: [authenticate, tenantContext, requirePermission('CREATE_INVOICES')],
+    handler: controller.previewHandler,
+  });
 }

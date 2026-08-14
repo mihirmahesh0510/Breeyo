@@ -58,5 +58,31 @@ export function createQuickSaleController(
 
       return reply.status(201).send({ data: invoice });
     },
+
+    /**
+     * POST /billing/quick-sale/preview — what the cart currently costs (D-04).
+     *
+     * 200, and a read dressed as a POST: nothing is persisted, and the body
+     * carries a cart that has no identifier to put in a path. It reuses
+     * `quickSaleSchema` unchanged rather than introducing a preview-shaped
+     * schema, so the figure previewed and the figure charged are derived from
+     * one request shape as well as one code path — a preview that could accept
+     * a cart the checkout would reject is a preview that can lie.
+     */
+    async previewHandler(request: FastifyRequest, reply: FastifyReply) {
+      const service = buildQuickSaleService(request.db);
+
+      const body = quickSaleSchema.safeParse(request.body);
+      if (!body.success) {
+        return validationError(reply, body.error.errors);
+      }
+
+      const preview = await service.previewTotals(
+        request.user.activeClinicId,
+        body.data,
+      );
+
+      return reply.status(200).send({ data: preview });
+    },
   };
 }

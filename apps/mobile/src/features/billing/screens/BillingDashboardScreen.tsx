@@ -54,9 +54,21 @@ export const BILLING_ROUTES = {
   consultationPicker: '/(app)/billing/from-consultation',
   /** Plan 06-21 — the standalone builder. */
   newInvoice: '/(app)/billing/new',
-  /** Plan 06-18's D-04 Quick Sale screen. Still a forward reference. */
+  /**
+   * D-04 Quick Sale screen (plan 06-18).
+   *
+   * Corrected from a `(tabs)` child to a `(tabs)` sibling — the original path
+   * required `(tabs)/billing.tsx` to become a directory, a restructure no plan
+   * in this phase owns. Quick Sale is a full-screen counter flow that pushes
+   * over the tab bar anyway, the same shape as `settings` below. Route file:
+   * `app/(app)/billing/quick-sale.tsx`.
+   */
   quickSale: '/(app)/billing/quick-sale',
-  /** D-29 billing settings (plan 06-23). */
+  /**
+   * D-29 billing settings (plan 06-23). Unlike the two above it is a sibling of
+   * `(tabs)`, not a child: it is an Admin form holding a live payment
+   * credential, so it pushes over the tab bar the way `patient/register` does.
+   */
   settings: '/(app)/billing/settings',
   /** One invoice. The builder replaces itself with this on finalize. */
   invoiceDetail: (invoiceId: string) => `/(app)/billing/${invoiceId}`,

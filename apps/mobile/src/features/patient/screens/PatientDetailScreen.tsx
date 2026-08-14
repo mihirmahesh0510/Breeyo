@@ -11,6 +11,9 @@ import { PreventiveCareCard } from '../../history/components/PreventiveCareCard'
 import { WeightTrendChart } from '../../history/components/WeightTrendChart';
 import { MedicalTimeline } from '../../history/components/MedicalTimeline';
 import { navigateToConsultationDetail } from '../../../navigation/consultation-navigator';
+// D-25, plan 06-18. A separate import line rather than a widening of any above,
+// so adding the billing section removes nothing from this Phase 3 file.
+import { PetInvoicesTab } from '../../billing/components/PetInvoicesTab';
 import type { ConsultationSummary } from '@breeyo/types';
 
 /**
@@ -186,6 +189,16 @@ export function PatientDetailScreen() {
                 }}
               />
             </View>
+
+            {/* Invoices (D-25) */}
+            {petId ? (
+              <View style={styles.section}>
+                <Text variant="titleLarge" style={styles.sectionTitle}>
+                  Invoices
+                </Text>
+                <PetInvoicesTab petId={petId} petName={pet.name} />
+              </View>
+            ) : null}
           </>
         )}
       </ScrollView>
