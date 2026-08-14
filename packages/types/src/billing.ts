@@ -435,6 +435,21 @@ export interface BillingDashboardSummary {
   recentPaymentsCount: number;
   /** RPT-01 (D-33): COUNT(DISTINCT petId) over today's finalized consultations, IST-bounded. */
   patientsSeenToday: number;
+  /**
+   * Invoices carrying an unresolved {@link Invoice.exceptionFlag} (D-35, D-36).
+   *
+   * Not one of the five cards. It is here because a flagged invoice **blocks
+   * every further status-changing action on itself** and, until this field
+   * existed, nothing in the product surfaced `exception_flag` at all — an
+   * overpayment or a payment landing on a voided invoice would sit unresolved
+   * and undiscoverable, with the only symptom being that staff could no longer
+   * act on the invoice and could not see why. Zero is the normal value, so this
+   * renders as a banner only when non-zero rather than as a sixth card.
+   *
+   * The exceptions *list* this count points at is not yet built; see
+   * `06-12-SUMMARY.md` under Deferred Items.
+   */
+  billingExceptionCount: number;
 }
 
 /** A row in the billing exceptions list (D-35, D-36) awaiting staff resolution. */

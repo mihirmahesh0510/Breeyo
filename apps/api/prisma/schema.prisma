@@ -400,6 +400,15 @@ model Consultation {
   @@index([clinicId, petId])
   @@index([clinicId, vetId])
   @@index([clinicId, status])
+  // RPT-01 / D-33 (Phase 6, plan 06-12): the billing dashboard's
+  // patients-seen-today card is `COUNT(DISTINCT pet_id)` filtered on
+  // `(clinic_id, status, finalized_at)`. The `(clinicId, status)` index above
+  // stops one column short, leaving the `finalized_at >= <IST midnight>`
+  // predicate to a filter over every consultation the clinic has ever
+  // finalized — a set that only grows. This is a Phase 4 model touched by a
+  // Phase 6 plan deliberately: the index belongs with the table, not with the
+  // query.
+  @@index([clinicId, status, finalizedAt])
   @@map("consultations")
 }
 

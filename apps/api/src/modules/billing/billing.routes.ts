@@ -11,6 +11,8 @@ import { PaymentService } from './payment.service.js';
 import { RefundService } from './refund.service.js';
 import { CreditNoteService } from './credit-note.service.js';
 import { StockValidatorService } from './stock-validator.service.js';
+import { DashboardService } from './dashboard.service.js';
+import { createDashboardController } from './dashboard.controller.js';
 import { createInvoiceController } from './invoice.controller.js';
 import { createPaymentController } from './payment.controller.js';
 import { createRefundController } from './refund.controller.js';
@@ -90,7 +92,14 @@ export default async function billingRoutes(fastify: FastifyInstance) {
     return new CreditNoteService(new InvoiceRepository(db, stockValidator), db);
   };
 
+  /**
+   * The D-24 / RPT-01 landing aggregate. Takes the tenant handle directly — it
+   * owns no repository, because both of its statements are raw aggregates.
+   */
+  const buildDashboardService = (db: TenantPrismaClient) => new DashboardService(db);
+
   const controller = createInvoiceController(buildService);
+  const dashboardController = createDashboardController(buildDashboardService);
   const paymentController = createPaymentController(buildPaymentService);
   const refundController = createRefundController(buildRefundService);
   const creditNoteController = createCreditNoteController(buildCreditNoteService);
@@ -115,6 +124,12 @@ export default async function billingRoutes(fastify: FastifyInstance) {
   const readHandler = [authenticate, tenantContext, requirePermission('VIEW_INVOICES')];
   const writeHandler = [authenticate, tenantContext, requirePermission('CREATE_INVOICES')];
   const payHandler = [authenticate, tenantContext, requirePermission('MANAGE_PAYMENTS')];
+
+  // Billing tab landing (D-24 summary cards + RPT-01 patients seen today).
+  // A read, so VIEW_INVOICES: a Clinician who can see an invoice can see the
+  // day's totals. Registered before the `/billing/invoices/:invoiceId` pattern
+  // for readability only — the path is fixed and cannot be shadowed by it.
+  fastify.get('/billing/dashboard', { preHandler: readHandler, handler: dashboardController.getSummaryHandler });
 
   // Reads
   fastify.get('/billing/invoices', { preHandler: readHandler, handler: controller.listHandler });
