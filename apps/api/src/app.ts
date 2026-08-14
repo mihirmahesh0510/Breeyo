@@ -130,6 +130,11 @@ export async function buildApp(
     app.addHook('onClose', async () => {
       await billingWebhookWorker.close();
     });
+
+    // D-23 and D-11. Imported at the call site rather than at module scope so
+    // the two cron modules are not even loaded when the guard is false.
+    (await import('./jobs/overdue-invoices.js')).scheduleOverdueInvoices(app.prisma, app.io);
+    (await import('./jobs/expire-payment-links.js')).scheduleExpirePaymentLinks(app.prisma, app.io);
   }
 
   return app;

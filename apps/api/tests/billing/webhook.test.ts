@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import type { FastifyInstance } from 'fastify';
@@ -12,9 +12,11 @@ import {
   prisma,
 } from '../helpers/factories.js';
 import {
+  buildRazorpayMock,
   paymentLinkPaidWebhookFixture,
   refundProcessedWebhookFixture,
   signWebhookPayload,
+  type RazorpayMock,
 } from '../helpers/razorpay-mock.js';
 import { encryptSecret } from '../../src/lib/crypto.js';
 import { applyWebhookEvent } from '../../src/modules/billing/webhook.worker.js';
@@ -46,6 +48,36 @@ import { applyWebhookEvent } from '../../src/modules/billing/webhook.worker.js';
 
 const WEBHOOK_SECRET = 'test_webhook_secret';
 
+/**
+ * The SDK is doubled here even though the INBOUND path never calls Razorpay:
+ * D-35's void cancels the orphaned link at the gateway, and a suite that let
+ * that reach the network would be neither hermetic nor fast.
+ */
+const holder = vi.hoisted(() => ({ current: null as unknown as RazorpayMock }));
+
+vi.mock('razorpay', () => {
+  class MockRazorpay {
+    paymentLink = {
+      create: (...args: unknown[]) =>
+        (holder.current.paymentLink.create as (...a: unknown[]) => unknown)(...args),
+      fetch: (...args: unknown[]) =>
+        (holder.current.paymentLink.fetch as (...a: unknown[]) => unknown)(...args),
+      cancel: (...args: unknown[]) =>
+        (holder.current.paymentLink.cancel as (...a: unknown[]) => unknown)(...args),
+    };
+    payments = {
+      refund: (...args: unknown[]) =>
+        (holder.current.payments.refund as (...a: unknown[]) => unknown)(...args),
+    };
+    refunds = {
+      fetch: (...args: unknown[]) =>
+        (holder.current.refunds.fetch as (...a: unknown[]) => unknown)(...args),
+    };
+  }
+
+  return { default: MockRazorpay };
+});
+
 let app: FastifyInstance;
 let clinicId: string;
 let webhookToken: string;
@@ -64,6 +96,7 @@ afterAll(async () => {
 
 beforeEach(async () => {
   await cleanupTestData();
+  holder.current = buildRazorpayMock();
 
   const keys = await app.redis.keys('perms:*');
   if (keys.length > 0) await app.redis.del(...keys);
@@ -723,6 +756,11 @@ describe('billing-webhook worker — refusals and exceptions', () => {
       .set(auth())
       .send({ reason: 'Owner cancelled the visit' });
     expect(voided.status).toBe(200);
+
+    // The void does not just mark the local row cancelled — it kills the link
+    // at Razorpay, so the QR the owner is holding stops being payable.
+    expect(voided.body.data.cancelledPaymentLinkIds).toEqual(['plink_void01']);
+    expect(holder.current.paymentLink.cancel).toHaveBeenCalledWith('plink_void01');
 
     await deliverAndApply(paidEvent(invoiceId, 'plink_void01'));
 

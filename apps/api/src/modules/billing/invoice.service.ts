@@ -38,6 +38,7 @@ import type {
   StockPlanLine,
   StockValidatorService,
 } from './stock-validator.service.js';
+import { getRazorpayForClinic } from './razorpay.client.js';
 
 /**
  * The invoice domain (BIL-01, BIL-02, BIL-03, and the invoice half of BIL-07).
@@ -598,11 +599,54 @@ export class InvoiceService {
       actor,
     );
 
+    // D-35, second half. The repository marked the local rows cancelled and
+    // handed back the gateway link ids; this is where they are actually
+    // cancelled at Razorpay. Without it the void is only half done — a QR the
+    // owner already has stays payable against an invoice that no longer exists
+    // as a claim, and the money arrives as a `payment_after_void` exception
+    // somebody then has to refund by hand.
+    await this.cancelLinksAtGateway(clinicId, result.cancelledPaymentLinkIds);
+
     const detail = await this.repository.getInvoiceDetail(clinicId, invoiceId);
-    // D-35: the link ids travel back to the caller so the payment module can
-    // cancel them at Razorpay. Losing them here would leave a live payment link
-    // pointing at a voided invoice.
     return { ...result, invoice: detail };
+  }
+
+  /**
+   * Best-effort cancellation of the links a void orphaned.
+   *
+   * Every failure is swallowed. The void has already committed, and it is not
+   * reversible — throwing here would surface a 500 for an operation that
+   * succeeded, and would tell the front desk to retry something that must not
+   * be retried. A link that survives this is caught either by the per-minute
+   * expiry sweep or, if it is paid first, by the webhook worker's D-35 path,
+   * which records the money and flags the invoice rather than dropping it.
+   */
+  private async cancelLinksAtGateway(clinicId: string, linkIds: string[]): Promise<void> {
+    if (linkIds.length === 0) return;
+
+    const clinic = await this.prisma.clinic.findFirst({
+      where: { id: clinicId },
+      select: {
+        id: true,
+        razorpayKeyId: true,
+        razorpayKeySecretEnc: true,
+        razorpayTestMode: true,
+      },
+    });
+
+    if (!clinic) return;
+
+    let rzp;
+    try {
+      rzp = getRazorpayForClinic(clinic);
+    } catch {
+      // Credentials removed since the link was issued. Nothing to cancel with.
+      return;
+    }
+
+    for (const linkId of linkIds) {
+      await rzp.paymentLink.cancel(linkId).catch(() => undefined);
+    }
   }
 
   // ─── Manual payment status (BIL-03) ───────────────────────────────────────
