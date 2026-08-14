@@ -5,6 +5,15 @@ import { ConsultationLockService } from './consultation-lock.service.js';
 import { DosageService } from './dosage.service.js';
 import { createEmrController } from './emr.controller.js';
 import { createNotificationBus } from '../notifications/notification-bus.js';
+// D-03: the EMR module depends on billing so that ending a consultation can
+// seed a draft invoice. This is a deliberate ONE-DIRECTIONAL dependency — EMR
+// imports billing, never the reverse. Billing reads consultations through its
+// own Prisma handle and imports nothing from this module, which is what keeps
+// the two from becoming a cycle.
+import { InvoiceRepository } from '../billing/invoice.repository.js';
+import { InvoiceService } from '../billing/invoice.service.js';
+import { StockValidatorService } from '../billing/stock-validator.service.js';
+import { StockMovementService } from '../inventory/stock-movement.service.js';
 import { authenticate } from '../../middleware/authenticate.js';
 import { tenantContext } from '../../middleware/tenant-context.js';
 import type { TenantPrismaClient } from '../../lib/prisma-rls.js';
@@ -27,11 +36,25 @@ export default async function emrRoutes(fastify: FastifyInstance) {
   // shared with `EmrService` so both observe the same lock state.
   const buildServices = (db: TenantPrismaClient) => {
     const lockService = new ConsultationLockService(db);
+
+    // D-03: built from the SAME tenant handle as the EMR services, so the draft
+    // the hook seeds is written under the same RLS scope as the consultation it
+    // describes. Constructed exactly as `billing.routes.ts` does — the stock
+    // validator is shared between the repository and the service — so the two
+    // entry points onto `createDraftFromConsultation` behave identically.
+    const stockValidator = new StockValidatorService(db, new StockMovementService(db));
+    const invoiceService = new InvoiceService(
+      new InvoiceRepository(db, stockValidator),
+      stockValidator,
+      db,
+    );
+
     const emrService = new EmrService(
       new EmrRepository(db),
       lockService,
       dosageService,
       db,
+      invoiceService,
     );
     return { emrService, lockService };
   };
