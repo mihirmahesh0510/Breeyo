@@ -42,6 +42,10 @@
         {
           "name": "PORT",
           "value": "3000"
+        },
+        {
+          "name": "PUBLIC_API_URL",
+          "value": "PLACEHOLDER"
         }
       ],
       "secrets": [
@@ -64,6 +68,10 @@
         {
           "name": "COOKIE_SECRET",
           "valueFrom": "/breeyo/staging/COOKIE_SECRET"
+        },
+        {
+          "name": "BILLING_ENCRYPTION_KEY",
+          "valueFrom": "/breeyo/staging/BILLING_ENCRYPTION_KEY"
         }
       ],
       "logConfiguration": {
