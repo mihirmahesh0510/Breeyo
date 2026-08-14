@@ -12,6 +12,7 @@ import {
   formValuesFromSettings,
   gstinFieldError,
   isGstRateFieldEnabled,
+  legacySacNotice,
   validateSettingsForm,
   webhookIndicator,
 } from '../lib/settings-form';
@@ -43,6 +44,7 @@ const STORED: ClinicBillingSettings = {
   razorpayTestMode: false,
   webhookUrl: 'https://api.example.com/api/v1/webhooks/razorpay/tok_abcdef',
   webhookConfigured: true,
+  legacySacCodeCount: 0,
 };
 
 function baseValues(): BillingSettingsFormValues {
@@ -423,5 +425,99 @@ describe('the save action targets the endpoint that invalidates the server cache
     // Rotation must invalidate the settings query, or the screen keeps showing
     // the pre-rotation URL and the Admin pastes a dead one (T-06-140).
     expect(hook.slice(hook.indexOf('useRotateWebhookToken'))).toContain('invalidateQueries');
+  });
+});
+
+// ─── Follow-up A1: the opt-in SAC correction ────────────────────────────────
+
+/**
+ * A1, resolved 2026-08-14. Clinics seeded before that date carry `9993xx` SAC
+ * codes on their clinical services; the seed now writes `998351`.
+ *
+ * Everything below exists to pin one property: **the Admin has to ask.** The
+ * correction is not part of Save, it is not triggered by opening the screen,
+ * and the copy tells the reader that leaving it alone is a legitimate choice —
+ * because their accountant may have set those codes deliberately.
+ */
+describe('opt-in SAC correction (A1)', () => {
+  it('offers nothing to a clinic whose codes are already correct', () => {
+    expect(legacySacNotice(0)).toBeNull();
+  });
+
+  it('surfaces the count and an explicit action when legacy codes exist', () => {
+    const notice = legacySacNotice(7);
+
+    expect(notice).not.toBeNull();
+    expect(notice!.count).toBe(7);
+    expect(notice!.body).toContain('7');
+    expect(notice!.body).toContain('998351');
+    expect(notice!.actionLabel).toBe(BILLING_SETTINGS_COPY.sacUpdateAction);
+  });
+
+  it('reads naturally for a single row', () => {
+    const notice = legacySacNotice(1);
+
+    expect(notice!.body).toContain('1 service');
+    expect(notice!.body).not.toContain('1 services');
+  });
+
+  it('tells the reader that doing nothing is a valid choice', () => {
+    // The load-bearing sentence. An accountant may already have corrected these
+    // codes by hand; the UI must not present the update as a defect to clear.
+    expect(legacySacNotice(3)!.body).toMatch(/accountant/i);
+  });
+
+  it('says the correction changes nothing about tax', () => {
+    // True, and it is what stops an Admin fearing they are about to re-rate
+    // their catalog: the engine reads gstRateOverride, never the SAC string.
+    expect(legacySacNotice(3)!.body).toMatch(/does not change|no change/i);
+  });
+
+  it('is not smuggled into the ordinary Save payload', () => {
+    const payload = buildSettingsPayload(baseValues());
+
+    for (const key of Object.keys(payload)) {
+      expect(key.toLowerCase()).not.toContain('sac');
+    }
+  });
+
+  it('carries the count through the settings response', () => {
+    const withLegacy: ClinicBillingSettings = { ...STORED, legacySacCodeCount: 4 };
+
+    expect(legacySacNotice(withLegacy.legacySacCodeCount)!.count).toBe(4);
+    expect(legacySacNotice(STORED.legacySacCodeCount)).toBeNull();
+  });
+
+  it('posts to the dedicated endpoint and refreshes the count afterwards', () => {
+    const hook = readSource('src/features/billing/hooks/useBillingSettings.ts');
+
+    expect(hook).toContain('/api/v1/billing/settings/sac-codes/update');
+    expect(hook).toContain('useUpdateSacCodes');
+    // Without the invalidation the notice stays on screen after a successful
+    // correction and invites a pointless second tap.
+    expect(hook.slice(hook.indexOf('useUpdateSacCodes'))).toContain('invalidateQueries');
+    // The catalog rows themselves just changed, so any cached list of them is
+    // stale.
+    expect(hook.slice(hook.indexOf('useUpdateSacCodes'))).toMatch(/services|catalog/i);
+  });
+
+  it('renders the action only when there is something to correct', () => {
+    expect(SCREEN_SOURCE).toContain('legacySacNotice');
+    expect(SCREEN_SOURCE).toContain('useUpdateSacCodes');
+    expect(SCREEN_SOURCE).toContain('sac-update-button');
+    // `legacySacNotice` returns null at zero and the screen must honour that
+    // rather than rendering a disabled or empty section.
+    expect(SCREEN_SOURCE).toMatch(/sacNotice\s*(!==\s*null|&&)/);
+  });
+
+  it('keeps the correction outside the Save handler', () => {
+    // If the rewrite were reachable from `handleSubmit`, an Admin editing their
+    // invoice footer would silently migrate their SAC codes.
+    const submit = SCREEN_SOURCE.slice(
+      SCREEN_SOURCE.indexOf('const handleSubmit'),
+      SCREEN_SOURCE.indexOf('const handleCopyWebhookUrl'),
+    );
+    expect(submit.length).toBeGreaterThan(0);
+    expect(submit).not.toMatch(/sac/i);
   });
 });

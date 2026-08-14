@@ -16,6 +16,7 @@ import {
   useBillingSettingsPermission,
   useRotateWebhookToken,
   useUpdateBillingSettings,
+  useUpdateSacCodes,
 } from '../hooks/useBillingSettings';
 import { RazorpayConfigSection } from '../components/RazorpayConfigSection';
 import {
@@ -25,6 +26,7 @@ import {
   collectSchemaErrors,
   formValuesFromSettings,
   gstinFieldError,
+  legacySacNotice,
   type BillingSettingsFormValues,
 } from '../lib/settings-form';
 
@@ -77,6 +79,7 @@ export function BillingSettingsScreen() {
     useBillingSettingsPermission();
   const updateSettings = useUpdateBillingSettings();
   const rotateToken = useRotateWebhookToken();
+  const updateSacCodes = useUpdateSacCodes();
 
   const [values, setValues] = useState<BillingSettingsFormValues>(() =>
     formValuesFromSettings(undefined),
@@ -158,6 +161,20 @@ export function BillingSettingsScreen() {
     });
   }, [rotateToken]);
 
+  /**
+   * The A1 correction. Its own handler, deliberately kept out of
+   * {@link handleSubmit}: if the rewrite were reachable from Save, an Admin
+   * editing their invoice footer would silently migrate their SAC codes, which
+   * is the exact outcome the opt-in decision exists to prevent.
+   */
+  const handleUpdateSacCodes = useCallback(() => {
+    updateSacCodes.mutate(undefined, {
+      onSuccess: () =>
+        showToast('success', BILLING_SETTINGS_COPY.sacUpdateSuccessToast),
+      onError: () => showToast('error', BILLING_SETTINGS_COPY.sacUpdateErrorToast),
+    });
+  }, [updateSacCodes]);
+
   // --- Gates, before any field is rendered ---
 
   if (isPermissionLoading || settingsQuery.isLoading) {
@@ -195,6 +212,10 @@ export function BillingSettingsScreen() {
   }
 
   const settings = settingsQuery.data;
+  // `null` for every clinic seeded on or after 2026-08-14, which is why there
+  // is no "up to date" variant: a clinic with nothing to correct never learns
+  // this concept exists.
+  const sacNotice = legacySacNotice(settings?.legacySacCodeCount ?? 0);
 
   return (
     <ScrollView
@@ -289,6 +310,39 @@ export function BillingSettingsScreen() {
           </Text>
         )}
       </View>
+
+      {/*
+        ── Follow-up A1: the opt-in SAC correction ──────────────────────
+
+        Rendered only when this clinic actually has legacy codes, and phrased so
+        that leaving them alone reads as a legitimate choice rather than an
+        unfinished task. The rewrite is a separate button with a separate
+        endpoint; nothing about Save touches it.
+      */}
+      {sacNotice !== null && (
+        <View style={styles.fieldGroup} testID="sac-notice">
+          <Text variant="titleMedium" style={styles.sacNoticeHeading}>
+            {BILLING_SETTINGS_COPY.sacSectionHeading}
+          </Text>
+          <Text variant="labelLarge" style={styles.fieldLabel}>
+            {sacNotice.title}
+          </Text>
+          <Text variant="bodySmall" style={styles.caption} testID="sac-notice-body">
+            {sacNotice.body}
+          </Text>
+          <PaperButton
+            mode="outlined"
+            onPress={handleUpdateSacCodes}
+            loading={updateSacCodes.isPending}
+            disabled={updateSacCodes.isPending}
+            textColor={COLORS.primary}
+            style={styles.sacButton}
+            testID="sac-update-button"
+          >
+            {sacNotice.actionLabel}
+          </PaperButton>
+        </View>
+      )}
 
       {/* ── Section 2 ─────────────────────────────────────────────────── */}
       <Text variant="titleMedium" style={styles.sectionHeading}>
@@ -472,5 +526,15 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
     marginTop: 8,
     borderRadius: 8,
+  },
+  sacNoticeHeading: {
+    color: COLORS.onSurface,
+    marginTop: 8,
+    marginBottom: 8,
+  },
+  sacButton: {
+    marginTop: 12,
+    borderRadius: 8,
+    alignSelf: 'flex-start',
   },
 });

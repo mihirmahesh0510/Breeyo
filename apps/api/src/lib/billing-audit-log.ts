@@ -45,6 +45,15 @@ export enum BillingAuditEvent {
    */
   RAZORPAY_CREDENTIALS_UPDATED = 'RAZORPAY_CREDENTIALS_UPDATED',
   BILLING_SETTINGS_UPDATED = 'BILLING_SETTINGS_UPDATED',
+  /**
+   * The opt-in SAC correction (follow-up A1). Metadata records the row count
+   * and the target code, never row contents.
+   *
+   * Audited because it rewrites a field printed on a legal document, and the
+   * six-year GST retention obligation means someone may need to establish, in
+   * 2032, who changed the SAC on a 2026 invoice's source row and when.
+   */
+  SERVICE_SAC_CODES_UPDATED = 'SERVICE_SAC_CODES_UPDATED',
   WEBHOOK_SIGNATURE_REJECTED = 'WEBHOOK_SIGNATURE_REJECTED',
 }
 

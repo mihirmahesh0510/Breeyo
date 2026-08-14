@@ -1,6 +1,10 @@
 import { randomBytes } from 'node:crypto';
-import type { ClinicBillingSettings } from '@breeyo/types';
-import { stateCodeFromGstin } from '@breeyo/types';
+import type { ClinicBillingSettings, SacCodeCorrectionResult } from '@breeyo/types';
+import {
+  VETERINARY_SAC,
+  VETERINARY_SAC_LEGACY_CORRECTABLE,
+  stateCodeFromGstin,
+} from '@breeyo/types';
 import type { BillingSettingsInput } from '@breeyo/validators';
 import { encryptSecret } from '../../lib/crypto.js';
 import {
@@ -52,6 +56,20 @@ import { invalidateRazorpayCache } from './razorpay.client.js';
  * off for a registered clinic that only meant to change its due-date default.
  * Validation still runs over the full parsed object, so the cross-field rules
  * (GST needs a GSTIN, state code must match) are unaffected.
+ *
+ * ## The SAC correction is opt-in, and that is a decision, not an omission
+ *
+ * `updateLegacySacCodes` below is the only thing in the codebase that rewrites
+ * a clinic's `service_catalog.sac_code`. It runs when an Admin presses a button
+ * and at no other time — not on deploy, not on login, not as a side effect of
+ * reading these settings. A clinic's catalog rows are its own data, and an
+ * accountant may already have set those codes by hand to match what the clinic
+ * files; a migration that ran automatically would overwrite that judgement with
+ * no one seeing it happen, and the evidence would be a changed string on a
+ * legal document (follow-up A1, resolved 2026-08-14).
+ *
+ * If a future change needs to touch `sac_code` in bulk, it belongs behind its
+ * own deliberate action too.
  *
  * ## Cache invalidation is not optional
  *
@@ -151,10 +169,34 @@ const AUDITED_SETTINGS_FIELDS = [
   'razorpayTestMode',
 ] as const;
 
+/**
+ * `readonly string[]` is not assignable to Prisma's `in` filter, and the shared
+ * constant must stay readonly so no consumer can mutate the canonical list.
+ * Copied once at module load rather than per call.
+ */
+const CORRECTABLE_LEGACY_SAC_CODES: string[] = [...VETERINARY_SAC_LEGACY_CORRECTABLE];
+
 export class BillingSettingsService {
   constructor(private readonly prisma: TenantPrismaClient) {}
 
-  private toSettings(row: SettingsRow): ClinicBillingSettings {
+  /**
+   * Rows of this clinic's catalog still carrying a correctable legacy SAC.
+   *
+   * A count, deliberately — not a fetch of the rows. The settings screen only
+   * needs to know whether to offer the correction and for how many entries, and
+   * the row contents are already available through the catalog endpoints.
+   *
+   * Deactivated rows are included. A retired preset is still resolvable from a
+   * finalized invoice line, and its SAC is still what would be printed if that
+   * document were re-rendered.
+   */
+  private async countLegacySacCodes(clinicId: string): Promise<number> {
+    return this.prisma.serviceCatalog.count({
+      where: { clinicId, sacCode: { in: CORRECTABLE_LEGACY_SAC_CODES } },
+    });
+  }
+
+  private toSettings(row: SettingsRow, legacySacCodeCount: number): ClinicBillingSettings {
     const token = row.razorpayWebhookToken;
     const base = publicApiBase();
 
@@ -189,6 +231,9 @@ export class BillingSettingsService {
       // process a confirmation, so reporting "configured" would be worse than
       // useless.
       webhookConfigured: token !== null && row.razorpayWebhookSecretEnc !== null,
+      // Follow-up A1. Surfaces the opt-in correction on the settings screen;
+      // reading it rewrites nothing.
+      legacySacCodeCount,
     };
   }
 
@@ -206,7 +251,12 @@ export class BillingSettingsService {
   }
 
   async getSettings(clinicId: string): Promise<ClinicBillingSettings> {
-    return this.toSettings(await this.loadRow(clinicId));
+    const [row, legacySacCodeCount] = await Promise.all([
+      this.loadRow(clinicId),
+      this.countLegacySacCodes(clinicId),
+    ]);
+
+    return this.toSettings(row, legacySacCodeCount);
   }
 
   /**
@@ -324,7 +374,7 @@ export class BillingSettingsService {
       });
     }
 
-    return this.toSettings(updated);
+    return this.toSettings(updated, await this.countLegacySacCodes(clinicId));
   }
 
   /**
@@ -357,6 +407,70 @@ export class BillingSettingsService {
       },
     });
 
-    return this.toSettings(updated);
+    return this.toSettings(updated, await this.countLegacySacCodes(clinicId));
+  }
+
+  /**
+   * Rewrites this clinic's correctable legacy SAC codes to
+   * {@link VETERINARY_SAC} (follow-up A1, resolved 2026-08-14).
+   *
+   * ## Only ever called from one place
+   *
+   * `POST /billing/settings/sac-codes/update`, behind
+   * `MANAGE_CLINIC_SETTINGS`. Nothing schedules it, no startup hook runs it and
+   * no other service calls it. That is the resolution of A1: new clinics are
+   * seeded correctly, and an already-seeded clinic's data changes only because
+   * its Admin decided it should. An accountant may already have corrected these
+   * codes by hand, and a silent migration would overwrite that with no record
+   * anyone would notice.
+   *
+   * ## Scoped twice over
+   *
+   * `clinicId` is in the `where` clause *and* RLS is bound on this handle, so
+   * neither a bug here nor a bug in the policy alone can reach another tenant's
+   * rows. And the code filter is
+   * `VETERINARY_SAC_LEGACY_CORRECTABLE`, not "everything that is not 998351":
+   * a clinic that set `999319` deliberately keeps it, and the grooming rows
+   * keep `998612` because Entry 46 does not reach a taxable supply.
+   *
+   * `updateMany` rather than a read-then-write loop: it is one statement, so
+   * the set of rows it matches cannot shift underneath a partially applied
+   * correction, and its `count` is the authoritative number rewritten.
+   */
+  async updateLegacySacCodes(
+    clinicId: string,
+    userId: string,
+  ): Promise<SacCodeCorrectionResult> {
+    // Establishes the clinic exists (and is this tenant's) before any write,
+    // matching `rotateWebhookToken`.
+    await this.loadRow(clinicId);
+
+    const result = await this.prisma.serviceCatalog.updateMany({
+      where: { clinicId, sacCode: { in: CORRECTABLE_LEGACY_SAC_CODES } },
+      data: { sacCode: VETERINARY_SAC },
+    });
+
+    // No row moved, so nothing happened worth recording. A clinic whose Admin
+    // taps the button twice should not accumulate audit rows describing
+    // non-events — that dilutes the log that a real correction has to be found
+    // in six years from now.
+    if (result.count > 0) {
+      await writeBillingAuditLog(this.prisma, BillingAuditEvent.SERVICE_SAC_CODES_UPDATED, {
+        clinicId,
+        userId,
+        // A count and the target code. Not the row ids and not the previous
+        // values: the correctable set is a fixed four-element constant, so the
+        // "before" state is fully reconstructible from the count plus this
+        // file, and enumerating rows here would set the precedent that catalog
+        // contents may live in the audit log.
+        metadata: { updated: result.count, sacCode: VETERINARY_SAC },
+      });
+    }
+
+    return {
+      updated: result.count,
+      sacCode: VETERINARY_SAC,
+      legacySacCodeCount: await this.countLegacySacCodes(clinicId),
+    };
   }
 }

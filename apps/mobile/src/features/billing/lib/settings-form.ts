@@ -101,6 +101,14 @@ export const BILLING_SETTINGS_COPY = {
   webhookMissingText: 'Save a Razorpay key to generate this clinic’s webhook URL.',
   rotateWebhookAction: 'Rotate webhook token',
 
+  // --- Follow-up A1: the opt-in SAC correction ---
+
+  sacSectionHeading: 'SAC Codes',
+  sacUpdateAction: 'Update SAC codes',
+  sacNoticeTitle: 'Some services use an older SAC code',
+  sacUpdateSuccessToast: 'SAC codes updated',
+  sacUpdateErrorToast: 'Could not update SAC codes. Please try again.',
+
   accessDeniedTitle: 'Admin access required',
   accessDeniedBody:
     'Only a clinic Admin can change billing settings and payment credentials.',
@@ -220,6 +228,61 @@ export function webhookIndicator(
       webhookUrl === null
         ? BILLING_SETTINGS_COPY.webhookMissingText
         : BILLING_SETTINGS_COPY.webhookNotConfiguredText,
+  };
+}
+
+// ─── Opt-in SAC correction (follow-up A1) ───────────────────────────────────
+
+export interface LegacySacNotice {
+  /** How many catalog rows still carry a correctable legacy code. */
+  count: number;
+  title: string;
+  body: string;
+  actionLabel: string;
+}
+
+/**
+ * The Billing Settings notice offering the A1 correction, or `null` when the
+ * clinic has nothing to correct.
+ *
+ * ## Why the copy is written the way it is
+ *
+ * Three things have to be true of this text, and each one is asserted by a
+ * test:
+ *
+ *  1. **It names the count and the target code.** An Admin about to change what
+ *     is printed on a legal document should see exactly what changes.
+ *  2. **It says the tax does not move.** It genuinely does not — the engine
+ *     reads `gstRateOverride` and `taxTreatment` and never the SAC string — and
+ *     without saying so the reader reasonably fears they are about to re-rate
+ *     their whole catalog.
+ *  3. **It says leaving this alone is fine.** This is the load-bearing
+ *     sentence. The clinic's accountant may already have set these codes to
+ *     match what the clinic files, and a notice phrased as a defect to clear
+ *     would push an Admin into overwriting that. The decision A1 records is
+ *     that no one's data changes without them choosing it, and copy that
+ *     pressures the choice would undo that at the last inch.
+ *
+ * Returning `null` rather than a "you are up to date" variant is deliberate:
+ * a clinic seeded after 2026-08-14 has no reason to ever learn this concept
+ * exists, and a section that only ever says "nothing to do" is noise on a
+ * screen that also holds live payment credentials.
+ */
+export function legacySacNotice(count: number): LegacySacNotice | null {
+  if (count <= 0) return null;
+
+  const services = count === 1 ? '1 service' : `${count} services`;
+  const verb = count === 1 ? 'uses' : 'use';
+
+  return {
+    count,
+    title: BILLING_SETTINGS_COPY.sacNoticeTitle,
+    body:
+      `${services} on your price list still ${verb} an older SAC code. ` +
+      'The code for veterinary services is 998351. Updating changes only what ' +
+      'is printed on new invoices — it does not change any tax amount or price. ' +
+      'If your accountant chose the codes you have, leave this as it is.',
+    actionLabel: BILLING_SETTINGS_COPY.sacUpdateAction,
   };
 }
 

@@ -1,8 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { ClinicBillingSettings } from '@breeyo/types';
+import type { ClinicBillingSettings, SacCodeCorrectionResult } from '@breeyo/types';
 import { apiClient } from '../../../lib/api';
 import { useAuth } from '../../../providers/AuthProvider';
 import { BILLING_DASHBOARD_QUERY_KEY } from './useBillingDashboard';
+import { SERVICE_CATALOG_QUERY_KEY } from './useServiceCatalog';
 import {
   canManageBillingSettings,
   type BillingSettingsPayload,
@@ -12,6 +13,10 @@ import {
 
 interface BillingSettingsResponse {
   data: ClinicBillingSettings;
+}
+
+interface SacCodeCorrectionResponse {
+  data: SacCodeCorrectionResult;
 }
 
 interface PermissionsResponse {
@@ -114,6 +119,48 @@ export function useRotateWebhookToken() {
     onSuccess: () => {
       queryClient.invalidateQueries({
         queryKey: [...BILLING_SETTINGS_QUERY_KEY, activeClinicId],
+      });
+    },
+  });
+}
+
+/**
+ * `POST /api/v1/billing/settings/sac-codes/update` — the opt-in A1 correction.
+ *
+ * Its own mutation and its own endpoint, never a field on the settings save.
+ * The rewrite touches `service_catalog.sac_code`, which is printed on a legal
+ * document, and a clinic's accountant may already have set those codes by hand.
+ * The decision recorded in A1 is that this happens because an Admin chose it,
+ * so it must not be reachable from any handler an Admin invokes for another
+ * reason — least of all the Save button.
+ *
+ * Two keys are invalidated on success. The settings key carries
+ * `legacySacCodeCount`, which is what renders the notice; leaving it stale
+ * keeps a resolved notice on screen and invites a pointless second tap. The
+ * service-catalog key holds the rows that just changed, so any picker still
+ * showing them would display the old codes.
+ *
+ * No body is sent. There is one legacy set and one code it corrects to, both
+ * constants in `@breeyo/types`, so there is nothing here for a client to
+ * parameterise — and therefore no way for this call to write an arbitrary SAC
+ * onto a clinic's catalog.
+ */
+export function useUpdateSacCodes() {
+  const { accessToken, activeClinicId } = useAuth();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: () =>
+      apiClient<SacCodeCorrectionResponse>(
+        '/api/v1/billing/settings/sac-codes/update',
+        { method: 'POST', token: accessToken! },
+      ),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: [...BILLING_SETTINGS_QUERY_KEY, activeClinicId],
+      });
+      queryClient.invalidateQueries({
+        queryKey: [...SERVICE_CATALOG_QUERY_KEY, activeClinicId],
       });
     },
   });

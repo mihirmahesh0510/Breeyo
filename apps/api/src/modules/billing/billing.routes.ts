@@ -165,7 +165,7 @@ export default async function billingRoutes(fastify: FastifyInstance) {
   // Not a DELETE: the row survives, because a finalized invoice line points at it.
   fastify.post('/billing/services/:serviceId/deactivate', { preHandler: writeHandler, handler: serviceCatalogController.deactivateHandler });
 
-  // D-29 billing settings — the only three routes behind settingsHandler.
+  // D-29 billing settings — the only four routes behind settingsHandler.
   // The read is gated as tightly as the write because the response carries the
   // webhook routing token, which is a capability rather than a display value.
   fastify.get('/billing/settings', { preHandler: settingsHandler, handler: settingsController.getHandler });
@@ -173,6 +173,14 @@ export default async function billingRoutes(fastify: FastifyInstance) {
   // Its own endpoint rather than a flag on the save: rotating stops payment
   // confirmations arriving until the Admin re-pastes the URL into Razorpay.
   fastify.post('/billing/settings/webhook-token/rotate', { preHandler: settingsHandler, handler: settingsController.rotateWebhookTokenHandler });
+  // Follow-up A1. The ONLY path in the codebase that rewrites
+  // `service_catalog.sac_code` in bulk, and it fires on an explicit Admin tap
+  // and nothing else — no startup hook, no login hook, no side effect of the
+  // read above. A clinic's accountant may already have corrected these codes by
+  // hand, and a silent migration would overwrite that judgement invisibly on a
+  // field printed on a legal document. Admin-only for the same reason the rest
+  // of this group is: it changes what the clinic's invoices say.
+  fastify.post('/billing/settings/sac-codes/update', { preHandler: settingsHandler, handler: settingsController.updateSacCodesHandler });
 
   // Reads
   fastify.get('/billing/invoices', { preHandler: readHandler, handler: controller.listHandler });

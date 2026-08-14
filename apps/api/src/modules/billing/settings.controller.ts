@@ -76,5 +76,25 @@ export function createBillingSettingsController(
 
       return reply.status(200).send({ data });
     },
+
+    /**
+     * POST /billing/settings/sac-codes/update — the opt-in A1 correction.
+     *
+     * Takes no body on purpose. There is exactly one legacy set and exactly one
+     * code it corrects to, both fixed constants in `@breeyo/types`, so there is
+     * no parameter for a client to get wrong and no way to ask this endpoint to
+     * write an arbitrary SAC onto a clinic's catalog. Editing an individual
+     * row's code remains `PATCH /billing/services/:serviceId`.
+     */
+    async updateSacCodesHandler(request: FastifyRequest, reply: FastifyReply) {
+      const service = buildService(request.db);
+
+      const data = await service.updateLegacySacCodes(
+        request.user.activeClinicId,
+        request.user.id,
+      );
+
+      return reply.status(200).send({ data });
+    },
   };
 }

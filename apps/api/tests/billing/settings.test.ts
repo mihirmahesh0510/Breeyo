@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import request from 'supertest';
 import type { FastifyInstance } from 'fastify';
+import { VETERINARY_SAC } from '@breeyo/types';
 import { buildTestApp, closeTestApp } from '../helpers/app.js';
 import {
   cleanupTestData,
@@ -8,6 +9,7 @@ import {
   createTestClinic,
   createTestClinicMember,
   createTestTokens,
+  createTestServiceCatalogEntry,
   prisma,
 } from '../helpers/factories.js';
 import { encryptSecret } from '../../src/lib/crypto.js';
@@ -383,5 +385,210 @@ describe('D-29 billing settings', () => {
       .send({});
 
     expect(response.status).toBe(403);
+  });
+});
+
+/**
+ * A1, resolved 2026-08-14 — the opt-in SAC correction.
+ *
+ * Clinics seeded before 2026-08-14 carry the `9993xx` SAC family on their
+ * clinical service-catalog rows; the seed now writes `998351`. Nothing about
+ * that is a tax defect — the engine reads `gstRateOverride` and `taxTreatment`
+ * and never the SAC string — but the code is printed on a legal document, so
+ * existing clinics are offered a correction.
+ *
+ * **The correction is opt-in, and these tests exist mainly to pin that.** A
+ * clinic's catalog rows are its own data and an accountant may already have set
+ * those codes by hand to match their filings. A migration that ran on deploy,
+ * on login, or as a side effect of opening the settings screen would overwrite
+ * that judgement invisibly. So the rewrite happens on one explicit Admin action
+ * and on no other code path.
+ */
+describe('A1 opt-in SAC code correction', () => {
+  const LEGACY_CONSULT = '999311';
+  const LEGACY_SURGERY = '999313';
+  const GROOMING_SAC = '998612';
+
+  function updateSacCodes(token: string) {
+    return request(app.server)
+      .post('/api/v1/billing/settings/sac-codes/update')
+      .set('Authorization', `Bearer ${token}`)
+      .send({});
+  }
+
+  /** A clinic as the pre-2026-08-14 seed would have left it. */
+  async function seedLegacyCatalog(clinicId: string) {
+    await createTestServiceCatalogEntry(clinicId, {
+      name: 'General Consultation',
+      category: 'consultation',
+      sacCode: LEGACY_CONSULT,
+      gstRateOverride: 0,
+    });
+    await createTestServiceCatalogEntry(clinicId, {
+      name: 'Minor Surgery',
+      category: 'surgery',
+      sacCode: LEGACY_SURGERY,
+      gstRateOverride: 0,
+    });
+    await createTestServiceCatalogEntry(clinicId, {
+      name: 'Grooming - Basic',
+      category: 'grooming',
+      sacCode: GROOMING_SAC,
+      gstRateOverride: 18,
+    });
+  }
+
+  function sacCodesFor(clinicId: string) {
+    return prisma.serviceCatalog
+      .findMany({ where: { clinicId }, orderBy: { name: 'asc' } })
+      .then((rows) => rows.map((r) => `${r.name}=${r.sacCode}`));
+  }
+
+  it('reports how many rows still carry a legacy code, without changing any', async () => {
+    await seedLegacyCatalog(clinicAId);
+
+    const response = await getSettings(adminToken);
+
+    expect(response.status).toBe(200);
+    // Two clinical rows. The grooming row is not counted: 998612 is not a
+    // correctable code (see below).
+    expect(response.body.data.legacySacCodeCount).toBe(2);
+
+    // Reading the settings screen must not be a migration trigger.
+    expect(await sacCodesFor(clinicAId)).toEqual([
+      `General Consultation=${LEGACY_CONSULT}`,
+      `Grooming - Basic=${GROOMING_SAC}`,
+      `Minor Surgery=${LEGACY_SURGERY}`,
+    ]);
+  });
+
+  it('reports zero for a clinic seeded after the fix', async () => {
+    await createTestServiceCatalogEntry(clinicAId, {
+      name: 'General Consultation',
+      sacCode: VETERINARY_SAC,
+    });
+
+    const response = await getSettings(adminToken);
+
+    expect(response.body.data.legacySacCodeCount).toBe(0);
+  });
+
+  it('rewrites only the correctable clinical codes when explicitly invoked', async () => {
+    await seedLegacyCatalog(clinicAId);
+
+    const response = await updateSacCodes(adminToken);
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.updated).toBe(2);
+    expect(response.body.data.sacCode).toBe(VETERINARY_SAC);
+
+    expect(await sacCodesFor(clinicAId)).toEqual([
+      `General Consultation=${VETERINARY_SAC}`,
+      // Grooming is not veterinary healthcare and Entry 46 does not reach it.
+      // Its line is taxed at 18%, so stamping the nil-rated veterinary SAC on
+      // it would be a worse document than the one being corrected.
+      `Grooming - Basic=${GROOMING_SAC}`,
+      `Minor Surgery=${VETERINARY_SAC}`,
+    ]);
+  });
+
+  it('leaves a code an accountant already corrected by hand alone', async () => {
+    // Neither the legacy family nor the target. Whatever this clinic's
+    // accountant decided, the action must not have an opinion about it.
+    await createTestServiceCatalogEntry(clinicAId, {
+      name: 'Physiotherapy',
+      sacCode: '999319',
+    });
+    await createTestServiceCatalogEntry(clinicAId, {
+      name: 'General Consultation',
+      sacCode: LEGACY_CONSULT,
+    });
+
+    const response = await updateSacCodes(adminToken);
+
+    expect(response.body.data.updated).toBe(1);
+    expect(await sacCodesFor(clinicAId)).toEqual([
+      `General Consultation=${VETERINARY_SAC}`,
+      'Physiotherapy=999319',
+    ]);
+  });
+
+  it('is idempotent: a second invocation changes nothing', async () => {
+    await seedLegacyCatalog(clinicAId);
+
+    expect((await updateSacCodes(adminToken)).body.data.updated).toBe(2);
+
+    const second = await updateSacCodes(adminToken);
+
+    expect(second.status).toBe(200);
+    expect(second.body.data.updated).toBe(0);
+    expect(second.body.data.legacySacCodeCount).toBe(0);
+  });
+
+  it("never touches another clinic's catalog", async () => {
+    await seedLegacyCatalog(clinicAId);
+    await seedLegacyCatalog(clinicBId);
+
+    await updateSacCodes(adminToken);
+
+    // Clinic B never asked. This is the whole point of the decision: a clinic
+    // that does not invoke the action keeps its data exactly as it was.
+    expect(await sacCodesFor(clinicBId)).toEqual([
+      `General Consultation=${LEGACY_CONSULT}`,
+      `Grooming - Basic=${GROOMING_SAC}`,
+      `Minor Surgery=${LEGACY_SURGERY}`,
+    ]);
+  });
+
+  it('is Admin-only', async () => {
+    await seedLegacyCatalog(clinicAId);
+
+    expect((await updateSacCodes(frontDeskToken)).status).toBe(403);
+    expect((await updateSacCodes(clinicianToken)).status).toBe(403);
+
+    // Refused means refused: no partial write behind the 403.
+    expect(await sacCodesFor(clinicAId)).toEqual([
+      `General Consultation=${LEGACY_CONSULT}`,
+      `Grooming - Basic=${GROOMING_SAC}`,
+      `Minor Surgery=${LEGACY_SURGERY}`,
+    ]);
+  });
+
+  it('rejects an unauthenticated invocation', async () => {
+    const response = await request(app.server)
+      .post('/api/v1/billing/settings/sac-codes/update')
+      .send({});
+
+    expect(response.status).toBe(401);
+  });
+
+  it('audits the correction with a count and no row contents', async () => {
+    await seedLegacyCatalog(clinicAId);
+
+    await updateSacCodes(adminToken);
+
+    const rows = await prisma.billingAuditLog.findMany({
+      where: { clinicId: clinicAId, event: 'SERVICE_SAC_CODES_UPDATED' },
+    });
+
+    // A rewrite of what is printed on a legal document is exactly the kind of
+    // change that must be attributable six years later (Section 36 / D-32).
+    expect(rows).toHaveLength(1);
+    expect(rows[0].metadata).toMatchObject({
+      updated: 2,
+      sacCode: VETERINARY_SAC,
+    });
+  });
+
+  it('writes no audit row when there was nothing to correct', async () => {
+    await createTestServiceCatalogEntry(clinicAId, { sacCode: VETERINARY_SAC });
+
+    const response = await updateSacCodes(adminToken);
+
+    expect(response.body.data.updated).toBe(0);
+    const rows = await prisma.billingAuditLog.findMany({
+      where: { clinicId: clinicAId, event: 'SERVICE_SAC_CODES_UPDATED' },
+    });
+    expect(rows).toHaveLength(0);
   });
 });

@@ -384,6 +384,33 @@ export interface ClinicBillingSettings {
    * anywhere for staff to act on.
    */
   webhookConfigured: boolean;
+
+  /**
+   * How many of this clinic's `service_catalog` rows still carry a SAC code
+   * from `VETERINARY_SAC_LEGACY_CORRECTABLE` (follow-up A1).
+   *
+   * Zero for every clinic seeded on or after 2026-08-14. A non-zero value is
+   * what surfaces the opt-in "Update SAC codes" action on the Billing Settings
+   * screen; it is a count and nothing more, and reading it changes no data.
+   */
+  legacySacCodeCount: number;
+}
+
+/**
+ * The result of the explicit `POST /billing/settings/sac-codes/update` action
+ * (follow-up A1).
+ *
+ * Returned only in response to that action. There is no code path that
+ * performs the rewrite implicitly — see `VETERINARY_SAC_LEGACY_CORRECTABLE`
+ * for why a silent migration was rejected.
+ */
+export interface SacCodeCorrectionResult {
+  /** Rows rewritten by this invocation. Zero on a second call. */
+  updated: number;
+  /** The code they were rewritten to — always {@link VETERINARY_SAC}. */
+  sacCode: string;
+  /** Rows still carrying a correctable legacy code afterwards. Always zero. */
+  legacySacCodeCount: number;
 }
 
 // ─── Composed response shapes ───────────────────────────────────────────────
