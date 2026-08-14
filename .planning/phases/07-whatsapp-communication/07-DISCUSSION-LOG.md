@@ -201,3 +201,76 @@
 - Owner self-service booking move/cancel via quick-reply — staff-only for Beta
 - Escalating/automated payment reminders — manual-only for Beta
 - Admin-scriptable simulator outcomes for booking action cards — always positive-path for Beta
+
+---
+
+## Plan review follow-up (2026-08-15)
+
+Gaps found while reviewing the 16 phase plans (07-01 through 07-16) against CONTEXT.md/UI-SPEC.md/VALIDATION.md. Recorded as D-21 through D-28 in CONTEXT.md.
+
+| Option | Description | Selected |
+|--------|-------------|----------|
+| Ask which pet during booking | Add a pet-selection step to the WhatsApp booking conversation | ✓ |
+| Defer to check-in | Leave pet unspecified; staff sorts it out in person | |
+
+**Question:** The booking flow never captured which pet an appointment was for — how should a multi-pet owner's pet get identified?
+**User's choice:** Ask which pet during booking → D-21
+
+| Option | Description | Selected |
+|--------|-------------|----------|
+| Restrict to Front Desk + Admin only | Tighter permission for booking cancel/move and consent/opt-out changes | |
+| Keep SEND_WHATSAPP for everything | One permission gates all WhatsApp actions | ✓ |
+
+**Question:** Should booking cancel/move and consent/opt-out changes require a tighter permission than SEND_WHATSAPP?
+**User's choice:** Keep SEND_WHATSAPP for everything → D-22
+
+| Option | Description | Selected |
+|--------|-------------|----------|
+| Omit the pay button/link, same template | payment_link becomes optional | ✓ |
+| Separate paid-invoice template | Distinct template with different copy | |
+
+**Question:** How should a paid invoice's WhatsApp send actually omit the payment CTA (per UI-SPEC)?
+**User's choice:** Omit the pay button/link, same template → D-23
+
+| Option | Description | Selected |
+|--------|-------------|----------|
+| Staff marks consent granted | A control in the app for front desk to mark consent | |
+| Owner opts in via WhatsApp reply | First message includes an opt-in quick reply | |
+| Out of scope for Beta — no UI trigger | Consent capture happens outside this phase's code | ✓ |
+
+**Question:** Nothing in the plan actually triggers a WhatsApp consent grant (D-12) — how should consent get captured?
+**User's choice:** Out of scope for Beta — no UI trigger → D-24
+**Notes:** Every Phase 7 send will show the missing-consent warning until a future phase adds a capture mechanism — accepted as a known Beta limitation.
+
+| Option | Description | Selected |
+|--------|-------------|----------|
+| Release the slot immediately | Freed for new WhatsApp requests right away | ✓ |
+| Keep it blocked for that day | Safer against double-book race, wastes the slot | |
+
+**Question:** After staff cancels/moves a confirmed booking, should the slot become bookable again via WhatsApp?
+**User's choice:** Release the slot immediately → D-25
+
+| Option | Description | Selected |
+|--------|-------------|----------|
+| Read-only receipt | Shows booking-confirmed status, not tappable | |
+| Live button with an action | Tapping it opens booking detail | ✓ |
+
+**Question:** Given D-06's auto-confirm, what should the confirm_booking action card actually do when tapped?
+**User's choice:** Live button with an action → D-26
+
+| Option | Description | Selected |
+|--------|-------------|----------|
+| One-shot, auto-reverts | Reverts to normal delivery after the next send | |
+| Sticky until manually reverted | Stays in the chosen mode until Admin switches it back | ✓ |
+
+**Question:** Should the simulator's deterministic failure/delay toggle (D-16) auto-revert after one send, given the risk of a forgotten toggle silently failing a live demo?
+**User's choice:** Sticky until manually reverted → D-27
+**Notes:** User accepted the demo-risk tradeoff explicitly after it was flagged.
+
+| Option | Description | Selected |
+|--------|-------------|----------|
+| Suppress the escalation resend | Owner gets one reminder touch that day, not two | ✓ |
+| Let both send | Some redundancy is acceptable | |
+
+**Question:** Vaccine/deworming ADVANCE-touch escalation can land on the same day as the ON_DATE touch's first send — should one be suppressed?
+**User's choice:** Suppress the escalation resend → D-28
