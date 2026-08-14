@@ -18,7 +18,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 3: Patient Registration & Walk-in Queue** - Pet/owner registration, walk-in queue as the primary workflow with real-time updates
 - [ ] **Phase 4: EMR & Clinical Records** - SOAP notes, vitals, prescriptions, voice-to-text, medical history, audit trail
 - [ ] **Phase 5: Inventory Management** - Stock tracking, barcode scanning, batch/lot/expiry management, par-level alerts, offline scanning
-- [ ] **Phase 6: Invoicing & Payments** - Invoice builder with stock validation, GST calculation, Razorpay integration, payment recording
+- [x] **Phase 6: Invoicing & Payments** - Invoice builder with stock validation, GST calculation, Razorpay integration, payment recording (completed 2026-08-14)
 - [ ] **Phase 7: WhatsApp Communication** - Simulator with abstraction layer, preventive-care reminders, invoice delivery, booking flow, mobile message log
 - [ ] **Phase 8: Scheduling & Calendar** - Future appointments merging into walk-in queue, calendar views, multi-device sync, push notifications
 - [ ] **Phase 9: Web Dashboard & Owner Portal** - Browser-based admin interface for analytics, inventory management, user/role management; pet owner portal via tokenised magic links for EMR access and invoice payment
@@ -242,9 +242,9 @@ Plans:
 
 **Wave 13** *(blocked on Wave 12 completion)*
 
-- [ ] 06-17-PLAN.md -- Invoice detail foundation: the detail query and payment-mutation hooks (no polling, explicit invalidation) plus six presentation components including the `isValidInvoiceTransition`-gated action bar (BIL-03)
-- [ ] 06-18-PLAN.md -- Mobile Quick Sale cart (merges duplicate items, holds no totals) with one-tap checkout and per-row stock errors, plus the additive pet-profile Invoices section (D-04, D-25)
-- [ ] 06-21-PLAN.md -- [split from 06-16] Invoice builder screen composing the 06-16 pieces with debounced server preview and both 409 paths, plus the two entry routes including the D-06 completed-consultation picker (BIL-01, BIL-02)
+- [x] 06-17-PLAN.md -- Invoice detail foundation: the detail query and payment-mutation hooks (no polling, explicit invalidation) plus six presentation components including the `isValidInvoiceTransition`-gated action bar (BIL-03)
+- [x] 06-18-PLAN.md -- Mobile Quick Sale cart (merges duplicate items, holds no totals) with one-tap checkout and per-row stock errors, plus the additive pet-profile Invoices section (D-04, D-25)
+- [x] 06-21-PLAN.md -- [split from 06-16] Invoice builder screen composing the 06-16 pieces with debounced server preview and both 409 paths, plus the two entry routes including the D-06 completed-consultation picker (BIL-01, BIL-02)
 
 **Wave 14** *(blocked on Wave 13 completion)*
 
@@ -461,7 +461,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9 -> 10
 | 3. Patient Registration & Walk-in Queue | 8/8 | **Done** | 2026-08-03 (PR #3) |
 | 4. EMR & Clinical Records | 8/8 | Next | - |
 | 5. Inventory Management | 8/8 | Planned | - |
-| 6. Invoicing & Payments | 21/24 | In Progress|  |
+| 6. Invoicing & Payments | 24/24 | Complete   | 2026-08-14 |
 | 7. WhatsApp Communication | 16/16 | Planned | - |
 | 8. Scheduling & Calendar | 7/7 | Planned | - |
 | 9. Web Dashboard & Owner Portal | 7/7 | Planned | - |
