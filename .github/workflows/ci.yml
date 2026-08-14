@@ -42,6 +42,10 @@ jobs:
     env:
       DATABASE_URL: postgresql://breeyo_admin:admin_dev_password@localhost:5432/breeyo
       DATABASE_URL_APP: postgresql://breeyo_app:app_dev_password@localhost:5432/breeyo
+      # A separate, disposable database. `prisma migrate diff --from-migrations`
+      # replays the migration set into it and RESETS it to do so, which is why
+      # it must never be DATABASE_URL. Created by the step below.
+      SHADOW_DATABASE_URL: postgresql://breeyo_admin:admin_dev_password@localhost:5432/breeyo_shadow
       REDIS_URL: redis://localhost:6379
       JWT_SECRET: ci-jwt-secret-not-for-production
       COOKIE_SECRET: ci-cookie-secret-not-for-production
@@ -99,6 +103,24 @@ jobs:
 
       - name: Run tests
         run: pnpm test
+
+      # Phase 6 close-out gate (plan 06-19). Maps each of BIL-01..BIL-07,
+      # RPT-01 and the inherited PLT-04 to its specific named test, then
+      # asserts the phase-wide invariants no single plan owns: no float money,
+      # no client-supplied total, no credential in client code, no global
+      # socket emit, RLS on all ten billing tables, and that the live database
+      # differs from schema.prisma by exactly the four deliberately-unmodelled
+      # pg_trgm indexes and nothing else.
+      #
+      # `--skip-suite` skips only the `pnpm test` step, which the job above
+      # already ran. The typechecks and the Expo check still run here: the
+      # mobile check is a Phase-6-scoped error baseline, and this is the only
+      # place it is enforced.
+      - name: Create shadow database for the schema-reproducibility check
+        run: psql "$DATABASE_URL" -c 'CREATE DATABASE breeyo_shadow;'
+
+      - name: Phase 06 gate
+        run: bash scripts/verify-phase-06.sh --skip-suite
 
   # Expo's native modules are pinned to the installed SDK. When one drifts, the
   # JS build and the test suite both still pass -- the failure only surfaces at

@@ -25,11 +25,16 @@
 #   bash scripts/verify-phase-06.sh                 # requirements + invariants, stop at first failure
 #   bash scripts/verify-phase-06.sh --all           # run every check, then report
 #   bash scripts/verify-phase-06.sh --static-only   # skip everything needing a database or a network
-#   bash scripts/verify-phase-06.sh --skip-suite    # skip the full workspace suite and typechecks (fast loop)
+#   bash scripts/verify-phase-06.sh --skip-suite    # skip only the `pnpm test` step (CI already runs it)
 #
 # Environment:
-#   DATABASE_URL   Postgres URL for the migrated + RLS-configured database.
-#                  Read from apps/api/.env when unset.
+#   DATABASE_URL          Postgres URL for the migrated + RLS-configured
+#                         database. Read from apps/api/.env when unset.
+#   SHADOW_DATABASE_URL   A SEPARATE, disposable database. Required for
+#                         INV-SYNC, which replays the migration set into it --
+#                         Prisma RESETS whatever it is given, so this must
+#                         never point at a database you care about. INV-SYNC
+#                         is skipped rather than guessed when it is unset.
 #   PGCONTAINER    Docker container running Postgres, used only when `psql` is
 #                  not on PATH (local development). Default: breeyo-postgres-1.
 #
@@ -405,11 +410,22 @@ section "INV-SYNC  the migration set alone reproduces schema.prisma"
 # `migrate diff --exit-code` is read-only and asserts the stronger, correct
 # claim: that the migration set ALONE reproduces schema.prisma from empty. This
 # is the same claim CI makes, and for the same reason.
-if ( cd apps/api && npx --no-install prisma migrate diff \
-      --from-migrations prisma/migrations \
-      --to-schema-datamodel prisma/schema.prisma \
-      --shadow-database-url "${SHADOW_DATABASE_URL:-$DATABASE_URL}" \
-      --exit-code ); then
+#
+# `--from-migrations` replays the migration set into a shadow database, and
+# Prisma RESETS whatever it is pointed at to do so. Defaulting the shadow URL to
+# DATABASE_URL -- the obvious-looking fallback -- would therefore drop every
+# table in the database being verified, mid-run. There is no safe default, so
+# an absent or identical shadow URL is a SKIP with instructions, never a
+# silent substitution.
+if [ -z "${SHADOW_DATABASE_URL:-}" ]; then
+  record INV-SYNC SKIP "SHADOW_DATABASE_URL unset -- --from-migrations RESETS the database it is given, so there is no safe default (INV-TRGM still covers live-db drift)"
+elif [ "${SHADOW_DATABASE_URL}" = "${DATABASE_URL}" ]; then
+  record INV-SYNC FAIL "SHADOW_DATABASE_URL equals DATABASE_URL -- running this check would reset the database under verification"
+elif ( cd apps/api && npx --no-install prisma migrate diff \
+        --from-migrations prisma/migrations \
+        --to-schema-datamodel prisma/schema.prisma \
+        --shadow-database-url "$SHADOW_DATABASE_URL" \
+        --exit-code ); then
   record INV-SYNC PASS "migrations reproduce schema.prisma exactly"
 else
   record INV-SYNC FAIL "the migration set does not reproduce schema.prisma"
@@ -465,10 +481,7 @@ fi # STATIC_ONLY
 # ════════════════════════════════════════════════════════════════════════════
 
 if [ "$SKIP_SUITE" -eq 1 ] || [ "$STATIC_ONLY" -eq 1 ]; then
-  record SUITE      SKIP "--skip-suite / --static-only"
-  record TSC-API    SKIP "--skip-suite / --static-only"
-  record TSC-MOBILE SKIP "--skip-suite / --static-only"
-  record EXPO-DEPS  SKIP "--skip-suite / --static-only"
+  record SUITE SKIP "--skip-suite / --static-only (CI runs the same suite in its own step)"
 else
 
 section "SUITE  pnpm test across the workspace"
@@ -484,6 +497,17 @@ if CI=true pnpm test; then
 else
   record SUITE FAIL "pnpm test is red"
 fi
+
+fi # SKIP_SUITE (the workspace suite only -- the typechecks below always run)
+
+# The typechecks and the Expo dependency check are seconds each, and the mobile
+# baseline is the only place a new Phase 6 typecheck error is caught at all, so
+# they are not covered by --skip-suite.
+if [ "$STATIC_ONLY" -eq 1 ]; then
+  record TSC-API    SKIP "--static-only"
+  record TSC-MOBILE SKIP "--static-only"
+  record EXPO-DEPS  SKIP "--static-only"
+else
 
 section "TSC-API  apps/api typecheck"
 if pnpm --filter @breeyo/api exec tsc --noEmit; then
@@ -534,7 +558,7 @@ else
   record EXPO-DEPS FAIL "an Expo native module has drifted from the SDK's expected range"
 fi
 
-fi # SKIP_SUITE
+fi # STATIC_ONLY (typechecks + Expo)
 
 summary
 [ "$FAILURES" -eq 0 ] && exit 0 || exit 1

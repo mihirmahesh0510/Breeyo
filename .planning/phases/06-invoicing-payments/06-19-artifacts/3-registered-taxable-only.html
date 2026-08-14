@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    @page { size: A4 portrait; margin: 12mm; }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, 'Helvetica Neue', Arial, sans-serif; color: #333; line-height: 1.5; padding: 20px; }
+    .header { text-align: center; border-bottom: 2px solid #2E7D32; padding-bottom: 16px; margin-bottom: 16px; }
+    .header img { max-width: 60px; max-height: 60px; margin-bottom: 8px; }
+    .clinic-name { font-size: 20px; font-weight: 700; color: #2E7D32; }
+    .clinic-info { font-size: 12px; color: #666; margin-top: 4px; }
+    .doc-heading { text-align: center; font-size: 16px; font-weight: 700; color: #2E7D32; letter-spacing: 0.5px; margin-bottom: 12px; }
+    .section { margin-bottom: 16px; }
+    .section-title { font-size: 14px; font-weight: 600; color: #2E7D32; border-bottom: 1px solid #E8F5E9; padding-bottom: 4px; margin-bottom: 8px; }
+    .info-grid { display: flex; flex-wrap: wrap; gap: 8px; }
+    .info-item { flex: 1; min-width: 45%; }
+    .info-label { font-size: 11px; color: #999; text-transform: uppercase; }
+    .info-value { font-size: 13px; color: #333; }
+    table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+    th { background-color: #E8F5E9; padding: 8px; text-align: left; font-size: 12px; font-weight: 600; color: #2E7D32; }
+    td { font-size: 12px; padding: 8px; border-bottom: 1px solid #eee; }
+    .num { text-align: right; }
+    .totals { width: 60%; margin-left: auto; margin-top: 12px; }
+    .totals td { font-size: 12px; padding: 4px 8px; border-bottom: none; }
+    .totals .grand td { font-size: 14px; font-weight: 700; color: #2E7D32; border-top: 2px solid #2E7D32; padding-top: 8px; }
+    .totals .disclosure td { font-size: 10px; color: #999; }
+    .status { display: inline-block; font-size: 11px; font-weight: 600; letter-spacing: 0.5px; padding: 4px 10px; border-radius: 4px; background: #E8F5E9; color: #1B5E20; }
+    .notice { font-size: 11px; color: #E65100; margin-top: 4px; }
+    .signature { margin-top: 32px; text-align: right; }
+    .signature-line { display: inline-block; width: 200px; border-top: 1px solid #333; padding-top: 4px; font-size: 11px; color: #666; text-align: center; }
+    .footer { margin-top: 20px; padding-top: 12px; border-top: 1px solid #eee; font-size: 11px; color: #999; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    
+    <div class="clinic-name">Paws &amp; Claws Veterinary Clinic</div>
+    <div class="clinic-info">12 MG Road, Bengaluru 560001</div>
+    <div class="clinic-info">Phone: +91 98765 43210</div>
+    <div class="clinic-info">GSTIN: 29AAPFU0939F1ZV</div>
+  </div>
+
+  <div class="doc-heading">TAX INVOICE</div>
+
+  <div class="section">
+    <div class="info-grid">
+      <div class="info-item">
+        <div class="info-label">Number</div>
+        <div class="info-value">INV-202608-0003</div>
+      </div>
+      <div class="info-item">
+        <div class="info-label">Date of Issue</div>
+        <div class="info-value">13 August 2026</div>
+      </div>
+      
+      <div class="info-item">
+        <div class="info-label">Due Date</div>
+        <div class="info-value">20 August 2026</div>
+      </div>
+      
+      
+      <div class="info-item">
+        <div class="info-label">Place of Supply</div>
+        <div class="info-value">State code 29</div>
+      </div>
+      
+      <div class="info-item">
+        <div class="info-label">Status</div>
+        <div class="info-value"><span class="status">UNPAID</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Billed To</div>
+    <div class="info-grid">
+      <div class="info-item">
+        <div class="info-label">Owner</div>
+        <div class="info-value">Asha Menon</div>
+      </div>
+      
+      <div class="info-item">
+        <div class="info-label">Phone</div>
+        <div class="info-value">+91 91234 56789</div>
+      </div>
+      
+      
+      <div class="info-item">
+        <div class="info-label">Patient</div>
+        <div class="info-value">Bruno (DOG)</div>
+      </div>
+      
+      
+    </div>
+    
+  </div>
+
+  <div class="section">
+    <div class="section-title">Items</div>
+    <table>
+      <thead>
+        <tr>
+          <th>Description</th>
+          <th style="width: 80px;">HSN/SAC</th>
+          <th class="num" style="width: 50px;">Qty</th>
+          <th class="num" style="width: 90px;">Rate</th>
+          <th class="num" style="width: 100px;">Amount</th>
+        </tr>
+      </thead>
+      <tbody>
+        
+      <tr>
+        <td>Amoxicillin 250mg (10 tabs)</td>
+        <td>30041020</td>
+        <td class="num">1</td>
+        <td class="num">₹50.00</td>
+        <td class="num">₹59.00</td>
+      </tr>
+    
+      </tbody>
+    </table>
+
+    <table class="totals">
+      <tbody>
+        <tr>
+          <td>Subtotal</td>
+          <td class="num">₹50.00</td>
+        </tr>
+        
+        
+        <tr>
+          <td>Taxable Value</td>
+          <td class="num">₹50.00</td>
+        </tr>
+        
+        
+        <tr>
+          <td>CGST</td>
+          <td class="num">₹4.50</td>
+        </tr>
+        <tr>
+          <td>SGST</td>
+          <td class="num">₹4.50</td>
+        </tr>
+        
+        
+        <tr class="grand">
+          <td>Grand Total</td>
+          <td class="num">₹59.00</td>
+        </tr>
+        
+      </tbody>
+    </table>
+  </div>
+
+  
+
+  
+  <div class="section">
+    <div class="section-title">Bank Details</div>
+    <p style="font-size: 12px; white-space: pre-wrap;">HDFC Bank • A/C 50200012345678 • IFSC HDFC0001234</p>
+  </div>
+  
+
+  <div class="signature">
+    <div class="signature-line">
+      For Paws &amp; Claws Veterinary Clinic<br/>Authorised Signatory
+    </div>
+  </div>
+
+  <div class="footer">
+    <p>Thank you for trusting us with your pet.</p>
+    <p>This is a computer-generated document.</p>
+  </div>
+</body>
+</html>
