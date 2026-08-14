@@ -11,6 +11,12 @@ import { PaymentService } from './payment.service.js';
 import { RefundService } from './refund.service.js';
 import { CreditNoteService } from './credit-note.service.js';
 import { StockValidatorService } from './stock-validator.service.js';
+import { DashboardService } from './dashboard.service.js';
+import { ServiceCatalogService } from './service-catalog.service.js';
+import { BillingSettingsService } from './settings.service.js';
+import { createDashboardController } from './dashboard.controller.js';
+import { createServiceCatalogController } from './service-catalog.controller.js';
+import { createBillingSettingsController } from './settings.controller.js';
 import { createInvoiceController } from './invoice.controller.js';
 import { createPaymentController } from './payment.controller.js';
 import { createRefundController } from './refund.controller.js';
@@ -90,7 +96,22 @@ export default async function billingRoutes(fastify: FastifyInstance) {
     return new CreditNoteService(new InvoiceRepository(db, stockValidator), db);
   };
 
+  /**
+   * The D-24 / RPT-01 landing aggregate. Takes the tenant handle directly — it
+   * owns no repository, because both of its statements are raw aggregates.
+   */
+  const buildDashboardService = (db: TenantPrismaClient) => new DashboardService(db);
+
+  /** D-02 catalog CRUD. Reference data, so no repository and no stock validator. */
+  const buildServiceCatalogService = (db: TenantPrismaClient) => new ServiceCatalogService(db);
+
+  /** D-29 settings, including the per-clinic Razorpay credentials. */
+  const buildSettingsService = (db: TenantPrismaClient) => new BillingSettingsService(db);
+
   const controller = createInvoiceController(buildService);
+  const dashboardController = createDashboardController(buildDashboardService);
+  const serviceCatalogController = createServiceCatalogController(buildServiceCatalogService);
+  const settingsController = createBillingSettingsController(buildSettingsService);
   const paymentController = createPaymentController(buildPaymentService);
   const refundController = createRefundController(buildRefundService);
   const creditNoteController = createCreditNoteController(buildCreditNoteService);
@@ -115,6 +136,43 @@ export default async function billingRoutes(fastify: FastifyInstance) {
   const readHandler = [authenticate, tenantContext, requirePermission('VIEW_INVOICES')];
   const writeHandler = [authenticate, tenantContext, requirePermission('CREATE_INVOICES')];
   const payHandler = [authenticate, tenantContext, requirePermission('MANAGE_PAYMENTS')];
+  // D-29's fourth gate. `MANAGE_CLINIC_SETTINGS` already exists in
+  // `prisma/seed.ts` and is held by Admin alone — which is exactly the
+  // requirement that only an Admin configures Razorpay keys. Do not grant it to
+  // another role to make a settings screen work; the credential is authority to
+  // move money out of the clinic's account (T-06-77).
+  const settingsHandler = [authenticate, tenantContext, requirePermission('MANAGE_CLINIC_SETTINGS')];
+
+  // Billing tab landing (D-24 summary cards + RPT-01 patients seen today).
+  // A read, so VIEW_INVOICES: a Clinician who can see an invoice can see the
+  // day's totals. Registered before the `/billing/invoices/:invoiceId` pattern
+  // for readability only — the path is fixed and cannot be shadowed by it.
+  fastify.get('/billing/dashboard', { preHandler: readHandler, handler: dashboardController.getSummaryHandler });
+
+  // D-02 service catalog. Reads sit behind VIEW_INVOICES so a Clinician can see
+  // what a service costs; writes behind CREATE_INVOICES, because repricing the
+  // catalog changes what every future invoice charges.
+  //
+  // `/search` is declared before `/:serviceId` so the literal segment wins the
+  // match. Fastify's radix router prefers a static segment over a parametric one
+  // regardless of registration order, but the ordering makes that independent of
+  // a router implementation detail.
+  fastify.get('/billing/services', { preHandler: readHandler, handler: serviceCatalogController.listHandler });
+  fastify.get('/billing/services/search', { preHandler: readHandler, handler: serviceCatalogController.searchHandler });
+  fastify.get('/billing/services/:serviceId', { preHandler: readHandler, handler: serviceCatalogController.getHandler });
+  fastify.post('/billing/services', { preHandler: writeHandler, handler: serviceCatalogController.createHandler });
+  fastify.patch('/billing/services/:serviceId', { preHandler: writeHandler, handler: serviceCatalogController.updateHandler });
+  // Not a DELETE: the row survives, because a finalized invoice line points at it.
+  fastify.post('/billing/services/:serviceId/deactivate', { preHandler: writeHandler, handler: serviceCatalogController.deactivateHandler });
+
+  // D-29 billing settings — the only three routes behind settingsHandler.
+  // The read is gated as tightly as the write because the response carries the
+  // webhook routing token, which is a capability rather than a display value.
+  fastify.get('/billing/settings', { preHandler: settingsHandler, handler: settingsController.getHandler });
+  fastify.put('/billing/settings', { preHandler: settingsHandler, handler: settingsController.updateHandler });
+  // Its own endpoint rather than a flag on the save: rotating stops payment
+  // confirmations arriving until the Admin re-pastes the URL into Razorpay.
+  fastify.post('/billing/settings/webhook-token/rotate', { preHandler: settingsHandler, handler: settingsController.rotateWebhookTokenHandler });
 
   // Reads
   fastify.get('/billing/invoices', { preHandler: readHandler, handler: controller.listHandler });

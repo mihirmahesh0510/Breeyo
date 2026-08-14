@@ -433,6 +433,8 @@ describe('billingSettingsSchema — Razorpay credentials', () => {
       hasRazorpayWebhookSecret: true,
       razorpayWebhookToken: 'tok_abc',
       razorpayTestMode: true,
+      webhookUrl: 'https://api.example.test/api/v1/webhooks/razorpay/tok_abc',
+      webhookConfigured: true,
       // a serializer bug upstream leaks these in — the schema must drop them
       razorpayKeySecret: 'super-secret',
       razorpayWebhookSecret: 'super-secret-too',

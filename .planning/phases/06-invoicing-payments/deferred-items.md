@@ -312,3 +312,40 @@ Still to build: the multi-invoice endpoint, per-invoice amount allocation for a
 partial settlement, the webhook fan-out that settles every invoice in a group from
 one `payment_link.paid`, and the UI for picking invoices. The webhook fan-out is
 the substantive part and belongs with plan 06-10, which owns that worker.
+
+### 15. Billing exceptions LIST endpoint and screen (plan 06-12)
+
+D-35 and D-36 flag an invoice with `exception_flag` (`payment_after_void`,
+`overpayment`) and block every further status-changing action on it until staff
+resolve it. Plan 06-10's webhook worker sets the flag; nothing read it.
+
+Plan 06-12 closed the discoverability half only: `GET /billing/dashboard` now
+returns `billingExceptionCount`, so a flagged invoice is *visible* rather than
+being a silent dead end where staff can no longer act on an invoice and cannot
+see why.
+
+Still to build:
+* `GET /billing/exceptions` returning `BillingExceptionListItem[]` — the type is
+  already defined in `@breeyo/types` and unused.
+* A resolve action writing `exception_resolved_at` / `exception_resolved_by_id` /
+  `exception_notes`; those columns exist and nothing writes them, so a flagged
+  invoice currently cannot be un-flagged through the product at all.
+* The mobile surface: a banner on the Billing tab tapping through to the list.
+
+The dashboard count already filters on `exception_resolved_at IS NULL`, so the
+resolve action needs no change to the aggregate.
+
+### 16. Intermittent failure in `tests/billing/invoice-lock.test.ts` (observed during plan 06-12)
+
+`BIL-03 status transitions and D-21 immutability > rejects a void that asks not
+to restore stock rather than silently ignoring the request` failed once in four
+consecutive full-suite runs and passes reliably in isolation. Not caused by plan
+06-12 — the plan touches no void path — and out of scope for it under the
+executor's scope boundary, but recorded so the next Wave 8 owner does not
+rediscover it as a new regression.
+
+Suspected cause: shared-database ordering between suites. `vitest.config.ts` sets
+`fileParallelism: false`, so the suites are sequential, but each calls
+`cleanupTestData()` in `beforeEach` against one database; a suite whose teardown
+overlaps the next suite's seed would produce exactly this shape. Worth confirming
+before treating it as flaky-by-nature.

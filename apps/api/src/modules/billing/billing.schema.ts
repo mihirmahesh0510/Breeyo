@@ -78,6 +78,25 @@ export const creditNoteParamsSchema = z.object({
   creditNoteId: z.string().uuid(),
 });
 
+/** D-02 service catalog path param. */
+export const serviceCatalogParamsSchema = z.object({
+  serviceId: z.string().uuid(),
+});
+
+/**
+ * The catalog search query.
+ *
+ * `q` matches `drug.controller.ts`'s existing search param rather than
+ * inventing a second spelling for the same concept across two search endpoints
+ * in the same app. `limit` is coerced because it arrives as a query string.
+ */
+export const serviceCatalogQuerySchema = z.object({
+  q: z.string().min(1).max(100),
+  limit: z.coerce.number().int().positive().max(50).default(20),
+});
+
+export type ServiceCatalogParams = z.infer<typeof serviceCatalogParamsSchema>;
+export type ServiceCatalogQuery = z.infer<typeof serviceCatalogQuerySchema>;
 export type InvoiceParams = z.infer<typeof invoiceParamsSchema>;
 export type CreditNoteParams = z.infer<typeof creditNoteParamsSchema>;
 export type ReceiptParams = z.infer<typeof receiptParamsSchema>;
