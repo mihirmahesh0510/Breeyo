@@ -105,6 +105,11 @@ export async function buildApp(
   // registered as a separate plugin with its own limit.
   await app.register(import('./modules/billing/billing.routes.js'), { prefix: '/api/v1' });
 
+  // BIL-06. Its own registration on purpose: the plugin installs a raw-buffer
+  // body parser, and Fastify's encapsulation is what keeps that scoped to this
+  // one route instead of breaking JSON parsing everywhere else.
+  await app.register(import('./modules/billing/webhook.routes.js'), { prefix: '/api/v1' });
+
   // Midnight archive cron (skip in test environment)
   if (!isTest) {
     scheduleMidnightArchive(app.prisma, app.io);
