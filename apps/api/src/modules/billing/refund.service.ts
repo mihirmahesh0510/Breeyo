@@ -390,15 +390,15 @@ export class RefundService {
     // ── Phase 3 ── Record what the gateway actually said.
     const gatewayError = await this.recordOutcomes(clinicId, invoiceId, actor, outcomes);
 
+    // Raised only after phase 3 has run, so a refusal is durably recorded as
+    // `failed` — and its amount released — before the caller ever sees the 502.
+    if (gatewayError !== null) normalizeRazorpayError(gatewayError);
+
     const acceptedIds = new Map(
       outcomes
         .filter((outcome): outcome is Extract<GatewayOutcome, { accepted: true }> => outcome.accepted)
         .map((outcome) => [outcome.leg.refundId, outcome.razorpayRefundId]),
     );
-
-    // Raised only after phase 3 has run, so a refusal is durably recorded as
-    // `failed` — and its amount released — before the caller ever sees the 502.
-    if (gatewayError !== null) normalizeRazorpayError(gatewayError);
 
     const refunds: RefundLegResult[] = reserved.map((leg) => ({
       refundId: leg.refundId,
