@@ -367,6 +367,23 @@ export interface ClinicBillingSettings {
    */
   razorpayWebhookToken: string | null;
   razorpayTestMode: boolean;
+  /**
+   * The full URL an Admin pastes into their Razorpay dashboard, or `null` when
+   * no webhook token exists yet. Built server-side from the public API base and
+   * {@link ClinicBillingSettings.razorpayWebhookToken} so the mobile settings
+   * screen never has to know the route shape.
+   */
+  webhookUrl: string | null;
+  /**
+   * Whether this clinic can actually receive payment confirmations: it needs
+   * both a routing token and a webhook secret to verify signatures with.
+   *
+   * This is a health indicator, not a convenience. Without it, a clinic that
+   * skipped the Razorpay dashboard step has BIL-06 silently broken — payments
+   * complete at the gateway and the invoice never leaves Unpaid, with no error
+   * anywhere for staff to act on.
+   */
+  webhookConfigured: boolean;
 }
 
 // ─── Composed response shapes ───────────────────────────────────────────────

@@ -395,6 +395,14 @@ export const billingSettingsSchema = z
     razorpayKeySecret: z.string().min(8).max(128).optional(),
     razorpayWebhookSecret: z.string().min(8).max(128).optional(),
     razorpayTestMode: z.boolean().default(true),
+    /**
+     * Opt-in only. Rotating the token changes the clinic's webhook URL, which
+     * stops Razorpay delivering to the old one the moment it is saved — the
+     * Admin has to paste the new URL into their dashboard before payments
+     * confirm again. That is a deliberate recovery action (a leaked token), so
+     * it never happens as a side effect of an ordinary settings save.
+     */
+    rotateWebhookToken: z.boolean().optional(),
   })
   .superRefine((value, ctx) => {
     // Pitfall 12 / Section 122: collecting tax without a registration is an
@@ -449,6 +457,8 @@ export const billingSettingsResponseSchema = z.object({
   hasRazorpayWebhookSecret: z.boolean(),
   razorpayWebhookToken: z.string().nullable(),
   razorpayTestMode: z.boolean(),
+  webhookUrl: z.string().nullable(),
+  webhookConfigured: z.boolean(),
 });
 export type BillingSettingsResponse = z.infer<typeof billingSettingsResponseSchema>;
 
