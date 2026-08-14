@@ -25,9 +25,11 @@ const COLORS = {
  * ## Money
  *
  * The amount comes from `invoiceCardFields`, which calls the shared
- * `formatPaiseINR`. This file contains no `toFixed` and no `/ 100`, by grep
- * gate: an ad-hoc conversion here would be a 100x misstatement on the exact
- * surface the front desk reads while taking cash (T-06-91).
+ * `formatPaiseINR`. This file performs no arithmetic on a money value at all,
+ * and a phase-level grep gate enforces that: an ad-hoc paise-to-rupee
+ * conversion here would be a 100x misstatement on the exact surface the front
+ * desk reads while taking cash (T-06-91). The gate matches on the literal
+ * tokens, so this note names none of them.
  *
  * ## The status badge is local, not `@breeyo/ui`'s `StatusBadge`
  *

@@ -63,8 +63,22 @@ export function buildInvoiceListQueryString(filters: InvoiceFilters): string {
  * a distinct cache entry rather than a refetch that briefly renders the
  * previous filter's rows under the new chip.
  */
-export function useInvoices(filters: InvoiceFilters = {}) {
+export interface UseInvoicesOptions {
+  /**
+   * Additional gate on top of the token/clinic guard.
+   *
+   * The dashboard's D-24 "Unpaid Total" selection needs two status filters at
+   * once, which the server's filter vocabulary cannot express in one request.
+   * The screen therefore calls this hook twice — unconditionally, as the rules
+   * of hooks require — and switches the second call off through this flag
+   * whenever the current selection is not composite.
+   */
+  enabled?: boolean;
+}
+
+export function useInvoices(filters: InvoiceFilters = {}, options: UseInvoicesOptions = {}) {
   const { accessToken, activeClinicId } = useAuth();
+  const { enabled = true } = options;
 
   const queryString = buildInvoiceListQueryString(filters);
 
@@ -74,7 +88,7 @@ export function useInvoices(filters: InvoiceFilters = {}) {
       apiClient<InvoiceListResponse>(`/api/v1/billing/invoices?${queryString}`, {
         token: accessToken!,
       }),
-    enabled: !!accessToken && !!activeClinicId,
+    enabled: enabled && !!accessToken && !!activeClinicId,
     staleTime: 30_000,
     select: (response) => response.data,
   });

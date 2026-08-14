@@ -323,7 +323,8 @@ const UNKNOWN_OWNER = 'Unknown owner';
  * any of those straight into JSX renders the literal string `null` on a card
  * the front desk reads while taking money, so each has an explicit fallback.
  *
- * The amount goes through `formatPaiseINR` — never `toFixed`, never `/ 100`.
+ * The amount goes through `formatPaiseINR`, the only paise-to-rupee conversion
+ * in the feature.
  */
 export function invoiceCardFields(invoice: InvoiceListItem): InvoiceCardFields {
   const number = invoice.invoiceNumber ?? UNNUMBERED_PLACEHOLDER;

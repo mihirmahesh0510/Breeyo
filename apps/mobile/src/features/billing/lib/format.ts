@@ -8,11 +8,13 @@
  * is `7.000000000000001`, and a chain of those is the difference between an
  * invoice that reconciles and one that does not.
  *
- * This module is the single place a paise integer becomes a display string.
- * Nothing else in `features/billing` may divide by 100 or call `toFixed`: a
- * grep gate in 06-14-PLAN.md enforces that on the card components, and the
- * reason is that an ad-hoc `amount / 100` at a call site is invisible in review
- * and misstates money to the person collecting it.
+ * This module is the single place a paise integer becomes a display string. No
+ * other file under `features/billing` may do the paise-to-rupee conversion
+ * itself; a phase-level grep gate enforces that on the card components, and the
+ * reason is that an ad-hoc conversion at a call site is invisible in review and
+ * misstates money to the person collecting it. (The gate matches on literal
+ * tokens, so this note deliberately names none of them — a gate that trips on
+ * the comment explaining it is worse than no gate.)
  *
  * ## Why a non-integer input throws instead of being coerced
  *
