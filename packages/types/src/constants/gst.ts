@@ -92,16 +92,16 @@ export type InvoiceDocumentType = (typeof INVOICE_DOCUMENT_TYPES)[number];
 export const VETERINARY_SAC = '998351';
 
 /**
- * SAC strings already written into per-clinic `service_catalog` rows by
- * `apps/api/src/modules/billing/service-catalog-seed.ts`.
+ * SAC strings written into per-clinic `service_catalog` rows by versions of
+ * `apps/api/src/modules/billing/service-catalog-seed.ts` shipped before
+ * 2026-08-14.
  *
- * These are recorded rather than corrected. The *rates* the seed applies are
- * already right (nil for clinical services, standard for grooming), so no
- * invoice produced today is mis-taxed; only the SAC strings differ from
- * Finding G1's recommendation. Changing the seed would leave every
- * already-onboarded clinic on the old codes unless a data migration ran against
- * their customised catalog rows, so the migration is a deliberate separate
- * decision (06-PATTERNS.md Warning 7) and is not made in this plan.
+ * These are recorded rather than corrected. The *rates* the old seed applied
+ * were already right (nil for clinical services, standard for grooming), so no
+ * invoice produced by an affected clinic is mis-taxed; only the SAC strings
+ * differ from Finding G1's recommendation. The tax engine reads
+ * `gstRateOverride` and `taxTreatment` and never this string — the code changes
+ * only what is *printed* on the document.
  */
 export const VETERINARY_SAC_LEGACY: readonly string[] = [
   '999311',
@@ -109,6 +109,38 @@ export const VETERINARY_SAC_LEGACY: readonly string[] = [
   '999313',
   '999399',
   '998612',
+] as const;
+
+/**
+ * The subset of {@link VETERINARY_SAC_LEGACY} that an already-seeded clinic may
+ * opt in to having rewritten to {@link VETERINARY_SAC} (follow-up A1, decided
+ * 2026-08-14).
+ *
+ * ## Why this is not simply `VETERINARY_SAC_LEGACY`
+ *
+ * `998612` is excluded deliberately. It sits only on the two grooming presets,
+ * which carry an 18% `gstRateOverride` because grooming is not veterinary
+ * healthcare and is not covered by Entry 46. Rewriting it to the nil-rated
+ * veterinary SAC would put an exempt-supply code on a taxable line — a document
+ * defect worse than the one being corrected. The `9993xx` family is exactly the
+ * set that describes clinical supplies and therefore exactly the set that
+ * `998351` is the right replacement for.
+ *
+ * ## Why the correction is opt-in and never automatic
+ *
+ * A clinic's `service_catalog` rows are its own data, and an accountant may
+ * already have corrected them by hand to whatever their filings use. A silent
+ * migration on deploy or on login would overwrite that judgement without anyone
+ * seeing it happen, and the evidence would be a changed string on a legal
+ * document. So the rewrite lives behind an explicit Admin action
+ * (`POST /api/v1/billing/settings/sac-codes/update`) that no other code path
+ * invokes.
+ */
+export const VETERINARY_SAC_LEGACY_CORRECTABLE: readonly string[] = [
+  '999311',
+  '999312',
+  '999313',
+  '999399',
 ] as const;
 
 /**

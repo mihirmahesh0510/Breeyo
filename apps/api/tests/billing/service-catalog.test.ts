@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import request from 'supertest';
 import type { FastifyInstance } from 'fastify';
+import { VETERINARY_SAC } from '@breeyo/types';
 import { buildTestApp, closeTestApp } from '../helpers/app.js';
 import {
   cleanupTestData,
@@ -84,7 +85,7 @@ async function seedPreset(
       name,
       category: 'consultation',
       price: 50000,
-      sacCode: '999311',
+      sacCode: VETERINARY_SAC,
       gstRateOverride: 0,
       isPreset: true,
       sortOrder,

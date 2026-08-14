@@ -23,6 +23,7 @@ import {
   INVOICE_DOCUMENT_TYPES,
   VETERINARY_SAC,
   VETERINARY_SAC_LEGACY,
+  VETERINARY_SAC_LEGACY_CORRECTABLE,
   MAX_DOCUMENT_NUMBER_LENGTH,
   B2C_ADDRESS_REQUIRED_ABOVE_PAISE,
 } from '../constants/gst.js';
@@ -185,6 +186,40 @@ describe('GST_RATE_SLABS — GST 2.0, effective 2025-09-22', () => {
     expect(VETERINARY_SAC_LEGACY).toEqual(['999311', '999312', '999313', '999399', '998612']);
     expect(MAX_DOCUMENT_NUMBER_LENGTH).toBe(16);
     expect(B2C_ADDRESS_REQUIRED_ABOVE_PAISE).toBe(5_000_000);
+  });
+});
+
+// ─── Behaviour 5b: the correctable legacy SAC subset (A1) ───────────────────
+
+describe('VETERINARY_SAC_LEGACY_CORRECTABLE', () => {
+  it('is exactly the 9993xx family', () => {
+    expect(VETERINARY_SAC_LEGACY_CORRECTABLE).toEqual([
+      '999311',
+      '999312',
+      '999313',
+      '999399',
+    ]);
+  });
+
+  it('excludes the grooming code, which is not a veterinary supply', () => {
+    // 998612 sits on grooming rows that carry an 18% override. Rewriting it to
+    // the nil-rated veterinary SAC would put an exempt code on a taxable line —
+    // a worse document than the one it replaced. The opt-in correction is
+    // scoped to the clinical 9993xx codes for exactly this reason.
+    expect(VETERINARY_SAC_LEGACY_CORRECTABLE).not.toContain('998612');
+  });
+
+  it('is a strict subset of the recorded legacy list', () => {
+    for (const code of VETERINARY_SAC_LEGACY_CORRECTABLE) {
+      expect(VETERINARY_SAC_LEGACY).toContain(code);
+    }
+    expect(VETERINARY_SAC_LEGACY_CORRECTABLE.length).toBeLessThan(
+      VETERINARY_SAC_LEGACY.length,
+    );
+  });
+
+  it('does not contain the code it corrects to', () => {
+    expect(VETERINARY_SAC_LEGACY_CORRECTABLE).not.toContain(VETERINARY_SAC);
   });
 });
 
