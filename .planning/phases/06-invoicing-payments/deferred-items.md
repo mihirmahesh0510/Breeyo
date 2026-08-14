@@ -267,3 +267,48 @@ deletes per-role grants whose code is no longer in the map. Recorded here becaus
 any future role-permission removal depends on this behaviour, and because existing
 environments still need `redis-cli --scan --pattern 'perms:*' | xargs -r redis-cli del`
 plus a reseed for the change to take effect.
+
+### 13. Razorpay test credentials still not provisioned (plan 06-09)
+
+`RAZORPAY_TEST_KEY_ID` / `RAZORPAY_TEST_KEY_SECRET` are still absent, so **no code
+in this phase has ever spoken to Razorpay**. Plan 06-09's coverage is mock-only by
+design: the SDK is replaced at the module boundary and everything below it — the
+AES-256-GCM envelope on the clinic row, `decryptSecret`, the routes, the payment
+rows, the derived invoice status — runs for real.
+
+What mocks cannot establish, and what a live test key must confirm before Beta:
+
+* that a real `paymentLink.create` accepts our exact param set (`accept_partial`,
+  `reminder_enable`, `notify`, `notes`, a 36-character `reference_id`);
+* that `expire_by = now + 960s` is in fact accepted under real network latency —
+  the buffer exists precisely because the 15-minute boundary fails intermittently,
+  and only a live call can demonstrate it does not;
+* the concrete shape of a real SDK rejection, which `normalizeRazorpayError`
+  currently parses from the documented `{ statusCode, error: { code, description } }`
+  form;
+* that `short_url` renders a scannable UPI QR on a real device.
+
+Blocking for staging sign-off, not for merge. 06-RESEARCH's
+`## Environment Availability` already flags the per-clinic **live** accounts as the
+long-lead item (KYC for 20 pilot clinics); this entry is about the shared **test**
+key, which is a five-minute signup and should be done before plan 06-10's webhook
+work, since a webhook cannot be exercised end to end without one.
+
+### 14. D-39 combined multi-invoice payment link — groundwork only (plan 06-09)
+
+D-39 confirms one Razorpay link settling several of an owner's invoices is in
+scope for Phase 6. Plan 06-09 lays the groundwork but does not implement it:
+
+* `Payment.paymentGroupId` is populated on every link created, so a single-invoice
+  link is already the degenerate group of one. The later change is a loop over
+  invoice ids sharing a group id, not a data backfill.
+* `createPaymentLink` accepts a `paymentGroupId` option, and `retryPaymentLink`
+  carries the existing group forward rather than minting a new one.
+* `createPaymentLinkSchema` in `@breeyo/validators` already takes
+  `invoiceIds: string[]` (max 20), and plan 06-03 relaxed the unique constraint to
+  `(razorpayPaymentLinkId, invoiceId)` for this.
+
+Still to build: the multi-invoice endpoint, per-invoice amount allocation for a
+partial settlement, the webhook fan-out that settles every invoice in a group from
+one `payment_link.paid`, and the UI for picking invoices. The webhook fan-out is
+the substantive part and belongs with plan 06-10, which owns that worker.
