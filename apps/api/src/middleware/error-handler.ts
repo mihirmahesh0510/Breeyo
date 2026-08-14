@@ -32,6 +32,37 @@ export function errorHandler(
     return;
   }
 
+  // The ONE reviewed exemption to the 5xx message-replacement rule below
+  // (T-06-55). `normalizeRazorpayError` in `modules/billing/razorpay.client.ts`
+  // raises exactly this pair — status 502 AND code `PAYMENT_GATEWAY_ERROR` —
+  // with a message it has already narrowed to Razorpay's own merchant-facing
+  // `error.description`. Nothing else in the codebase constructs it.
+  //
+  // Without this branch, D-11 is unimplementable: a failed payment would reach
+  // the front desk as "An unexpected error occurred", giving staff no basis to
+  // choose between retrying the link and marking the invoice unpaid. Razorpay's
+  // descriptions are written to be shown to a merchant ("The amount must be
+  // atleast INR 1.00", "expire_by should be at least 15 minutes from now") and
+  // carry no credential material.
+  //
+  // The guard checks BOTH the status and the code on purpose. Matching on 502
+  // alone would forward the message of any upstream/proxy 502 as well, which
+  // can carry internal hostnames; matching on the code alone would let an
+  // unrelated 500 opt itself out of redaction.
+  if (statusCode === 502 && error.code === 'PAYMENT_GATEWAY_ERROR') {
+    const gatewayResponse: Record<string, unknown> = {
+      code: 'PAYMENT_GATEWAY_ERROR',
+      message: error.message,
+    };
+
+    if ((error as unknown as { details?: unknown }).details) {
+      gatewayResponse.details = (error as unknown as { details?: unknown }).details;
+    }
+
+    reply.status(502).send({ error: gatewayResponse });
+    return;
+  }
+
   if (statusCode >= 500) {
     reply.status(500).send({
       error: {
