@@ -5,6 +5,9 @@ phase-wide invariant, and the two human checkpoints.
 
 **Gate:** `bash scripts/verify-phase-06.sh`
 **Gate result:** exit **0**, all 23 checks PASS (1 SKIP when `--skip-suite`).
+**Human checkpoints:** answered 2026-08-14 — Razorpay questions closed with
+tracked follow-ups, GST questions still open, eight device flows moved to
+`06-19-HUMAN-UAT.md` (`status: partial`). See §5, §6, §6b and §8.
 **Environment:** worktree `agent-a25f50932b947ef8f`, PostgreSQL 16 (`breeyo_p0619`,
 created fresh for this run: `prisma migrate deploy` → `init-rls-roles.sql` →
 `post-migrate.sql` → `db:seed`), Redis 7, Node 22, pnpm 9.
@@ -155,10 +158,17 @@ documented in the code it governs.
 
 ## 5. Human verification — the eight core device flows
 
-> **STATUS: BLOCKED — awaiting a human with a device.**
+> **STATUS: PENDING — tracked in `06-19-HUMAN-UAT.md` (`status: partial`).**
+>
+> **Human decision, 2026-08-14:** the eight flows will be run by the human on
+> their own device and reported back. This is **decoupled from blocking phase
+> completion — it is not deferred and not dropped.** The flows are persisted as
+> a standing UAT artifact (`06-19-HUMAN-UAT.md`, `verification: human_needed`,
+> `status: partial`) so they keep surfacing in progress and UAT checks until
+> every flow has a recorded outcome.
 >
 > This execution environment has **no physical device, no simulator, and no
-> Razorpay test credentials**. None of the eight flows can be driven here, and
+> Razorpay test credentials**. None of the eight flows could be driven here, and
 > flow 5 cannot be driven anywhere in this project today (see §6, Q5). Nothing
 > below is marked verified. The table records what automated evidence exists
 > for each flow so the human is confirming behaviour rather than discovering it.
@@ -189,17 +199,25 @@ documented in the code it governs.
 | 7 | Void with stock return, refund, credit note | D-12, D-22, D-26/D-34 | `refund.test.ts`, `credit-note.test.ts`, `invoice-lock.test.ts`. Void restores only movements the invoice itself created; `restoreToStock` is the exact mirror of `reserveAndDeduct` | **NOT RUN** — observed stock delta after void, and the credited invoice's unchanged `grandTotalPaise`, unrecorded |
 | 8 | Quick Sale and the pet Invoices tab | D-04, D-25 | `quick-sale.test.ts` — create-and-finalize in one transaction with stock deduction | **NOT RUN** |
 
-**Acceptance criteria for this task are NOT met.** Flows 3, 5, 6 and 7 each
-require an observation no test can substitute for. This task is not complete.
+**Task status: PENDING, not blocking.** Flows 3, 5, 6 and 7 each require an
+observation no test can substitute for, and none has been made. Per the
+2026-08-14 decision these are tracked in `06-19-HUMAN-UAT.md` rather than
+holding the phase open. Flow 5 additionally cannot run until Razorpay test
+credentials exist (**A2**, pre-Beta).
 
 ---
 
 ## 6. Human review — GST compliance and Razorpay onboarding readiness
 
-> **STATUS: PARTIALLY BLOCKED.** Q4 and Q7 are answered from evidence generated
-> here. Q1, Q2, Q3, Q5, Q6 and Q8 are business or third-party facts that cannot
-> be derived from the codebase and need the human. The evidence the plan asked
-> to be produced *before* pausing has been produced and is inline below.
+> **STATUS: ANSWERED for the Razorpay half (2026-08-14); the GST half remains
+> open as tracked follow-ups.**
+>
+> The human answered Q5, Q6 and Q8 on 2026-08-14. Q4 and Q7 are answered from
+> evidence generated here, with the on-device presentation half rolled into
+> `06-19-HUMAN-UAT.md`. **Q1, Q2 and Q3 — the three GST-treatment questions —
+> were not covered by that answer and remain genuinely open.** They are recorded
+> below and in §7 as open follow-ups, not as phase blockers. The evidence the
+> plan asked to be produced before pausing has been produced and is inline.
 
 ### Evidence produced for the reviewer
 
@@ -280,30 +298,64 @@ fact the codebase contains.
 | 2 | Is `998351` the SAC your accountants expect, or the `9993xx` codes in the seed? | **UNANSWERED — needs the human.** This is the open decision carried from 06-04. Both lists ship side by side (`VETERINARY_SAC` / `VETERINARY_SAC_LEGACY`). 06-04's recommendation: switch the seed to `998351` for new clinics and offer existing clinics an opt-in "update SAC codes" action, rather than a silent migration. Whether already-seeded clinics need a data migration depends entirely on this answer. |
 | 3 | Are any of the 20 pilot clinics GST-registered, and does their invoice need anything not on the template? | **UNANSWERED — needs the human.** Not derivable from the codebase: 0 clinic rows exist in any reachable database. |
 | 4 | Generate one PDF per document-type case and confirm each is presentable | **EVIDENCE PRODUCED — human review of presentation still required.** Rendered from the shipped `buildInvoiceHtml`, in `.planning/phases/06-invoicing-payments/06-19-artifacts/`: <br>• `1-unregistered-clinic.html` → heading **INVOICE**, GSTIN absent, CGST absent, HSN absent <br>• `2-registered-exempt-only.html` → **BILL OF SUPPLY** <br>• `3-registered-taxable-only.html` → **TAX INVOICE** <br>• `4-registered-mixed.html` → **INVOICE-CUM-BILL OF SUPPLY** <br>All four Rule 46A branches correct, and the Section 122 negative check holds on the unregistered document. Whether it *looks like something a vet would hand a client* is the part still open. |
-| 5 | How many of the 20 pilot clinics have a Razorpay account with completed KYC? | **UNANSWERED — needs the human.** Database answer: **0 of 0** clinic rows carry a `razorpay_key_id`. The real-world count is business information. Compounding this: no **test**-mode key pair exists either, so BIL-05/BIL-06 have never run against the real gateway (deferred item 13). |
-| 6 | Is there an onboarding runbook? | **UNANSWERED — needs the human.** No runbook exists anywhere in this repository; searched `.planning/`, `README.md` and `Product/`. If one exists outside the repo, it needs linking; if not, the honest answer is "no". |
-| 7 | Is the not-configured indicator visible and clearly worded? | **WORDING RECORDED (above) — legibility on a device still needs the human.** The warning states the consequence in plain language ("payments will complete without ever marking the invoice paid") rather than naming a missing field, which is the right shape for a non-technical reader. |
-| 8 | Do test-mode and live-mode key pairs both work through the same form, and is the Test Mode toggle clear? | **UNANSWERED — cannot be tested.** Requires at least one real key pair; none exists. |
+| 5 | How many of the 20 pilot clinics have a Razorpay account with completed KYC? | **ANSWERED 2026-08-14: zero.** None of the 20 pilot clinics has started Razorpay onboarding. This matches the database exactly — **0 of 0** clinic rows carry a `razorpay_key_id`. Recorded as pre-launch checklist item **PL-1**. |
+| 6 | Is there an onboarding runbook? | **ANSWERED 2026-08-14: no, and it is required before launch.** The human's explicit call — not "can wait". A clinic that skips the webhook-configuration step silently breaks automatic payment confirmation, so the runbook is not optional. Recorded as pre-launch checklist item **PL-2**. |
+| 7 | Is the not-configured indicator visible and clearly worded? | **WORDING RECORDED (above); on-device legibility rolled into `06-19-HUMAN-UAT.md`.** The warning states the consequence in plain language ("payments will complete without ever marking the invoice paid") rather than naming a missing field, which is the right shape for a non-technical reader. |
+| 8 | Do test-mode and live-mode key pairs both work through the same form, and is the Test Mode toggle clear? | **ANSWERED 2026-08-14: deferred, cannot be tested.** Razorpay test credentials are not available yet. Recorded as follow-up **A2** (pre-Beta; blocks BIL-05/BIL-06 live verification). |
 
-**Acceptance criteria for this task are NOT met.** Q1, Q2, Q3, Q5, Q6 and Q8
-have no recorded answer, and no follow-up can be given an owner until they do.
+### Task status
+
+**Razorpay half: closed.** Q5, Q6 and Q8 have recorded answers and named
+follow-ups (**PL-1**, **PL-2**, **A2**).
+
+**GST half: open.** Q1 (are the six presets genuinely exempt, and specifically
+the disputed Lab Test rows 17–18), Q2 (the legacy SAC decision carried from
+06-04, including whether already-seeded clinics need a data migration) and Q3
+(are any pilot clinics GST-registered, and does their invoice need anything not
+on the template) still have no answer. They are compliance decisions about how
+real clinics bill, and nothing in the codebase can settle them. Tracked as
+**A1**, **A4** and **A5** in §7 — open follow-ups, not phase blockers.
+
+**No GST treatment change is pending in code**: the shipped behaviour is
+internally consistent and correct against the research findings. What is open is
+whether that behaviour matches the pilot cohort's actual billing practice.
+
+---
+
+## 6b. Pre-launch checklist (new, from the 2026-08-14 answers)
+
+Neither item blocks phase completion. Both block **launch**, and both are
+external, third-party-paced work the build cannot complete.
+
+| ID | Item | Detail | Status |
+|----|------|--------|--------|
+| **PL-1** | Every pilot clinic needs a Razorpay account with completed KYC | Confirmed 2026-08-14 that **0 of 20** have started. D-29 locks per-clinic API keys, so this cannot be centralised — each clinic does its own signup and KYC. Until a clinic completes it, that clinic cannot accept digital payments at all. | **Required before launch. Not started.** |
+| **PL-2** | Write the clinic onboarding runbook | Must cover: create the Razorpay account, complete KYC, generate API keys, paste them into Billing Settings, **and copy the per-clinic webhook URL into their own Razorpay dashboard** with the six required events. The last step is the one that silently breaks BIL-06 when skipped — the payment succeeds and the invoice is never marked paid. Confirmed 2026-08-14 as required before launch, explicitly not deferrable. | **Required before launch. Does not exist.** |
+
+The wording a clinic will see if PL-2 is skipped is already in place and states
+the consequence plainly (§6, Q7) — but a warning is a backstop, not a substitute
+for the runbook.
 
 ---
 
 ## 7. Carried-Forward Items
 
 Collected from all 24 plan summaries, the two hotfix summaries, and
-`deferred-items.md`. Every item is open unless marked. **None has a named owner
-— assigning owners is part of the blocked checkpoint in §6.**
+`deferred-items.md`, updated with the 2026-08-14 answers.
 
-### A. Compliance and go-live blockers
+**Status vocabulary.** *Tracked* = has a recorded decision and a destination
+(a pre-launch checklist item or a standing UAT artifact). *Open* = genuinely
+unresolved, needs a decision. Nothing here blocks phase completion.
 
-| # | Item | Source | Why it matters |
-|---|------|--------|----------------|
-| A1 | **Legacy SAC codes.** Seed ships `9993xx`; `VETERINARY_SAC` is `998351`. Decision deferred; affects already-seeded clinics. | 06-04 | Changes what is printed on a legal document. §6 Q2. |
-| A2 | **Razorpay test credentials absent.** No code in this phase has ever spoken to Razorpay. A live test key must confirm the real `paymentLink.create` param set, that `expire_by = now + 960s` survives real latency, the real SDK rejection shape, and that `short_url` yields a scannable UPI QR. | 06-01, 06-09 (item 13) | Blocks BIL-05/BIL-06 staging sign-off. Five-minute signup. |
-| A3 | **Per-clinic KYC + webhook onboarding for 20 pilot clinics.** D-29 locks per-clinic keys, so each clinic needs its own account, keys and webhook. A clinic that skips the webhook step has automatic payment confirmation silently broken. | 06-RESEARCH, 06-12 | T-06-128. External, third-party-paced. §6 Q5/Q6. |
-| A4 | **Lab Test GST treatment is disputed.** Rows 17–18 ship exempt; an Advance Ruling treats some lab services as taxable. | 06-RESEARCH G-findings | §6 Q1. |
+### A. Compliance and go-live items
+
+| # | Item | Source | Status |
+|---|------|--------|--------|
+| A1 | **Legacy SAC codes.** Seed ships `9993xx`; `VETERINARY_SAC` is `998351`. Affects already-seeded clinics; changes what is printed on a legal document. 06-04's recommendation: switch the seed to `998351` for new clinics and offer an opt-in "update SAC codes" action, not a silent migration. | 06-04 | **OPEN** — §6 Q2 unanswered. Not a code defect: the tax engine never reads the SAC string. Needs an accountant's call. |
+| A2 | **Razorpay test credentials absent.** No code in this phase has ever spoken to Razorpay. A live test key must confirm the real `paymentLink.create` param set, that `expire_by = now + 960s` survives real latency, the real SDK rejection shape, and that `short_url` yields a scannable UPI QR. | 06-01, 06-09 (item 13) | **TRACKED — deferred 2026-08-14.** Flagged **pre-Beta; blocks BIL-05/BIL-06 live verification.** Gates UAT flow 5 and §6 Q8. Five-minute signup when someone picks it up. |
+| A3 | **Per-clinic KYC + webhook onboarding for 20 pilot clinics.** | 06-RESEARCH, 06-12 | **TRACKED** — split into pre-launch **PL-1** (KYC, 0/20 started) and **PL-2** (runbook, does not exist). Both confirmed required before launch on 2026-08-14. T-06-128. |
+| A4 | **Lab Test GST treatment is disputed.** Rows 17–18 ship exempt; an Advance Ruling treats some lab services as taxable. | 06-RESEARCH G-findings | **OPEN** — §6 Q1 unanswered. The single most likely GST treatment to need changing. |
+| A5 | **Whether any pilot clinic is GST-registered**, and whether a registered clinic's invoice needs anything not on the current template. | 06-RESEARCH, this plan | **OPEN** — §6 Q3 unanswered. GST defaults off per clinic, so the unregistered path is the one in use until this is answered. |
 
 ### B. Functional gaps inside Phase 6
 
@@ -328,7 +380,7 @@ Collected from all 24 plan summaries, the two hotfix summaries, and
 | C7 | **`tests/inventory/` is entirely `it.todo`** — 80 placeholder tests across nine files. Phase 5 shipped the module with unit tests over mocked Prisma and no HTTP coverage. FIFO ordering, expiry blocking, batch override and offline replay are unexercised against a real database. | 06-20 (item 4) |
 | C8 | **`markPaidBodySchema` is not in `@breeyo/validators`**, so the client cannot parse before sending — the one exception among seven money-state writes. | 06-17 |
 | C9 | **No RN test harness.** Mobile tests assert extracted logic, never rendered output. Flagged Rule 4 repeatedly. | 06-14, 06-15, 06-23 |
-| C10 | **No demo-data seeder.** `prisma/seed.ts` seeds RBAC reference data only; there is no way to produce the clinic/pets/stock fixture the device checkpoint needs. Blocks §5 setup. | **This plan (new)** |
+| C10 | **No demo-data seeder.** `prisma/seed.ts` seeds RBAC reference data only; there is no way to produce the clinic/pets/stock fixture the device checkpoint needs. **Now gates the UAT run** — the human needs this fixture (or manual entry through the app) before any of the eight flows. | **This plan (new)** — **TRACKED** as a prerequisite in `06-19-HUMAN-UAT.md` |
 | C11 | **Policy-count assertion missing from CI.** Any new clinic-scoped table must add four policies to `post-migrate.sql` §7; only schema reproducibility is gated. `INV-RLS` now covers the ten billing tables specifically, but not the general case. | 06-00 |
 | C12 | **Best-effort logging via `console.error`** in two `EmrService` side effects (the D-28 dosage-override audit and the D-03 draft hook); should move to the Fastify logger. | 06-13 |
 
@@ -369,10 +421,32 @@ Collected from all 24 plan summaries, the two hotfix summaries, and
 | Every Phase 6 requirement maps to a named passing test in one gate script | **MET** — 9/9 PASS |
 | Every phase-wide invariant is gated, and the gate is proven capable of failing | **MET** — 14 invariant gates; positive and negative controls in §4 |
 | Schema, migrations and the live database are in sync | **MET** — `INV-SYNC` + `INV-TRGM` |
-| A human has driven all eight core flows and recorded each outcome | **NOT MET** — no device available (§5) |
-| A real test-mode Razorpay payment updated an invoice from the webhook with no app interaction | **NOT MET** — no credentials exist in any environment (§5 flow 5, §6 Q5) |
-| The GST treatment is confirmed against real clinic practice and the Razorpay onboarding gap has an owner | **NOT MET** — 6 of 8 questions unanswered (§6) |
+| A human has driven all eight core flows and recorded each outcome | **TRACKED, NOT MET** — decoupled 2026-08-14; the human will run them and report back. Persisted as `06-19-HUMAN-UAT.md`, `status: partial`, 0/8 recorded. |
+| A real test-mode Razorpay payment updated an invoice from the webhook with no app interaction | **TRACKED, NOT MET** — deferred 2026-08-14. No credentials in any environment; **A2**, pre-Beta. |
+| The GST treatment is confirmed against real clinic practice and the Razorpay onboarding gap has an owner | **PARTIALLY MET** — the Razorpay gap is now quantified (0/20 KYC) and has two named pre-launch items, **PL-1** and **PL-2**. The GST treatment is **not** confirmed: **A1**, **A4**, **A5** remain open. |
 
-**The phase cannot be closed on this evidence.** The automated half is complete
-and green; the human half is blocked on a device, a Razorpay test account, and
-business facts about the pilot cohort.
+### Verification verdict
+
+**Automated verification: COMPLETE.** The gate is green end to end, proven able
+to fail, and wired into CI. Every requirement has a named passing test; every
+phase-wide invariant is asserted; schema, migrations and database agree.
+
+**Human-dependent verification: TRACKED, NOT COMPLETE.** Per the 2026-08-14
+decision these no longer hold the phase open. Three things are outstanding and
+each has a destination rather than an owner:
+
+1. **Eight device flows** — `06-19-HUMAN-UAT.md`, `status: partial`, 0/8. Will
+   surface in UAT checks until run.
+2. **Live Razorpay payment → webhook → status update** — **A2**, pre-Beta,
+   blocked on credentials that do not exist yet.
+3. **GST treatment against real clinic practice** — **A1** (legacy SAC), **A4**
+   (disputed Lab Test), **A5** (is any pilot clinic registered). Open decisions,
+   not code defects: the shipped behaviour is internally consistent and matches
+   the research findings.
+
+Plus two pre-launch items: **PL-1** (0/20 clinics KYC-complete) and **PL-2**
+(onboarding runbook does not exist, explicitly required before launch).
+
+**On this basis the plan is complete and the phase's build is verified.** What
+remains is real, recorded and will resurface — it is not silently dropped, and
+none of it is a defect in shipped code.

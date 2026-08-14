@@ -191,6 +191,32 @@ if [ "$STATIC_ONLY" -eq 0 ]; then
   # Parse user/database out of the URL for the docker-exec fallback path.
   PGUSER_FALLBACK="$(printf '%s' "$DATABASE_URL" | sed -E 's#^[a-z]+://([^:]+):.*#\1#')"
   PGDB_FALLBACK="$(printf '%s' "$DATABASE_URL" | sed -E 's#^.*/([^/?]+)(\?.*)?$#\1#')"
+
+  # The API runs two connections: DATABASE_URL (breeyo_admin, migrations and
+  # the invariant queries below) and DATABASE_URL_APP (breeyo_app, the
+  # RLS-enforced handle every request uses). They must name the SAME database.
+  #
+  # Overriding only DATABASE_URL on the command line -- the natural thing to do
+  # when pointing the gate at a scratch database -- leaves DATABASE_URL_APP on
+  # whatever `apps/api/.env` says. The invariant gates then pass against the
+  # scratch database while every request-path test runs against the old one,
+  # and seven requirements fail with errors that look like product bugs. Caught
+  # once while building this gate; checked here so nobody has to diagnose it.
+  if [ -z "${DATABASE_URL_APP:-}" ] && [ -f apps/api/.env ]; then
+    DATABASE_URL_APP="$(grep -E '^DATABASE_URL_APP=' apps/api/.env | head -1 | cut -d= -f2-)"
+    export DATABASE_URL_APP
+  fi
+  if [ -n "${DATABASE_URL_APP:-}" ]; then
+    APPDB="$(printf '%s' "$DATABASE_URL_APP" | sed -E 's#^.*/([^/?]+)(\?.*)?$#\1#')"
+    if [ "$APPDB" != "$PGDB_FALLBACK" ]; then
+      echo "DATABASE_URL and DATABASE_URL_APP name different databases:" >&2
+      echo "  DATABASE_URL     -> $PGDB_FALLBACK" >&2
+      echo "  DATABASE_URL_APP -> $APPDB" >&2
+      echo "The invariant gates would check one database while the request-path" >&2
+      echo "tests run against the other. Export both, or neither." >&2
+      exit 2
+    fi
+  fi
 fi
 
 echo "Phase 06 gate -- repo: $REPO_ROOT"

@@ -10,6 +10,8 @@ requires:
   - all 24 plan summaries + the 06-00b and 06-07b hotfixes
 provides:
   - "scripts/verify-phase-06.sh -- one command mapping every Phase 6 requirement to a named passing test, plus 14 phase-wide invariant gates"
+  - "06-19-HUMAN-UAT.md -- the eight device flows as a standing human-verification artifact (status: partial) that surfaces until run"
+  - "A pre-launch checklist: PL-1 per-clinic Razorpay KYC, PL-2 the onboarding runbook"
   - "A `Phase 06 gate` CI step, with a real shadow database for the schema-reproducibility check"
   - "06-19-VERIFICATION.md -- recorded evidence per requirement, per ROADMAP criterion, per invariant, plus the carried-forward register from all 24 plans"
   - "Four rendered Rule 46A document-type samples for the compliance checkpoint"
@@ -29,6 +31,7 @@ key-files:
   created:
     - scripts/verify-phase-06.sh
     - .planning/phases/06-invoicing-payments/06-19-VERIFICATION.md
+    - .planning/phases/06-invoicing-payments/06-19-HUMAN-UAT.md
     - .planning/phases/06-invoicing-payments/06-19-artifacts/1-unregistered-clinic.html
     - .planning/phases/06-invoicing-payments/06-19-artifacts/2-registered-exempt-only.html
     - .planning/phases/06-invoicing-payments/06-19-artifacts/3-registered-taxable-only.html
@@ -45,12 +48,18 @@ decisions:
   - "INV-SECRET excludes test files, because the only two matches are assertions that the credential is absent"
   - "An unset SHADOW_DATABASE_URL skips INV-SYNC; the obvious fallback to DATABASE_URL would have made Prisma reset the database being verified"
 metrics:
-  tasks-completed: 1
-  tasks-blocked: 2
+  tasks-completed: 3
   requirements-passing: 9
   invariant-gates: 14
   workspace-tests: 1635
   completed: 2026-08-14
+verification:
+  automated: complete
+  human: partial
+  human_artifact: .planning/phases/06-invoicing-payments/06-19-HUMAN-UAT.md
+  open_followups: [A1, A4, A5]
+  tracked_followups: [A2, A3, C10]
+  pre_launch: [PL-1, PL-2]
 ---
 
 # Phase 6 Plan 19: Phase Close-Out Gate and Compliance Review Summary
@@ -60,11 +69,28 @@ asserts fourteen phase-wide invariants, proven to fail on a real violation and
 proven not to fail on a comment describing one — plus two blocking human
 checkpoints that this environment cannot answer and must not fabricate.
 
-## Status: TASK 1 COMPLETE, TASKS 2 AND 3 BLOCKED AT CHECKPOINT
+## Status: COMPLETE — automated verification green, human items tracked
 
 `bash scripts/verify-phase-06.sh` exits **0** with PASS on all 23 checks.
-The phase itself **cannot be closed** — three of the plan's six success criteria
-require a human with a device and a Razorpay account.
+
+The two blocking checkpoints were answered by the human on **2026-08-14**:
+
+- **Razorpay test credentials** — not available yet, **deferred**. Recorded as
+  follow-up **A2**, flagged *pre-Beta, blocks BIL-05/BIL-06 live verification*.
+- **Pilot clinic KYC** — **0 of 20** have started onboarding, confirming the
+  database query exactly. Recorded as pre-launch item **PL-1**.
+- **Onboarding runbook** — does not exist and is **required before launch**
+  (explicit call, not "can wait"). Recorded as pre-launch item **PL-2**.
+- **Eight device flows** — the human will run them on their own device and
+  report back. **Decoupled from phase completion, not dropped.** Persisted as
+  `06-19-HUMAN-UAT.md` with `verification: human_needed`, `status: partial`,
+  0/8 recorded, so they keep surfacing in UAT checks.
+
+**The three GST-treatment questions were not covered by that answer and remain
+open** (**A1** legacy SAC, **A4** disputed Lab Test, **A5** is any pilot clinic
+registered). They are decisions about how real clinics bill, not defects in
+shipped code — the GST engine is internally consistent and matches the research
+findings. No GST change is pending in code.
 
 ## Requirement results
 
@@ -222,32 +248,43 @@ Rendered from the shipped `buildInvoiceHtml` into
 All four Rule 46A branches correct, and the Section 122 negative check holds on
 the unregistered document.
 
-## Blocked: the two human checkpoints
+## The two human checkpoints, as answered
 
-Nothing here is fabricated. Full detail in `06-19-VERIFICATION.md` §5 and §6.
+Nothing here is fabricated. Full detail in `06-19-VERIFICATION.md` §5, §6, §6b.
 
-**Task 2 — eight device flows: BLOCKED.** No physical device or simulator in
-this environment. Additionally, no demo-data seeder exists (`prisma/seed.ts`
-seeds RBAC reference data only), so the clinic/pets/stock fixture the flows need
-cannot be produced. Zero of eight flows have a recorded outcome. The four
-observations that matter most and remain unmade: flow 3's before/after stock
-delta for a *dispensed* line versus a *manually added* line; flow 5's
-webhook-to-UI latency; flow 6's one-page legibility on paper; flow 7's stock
-delta after void.
+**Task 2 — eight device flows: PENDING, tracked.** Zero of eight run in this
+environment (no device or simulator). Now persisted as `06-19-HUMAN-UAT.md`
+with each flow's expected outcome, the automated evidence that already backs it,
+and blank Observed lines to fill in. The four observations that matter most and
+remain unmade: flow 3's before/after stock delta for a *dispensed* line versus a
+*manually added* line; flow 5's webhook-to-UI latency; flow 6's one-page
+legibility on paper; flow 7's stock delta after void. The artifact also records
+that **no demo-data seeder exists** (C10), which the human needs before starting.
 
-**Task 3 — GST and Razorpay review: PARTIALLY BLOCKED.** Two of eight questions
-are answered from evidence generated here (Q4 document types, Q7 indicator
-wording, both inline in the verification doc). Six need the human. The
-answerable database question was run: **0 of 0** clinic rows carry a
-`razorpay_key_id` or a `razorpay_webhook_secret_enc`, and the shared dev database
-cannot even be queried — it predates the Phase 6 migration and has no such
-column. So onboarding has not begun anywhere the build can see; how many of the
-20 pilot clinics have completed KYC in the real world is not a fact the codebase
-contains.
+**Task 3 — GST and Razorpay review: Razorpay half closed, GST half open.**
 
-**Webhook-to-UI latency (flow 5): unmeasured.** `RAZORPAY_TEST_KEY_ID` and
-`RAZORPAY_TEST_KEY_SECRET` are unprovisioned — flagged since 06-01 and again in
-06-09. No code in this phase has ever spoken to Razorpay.
+| Q | Answer |
+|---|--------|
+| Q5 — clinics with completed KYC | **0 of 20**, confirmed. Matches the DB exactly. → **PL-1** |
+| Q6 — onboarding runbook | **Does not exist; required before launch.** → **PL-2** |
+| Q8 — test/live key pairs through the same form | **Deferred** — no credentials. → **A2** |
+| Q4 — four document-type PDFs | Generated and heading-checked here; presentation review → UAT flow 6 |
+| Q7 — not-configured indicator | Wording recorded verbatim; on-device legibility → UAT |
+| Q1, Q2, Q3 — GST treatment | **Still open.** → **A1**, **A4**, **A5** |
+
+**Webhook-to-UI latency (flow 5): still unmeasured.** `RAZORPAY_TEST_KEY_ID` and
+`RAZORPAY_TEST_KEY_SECRET` remain unprovisioned — flagged since 06-01, again in
+06-09, and now deferred pre-Beta. No code in this phase has ever spoken to
+Razorpay.
+
+## Pre-launch checklist (new)
+
+Neither blocks the phase; both block launch and are third-party-paced.
+
+| ID | Item | State |
+|----|------|-------|
+| **PL-1** | Every pilot clinic needs a Razorpay account with completed KYC. D-29 locks per-clinic keys, so this cannot be centralised. | **0 of 20 started** |
+| **PL-2** | Write the clinic onboarding runbook — account, KYC, keys into Billing Settings, **and the per-clinic webhook URL into their own Razorpay dashboard** with the six events. The last step is the one that silently breaks BIL-06 when skipped. | **Does not exist** |
 
 ## Carried-forward items
 
@@ -258,8 +295,11 @@ product/configuration items, and 11 recorded as closed. Three are new from this
 plan: the `db push` index-drop hazard (C2), the Phase 6 mobile typecheck baseline
 (C5), and the absence of a demo-data seeder (C10).
 
-**No item has a named owner.** Assigning owners is part of the blocked checkpoint
-in §6 and cannot be done without the human.
+**Status after the 2026-08-14 answers:** 3 items now *tracked* with a recorded
+decision and a destination (**A2** pre-Beta; **A3** split into **PL-1**/**PL-2**;
+**C10** as a UAT prerequisite), 3 remain *open* GST decisions (**A1**, **A4**,
+**A5**), and the rest are engineering follow-ups carrying their originating
+plan's context. Nothing is a phase blocker.
 
 The seven items the plan named specifically are all resolved or recorded:
 legacy SAC (A1, open — §6 Q2), receipt numbering (E10, closed: counter-row
