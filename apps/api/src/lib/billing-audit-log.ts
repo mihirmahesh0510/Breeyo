@@ -37,6 +37,18 @@ export enum BillingAuditEvent {
   REFUND_INITIATED = 'REFUND_INITIATED',
   REFUND_PROCESSED = 'REFUND_PROCESSED',
   REFUND_FAILED = 'REFUND_FAILED',
+  /**
+   * Razorpay accepted a refund and we could not store the gateway's id against
+   * our row (CR-02). Money is genuinely on its way back to the owner, and the
+   * only two places that fact is written are this row and the `pending` refund
+   * the reservation committed before the call.
+   *
+   * Metadata carries `razorpayRefundId`, our `refundId` (the value sent as the
+   * gateway `receipt`) and the amount — the three fields a human needs to close
+   * the gap by hand. Emitted best-effort: the write that failed and this one go
+   * to the same database, so its absence is not proof the refund reconciled.
+   */
+  REFUND_UNRECONCILED = 'REFUND_UNRECONCILED',
   CREDIT_NOTE_ISSUED = 'CREDIT_NOTE_ISSUED',
   /**
    * Metadata for this event records ONLY which fields changed, as booleans —
