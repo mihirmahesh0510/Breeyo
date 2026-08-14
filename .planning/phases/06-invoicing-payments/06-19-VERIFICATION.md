@@ -256,6 +256,11 @@ while the shipped seed uses the `9993xx` family, preserved as
 reads `gstRateOverride` and `taxTreatment`, never the SAC string. The code
 changes only what is *printed*.
 
+> **Superseded 2026-08-14 (A1 resolved).** The table above is the seed as this
+> audit found it and is kept as the record of that state. Rows 1–18 now carry
+> `998351`; rows 19–20 are unchanged. Clinics seeded before this date keep their
+> `9993xx` codes until an Admin invokes the opt-in correction. See §7.1.
+
 #### Razorpay onboarding state, from the database
 
 ```sql
@@ -295,7 +300,7 @@ fact the codebase contains.
 | # | Question | Answer |
 |---|----------|--------|
 | 1 | Are all six preset services genuinely GST-exempt for your clinics? | **UNANSWERED — needs the human.** The shipped state is above: all clinical presets exempt, grooming at 18%. 06-RESEARCH.md flags standalone **Lab Test** as disputed, with an Advance Ruling treating some lab services as taxable — rows 17 and 18 are the concrete decision. |
-| 2 | Is `998351` the SAC your accountants expect, or the `9993xx` codes in the seed? | **UNANSWERED — needs the human.** This is the open decision carried from 06-04. Both lists ship side by side (`VETERINARY_SAC` / `VETERINARY_SAC_LEGACY`). 06-04's recommendation: switch the seed to `998351` for new clinics and offer existing clinics an opt-in "update SAC codes" action, rather than a silent migration. Whether already-seeded clinics need a data migration depends entirely on this answer. |
+| 2 | Is `998351` the SAC your accountants expect, or the `9993xx` codes in the seed? | **ANSWERED 2026-08-14: `998351`, and the migration is opt-in.** 06-04's recommendation adopted verbatim — the seed now writes `998351` for new clinics, and already-seeded clinics get an explicit Admin-only "Update SAC codes" action on Billing Settings rather than a silent data migration, because an accountant may already have corrected those rows by hand. Grooming keeps `998612`. Shipped in `06-19c-SAC-FIX-SUMMARY.md`; details in §7.1. |
 | 3 | Are any of the 20 pilot clinics GST-registered, and does their invoice need anything not on the template? | **UNANSWERED — needs the human.** Not derivable from the codebase: 0 clinic rows exist in any reachable database. |
 | 4 | Generate one PDF per document-type case and confirm each is presentable | **EVIDENCE PRODUCED — human review of presentation still required.** Rendered from the shipped `buildInvoiceHtml`, in `.planning/phases/06-invoicing-payments/06-19-artifacts/`: <br>• `1-unregistered-clinic.html` → heading **INVOICE**, GSTIN absent, CGST absent, HSN absent <br>• `2-registered-exempt-only.html` → **BILL OF SUPPLY** <br>• `3-registered-taxable-only.html` → **TAX INVOICE** <br>• `4-registered-mixed.html` → **INVOICE-CUM-BILL OF SUPPLY** <br>All four Rule 46A branches correct, and the Section 122 negative check holds on the unregistered document. Whether it *looks like something a vet would hand a client* is the part still open. |
 | 5 | How many of the 20 pilot clinics have a Razorpay account with completed KYC? | **ANSWERED 2026-08-14: zero.** None of the 20 pilot clinics has started Razorpay onboarding. This matches the database exactly — **0 of 0** clinic rows carry a `razorpay_key_id`. Recorded as pre-launch checklist item **PL-1**. |
@@ -308,13 +313,13 @@ fact the codebase contains.
 **Razorpay half: closed.** Q5, Q6 and Q8 have recorded answers and named
 follow-ups (**PL-1**, **PL-2**, **A2**).
 
-**GST half: open.** Q1 (are the six presets genuinely exempt, and specifically
-the disputed Lab Test rows 17–18), Q2 (the legacy SAC decision carried from
-06-04, including whether already-seeded clinics need a data migration) and Q3
-(are any pilot clinics GST-registered, and does their invoice need anything not
-on the template) still have no answer. They are compliance decisions about how
-real clinics bill, and nothing in the codebase can settle them. Tracked as
-**A1**, **A4** and **A5** in §7 — open follow-ups, not phase blockers.
+**GST half: Q2 closed 2026-08-14, Q1 and Q3 open.** The legacy SAC decision
+carried from 06-04 has been taken and implemented — see §7.1 and **A1**. Q1 (are
+the six presets genuinely exempt, and specifically the disputed Lab Test rows
+17–18) and Q3 (are any pilot clinics GST-registered, and does their invoice need
+anything not on the template) still have no answer. They are compliance
+decisions about how real clinics bill, and nothing in the codebase can settle
+them. Tracked as **A4** and **A5** in §7 — open follow-ups, not phase blockers.
 
 **No GST treatment change is pending in code**: the shipped behaviour is
 internally consistent and correct against the research findings. What is open is
@@ -351,11 +356,43 @@ unresolved, needs a decision. Nothing here blocks phase completion.
 
 | # | Item | Source | Status |
 |---|------|--------|--------|
-| A1 | **Legacy SAC codes.** Seed ships `9993xx`; `VETERINARY_SAC` is `998351`. Affects already-seeded clinics; changes what is printed on a legal document. 06-04's recommendation: switch the seed to `998351` for new clinics and offer an opt-in "update SAC codes" action, not a silent migration. | 06-04 | **OPEN** — §6 Q2 unanswered. Not a code defect: the tax engine never reads the SAC string. Needs an accountant's call. |
+| A1 | **Legacy SAC codes.** Seed shipped `9993xx`; `VETERINARY_SAC` is `998351`. Affects already-seeded clinics; changes what is printed on a legal document. 06-04's recommendation: switch the seed to `998351` for new clinics and offer an opt-in "update SAC codes" action, not a silent migration. | 06-04 | **RESOLVED 2026-08-14** — 06-04's recommendation adopted verbatim. See §7.1 below for what shipped. |
 | A2 | **Razorpay test credentials absent.** No code in this phase has ever spoken to Razorpay. A live test key must confirm the real `paymentLink.create` param set, that `expire_by = now + 960s` survives real latency, the real SDK rejection shape, and that `short_url` yields a scannable UPI QR. | 06-01, 06-09 (item 13) | **TRACKED — deferred 2026-08-14.** Flagged **pre-Beta; blocks BIL-05/BIL-06 live verification.** Gates UAT flow 5 and §6 Q8. Five-minute signup when someone picks it up. |
 | A3 | **Per-clinic KYC + webhook onboarding for 20 pilot clinics.** | 06-RESEARCH, 06-12 | **TRACKED** — split into pre-launch **PL-1** (KYC, 0/20 started) and **PL-2** (runbook, does not exist). Both confirmed required before launch on 2026-08-14. T-06-128. |
 | A4 | **Lab Test GST treatment is disputed.** Rows 17–18 ship exempt; an Advance Ruling treats some lab services as taxable. | 06-RESEARCH G-findings | **OPEN** — §6 Q1 unanswered. The single most likely GST treatment to need changing. |
 | A5 | **Whether any pilot clinic is GST-registered**, and whether a registered clinic's invoice needs anything not on the current template. | 06-RESEARCH, this plan | **OPEN** — §6 Q3 unanswered. GST defaults off per clinic, so the unregistered path is the one in use until this is answered. |
+
+#### 7.1 A1 resolution, 2026-08-14
+
+The business decision was taken as 06-04 recommended: **new clinics get the
+correct code; already-seeded clinics are offered an explicit action and are
+never migrated silently.** Implemented in `06-19c-SAC-FIX-SUMMARY.md`.
+
+**New clinics.** `apps/api/src/modules/billing/service-catalog-seed.ts` now
+writes `VETERINARY_SAC` (`998351`, Notification 12/2017-CT Entry 46) on all
+eighteen clinical presets. The two grooming rows keep `998612` and their 18%
+override — grooming is not veterinary healthcare, Entry 46 does not reach it,
+and stamping the nil-rated veterinary SAC on a taxable line would be a worse
+document than the one being corrected.
+
+**Existing clinics.** `POST /api/v1/billing/settings/sac-codes/update`, gated on
+`MANAGE_CLINIC_SETTINGS` (Admin only), rewrites this clinic's
+`VETERINARY_SAC_LEGACY_CORRECTABLE` rows — the `9993xx` family, `998612`
+deliberately excluded — to `998351` and audits the count as
+`SERVICE_SAC_CODES_UPDATED`. It is the only code path in the repository that
+writes `service_catalog.sac_code` in bulk, and nothing invokes it implicitly:
+no deploy hook, no login hook, no side effect of reading the settings. A clinic
+that never presses the button keeps its rows byte-for-byte, which is the point —
+an accountant may already have corrected them by hand.
+
+**Where the action lives.** Billing Settings (`BillingSettingsScreen.tsx`), in a
+`SAC Codes` section that renders **only** when `legacySacCodeCount > 0`. The
+copy names the count and the target code, states that no tax amount changes, and
+ends "If your accountant chose the codes you have, leave this as it is." A
+clinic seeded after 2026-08-14 never sees the section at all.
+
+**§6 Q2 is therefore answered:** `998351` is the code, `9993xx` was wrong, and
+the migration is opt-in per clinic.
 
 ### B. Functional gaps inside Phase 6
 
@@ -423,7 +460,7 @@ unresolved, needs a decision. Nothing here blocks phase completion.
 | Schema, migrations and the live database are in sync | **MET** — `INV-SYNC` + `INV-TRGM` |
 | A human has driven all eight core flows and recorded each outcome | **TRACKED, NOT MET** — decoupled 2026-08-14; the human will run them and report back. Persisted as `06-19-HUMAN-UAT.md`, `status: partial`, 0/8 recorded. |
 | A real test-mode Razorpay payment updated an invoice from the webhook with no app interaction | **TRACKED, NOT MET** — deferred 2026-08-14. No credentials in any environment; **A2**, pre-Beta. |
-| The GST treatment is confirmed against real clinic practice and the Razorpay onboarding gap has an owner | **PARTIALLY MET** — the Razorpay gap is now quantified (0/20 KYC) and has two named pre-launch items, **PL-1** and **PL-2**. The GST treatment is **not** confirmed: **A1**, **A4**, **A5** remain open. |
+| The GST treatment is confirmed against real clinic practice and the Razorpay onboarding gap has an owner | **PARTIALLY MET** — the Razorpay gap is now quantified (0/20 KYC) and has two named pre-launch items, **PL-1** and **PL-2**. The GST treatment is **partly** confirmed: **A1** (legacy SAC) was resolved and implemented 2026-08-14; **A4** and **A5** remain open. |
 
 ### Verification verdict
 
@@ -439,10 +476,11 @@ each has a destination rather than an owner:
    surface in UAT checks until run.
 2. **Live Razorpay payment → webhook → status update** — **A2**, pre-Beta,
    blocked on credentials that do not exist yet.
-3. **GST treatment against real clinic practice** — **A1** (legacy SAC), **A4**
-   (disputed Lab Test), **A5** (is any pilot clinic registered). Open decisions,
-   not code defects: the shipped behaviour is internally consistent and matches
-   the research findings.
+3. **GST treatment against real clinic practice** — **A4** (disputed Lab Test)
+   and **A5** (is any pilot clinic registered). Open decisions, not code
+   defects: the shipped behaviour is internally consistent and matches the
+   research findings. **A1** (legacy SAC) was the third of these and is now
+   **resolved** — decided and implemented 2026-08-14, §7.1.
 
 Plus two pre-launch items: **PL-1** (0/20 clinics KYC-complete) and **PL-2**
 (onboarding runbook does not exist, explicitly required before launch).
