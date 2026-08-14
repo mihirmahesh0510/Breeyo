@@ -14,6 +14,9 @@ import { InvoiceFilterChips } from '../components/InvoiceFilterChips';
 import { InvoiceSortSelector } from '../components/InvoiceSortSelector';
 import { InvoiceListCard } from '../components/InvoiceListCard';
 import { NewInvoiceSheet } from '../components/NewInvoiceSheet';
+// A second import from `react-native-paper` rather than widening the one above,
+// so that adding the D-29 gear removes no line from a plan 06-14 file.
+import { IconButton as SettingsGearButton } from 'react-native-paper';
 import {
   BILLING_COPY,
   DEFAULT_INVOICE_FILTER,
@@ -40,6 +43,13 @@ import {
 export const BILLING_ROUTES = {
   consultationPicker: '/(app)/(tabs)/billing/from-consultation',
   quickSale: '/(app)/(tabs)/billing/quick-sale',
+  /**
+   * D-29 billing settings (plan 06-23). Unlike the two above it is a sibling of
+   * `(tabs)`, not a child: it is an Admin form holding a live payment
+   * credential, so it pushes over the tab bar the way `patient/register` does.
+   * It exists today — this one is not a forward reference.
+   */
+  settings: '/(app)/billing/settings',
 } as const;
 
 const COLORS = {
@@ -159,6 +169,23 @@ export function BillingDashboardScreen() {
 
   return (
     <View style={styles.container} testID="billing-dashboard-screen">
+      {/*
+       * D-28's settings entry point. The tab bar shows no header (`headerShown:
+       * false` in `(tabs)/_layout.tsx`), and 06-14 established there is no
+       * `More` tab to hang settings off and no drawer, so the gear lives at the
+       * top of the screen body — the only header this surface has.
+       */}
+      <View style={styles.headerActions}>
+        <SettingsGearButton
+          icon="cog-outline"
+          size={24}
+          iconColor={COLORS.onSurfaceVariant}
+          accessibilityLabel="Billing settings"
+          onPress={() => router.push(BILLING_ROUTES.settings as never)}
+          testID="billing-settings-gear"
+        />
+      </View>
+
       {isOffline && (
         <View style={styles.offlineBanner} testID="billing-offline-banner">
           <Text variant="bodySmall" style={styles.bannerText}>
@@ -276,6 +303,12 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: COLORS.surface,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    paddingRight: 4,
   },
   offlineBanner: {
     backgroundColor: 'rgba(230, 81, 0, 0.15)',
