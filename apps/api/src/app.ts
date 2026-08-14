@@ -105,6 +105,11 @@ export async function buildApp(
   // registered as a separate plugin with its own limit.
   await app.register(import('./modules/billing/billing.routes.js'), { prefix: '/api/v1' });
 
+  // D-04 Quick Sale. A separate plugin so the counter-sale path owns its own
+  // file rather than growing `billing.routes.ts`; it shares the same gates and
+  // the same global rate limit.
+  await app.register(import('./modules/billing/quick-sale.routes.js'), { prefix: '/api/v1' });
+
   // BIL-06. Its own registration on purpose: the plugin installs a raw-buffer
   // body parser, and Fastify's encapsulation is what keeps that scoped to this
   // one route instead of breaking JSON parsing everywhere else.
