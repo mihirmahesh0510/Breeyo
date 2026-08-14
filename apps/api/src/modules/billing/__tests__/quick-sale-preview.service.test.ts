@@ -170,9 +170,18 @@ describe('QuickSaleService.previewTotals', () => {
     // ₹1,250.00 taxable + ₹1,000.00 exempt = ₹2,250.00 subtotal; tax only on
     // the taxable line.
     expect(preview.subtotalPaise).toBe(225_000);
-    expect(preview.breakdown.cgstPaise).toBe(11_250);
-    expect(preview.breakdown.sgstPaise).toBe(11_250);
-    expect(preview.breakdown.grandTotalPaise).toBe(247_500);
+
+    // 9% of ₹1,250.00 is ₹112.50 exactly, and each head is rounded to a whole
+    // rupee ONCE at invoice level (Section 170 / Rule 51) — so ₹113.00, not
+    // ₹112.50. This is the precise case a client-side re-derivation gets wrong:
+    // a device summing 9% per head would show ₹2,475.00 while the invoice said
+    // ₹2,476.00, at the counter, out loud.
+    expect(preview.breakdown.cgstPaise).toBe(11_300);
+    expect(preview.breakdown.sgstPaise).toBe(11_300);
+    expect(preview.breakdown.grandTotalPaise).toBe(247_600);
+
+    // The residue is disclosed rather than folded into the total.
+    expect(preview.breakdown.roundOffPaise).toBe(100);
   });
 
   it('rejects an unknown or cross-tenant item as not found', async () => {

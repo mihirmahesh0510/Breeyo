@@ -1,7 +1,7 @@
 import { Prisma } from '@prisma/client';
 import { quickSaleSchema } from '@breeyo/validators';
 import type { QuickSaleInput } from '@breeyo/validators';
-import type { TaxTreatment } from '@breeyo/types';
+import type { TaxBreakdown, TaxTreatment } from '@breeyo/types';
 import type { TenantPrismaClient } from '../../lib/prisma-rls.js';
 import { BillingAuditEvent, writeBillingAuditLog } from '../../lib/billing-audit-log.js';
 import { allocateInvoiceDiscount, computeInvoiceTax } from './gst.service.js';
@@ -67,6 +67,20 @@ interface QuickSaleLine {
   taxTreatment: TaxTreatment;
   gstRatePercent: number;
   lineTotalPaise: number;
+}
+
+/**
+ * What the counter screen renders above the checkout button.
+ *
+ * `subtotalPaise` is carried alongside the breakdown rather than left for the
+ * client to add up, for the same reason the heads are: the moment the device
+ * sums anything, there are two figures that can disagree.
+ */
+export interface QuickSalePreview {
+  subtotalPaise: number;
+  /** D-17: false for a clinic below the registration threshold. */
+  gstEnabled: boolean;
+  breakdown: TaxBreakdown;
 }
 
 interface ClinicBillingContext {
@@ -297,6 +311,89 @@ export class QuickSaleService {
 
     // Returned in full so the client can go straight to payment collection.
     return this.repository.getInvoiceDetail(clinicId, invoiceId);
+  }
+
+  /**
+   * Prices a cart without committing anything — the counter screen's live total.
+   *
+   * ## Why this is not `InvoiceService.previewTotals`
+   *
+   * That method computes from an invoice's PERSISTED line items and its
+   * endpoint accepts only an `invoiceId`. It is the right contract for the
+   * builder, where the draft is saved before it is previewed, and the wrong one
+   * here: a Quick Sale has no invoice until checkout, because creation and
+   * finalize are deliberately one request (see {@link createAndFinalize}).
+   * Saving a throwaway draft on every keystroke to get a number back would
+   * reintroduce exactly the numbered-but-unpaid-for phantom that design avoids.
+   *
+   * ## Why it is not computed on the device instead
+   *
+   * The grand total is the taxable value plus three heads already rounded once
+   * at invoice level under Section 170 / Rule 51. A client re-derivation would
+   * be a second implementation of a statutory rounding rule, and the two would
+   * disagree on the first sale with a fractional head — on the screen where the
+   * figure is read aloud to the person paying (T-06-122).
+   *
+   * ## Agreement with checkout is structural, not tested-in
+   *
+   * The cart is resolved and priced by the same `resolveLines`, and taxed by
+   * the same `allocateInvoiceDiscount` / `computeInvoiceTax` calls with the
+   * same `isInterState: false`, as {@link createAndFinalize}. The only
+   * difference is that nothing here opens a transaction, writes a row or
+   * allocates an invoice number. Two figures derived from one code path cannot
+   * drift; two derived from two would.
+   *
+   * The one thing this deliberately does NOT do is check stock. Availability is
+   * decided under a row lock inside the committing transaction, and a preview's
+   * answer would be stale by the time the tap arrived. The client learns about
+   * a shortfall from the checkout 409, per row.
+   */
+  async previewTotals(
+    clinicId: string,
+    input: QuickSaleInput,
+  ): Promise<QuickSalePreview> {
+    const parsed = quickSaleSchema.parse(input);
+    const clinic = await this.loadClinicBilling(clinicId);
+    const lines = await this.resolveLines(clinicId, parsed, clinic);
+
+    const subtotalPaise = lines.reduce((sum, line) => sum + line.lineTotalPaise, 0);
+
+    const base: TaxableLine[] = lines.map((line) => ({
+      // No database row exists yet, so the sort order is the line identity.
+      // It is used only to key the engine's per-line result, which this preview
+      // discards — the cart shows invoice-level figures.
+      lineId: String(line.sortOrder),
+      taxableValuePaise: line.lineTotalPaise,
+      gstRatePercent: line.gstRatePercent,
+      taxTreatment: line.taxTreatment,
+      hsnSacCode: line.hsnSacCode,
+    }));
+
+    // Run with zero for the same reason the committing path does: it keeps
+    // Section 15(3)(a) ordering intact rather than forking the day D-07
+    // discounts reach the counter screen.
+    const discounted = allocateInvoiceDiscount(base, 0);
+    const tax = computeInvoiceTax(discounted, {
+      gstEnabled: clinic.gstEnabled,
+      isInterState: false,
+    });
+
+    return {
+      subtotalPaise,
+      // D-17: the client needs this to decide whether a GST row may be drawn at
+      // all. Inferring it from a zero tax head would be wrong — a registered
+      // clinic selling only exempt goods also has zero heads.
+      gstEnabled: clinic.gstEnabled,
+      breakdown: {
+        taxableValuePaise: tax.taxableValuePaise,
+        cgstPaise: tax.cgstPaise,
+        sgstPaise: tax.sgstPaise,
+        igstPaise: tax.igstPaise,
+        roundOffPaise: tax.roundOffPaise,
+        grandTotalPaise: tax.grandTotalPaise,
+        documentType: tax.documentType,
+      },
+    };
   }
 
   /**
