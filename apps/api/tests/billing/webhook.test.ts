@@ -11,8 +11,13 @@ import {
   createTestTokens,
   prisma,
 } from '../helpers/factories.js';
-import { signWebhookPayload } from '../helpers/razorpay-mock.js';
+import {
+  paymentLinkPaidWebhookFixture,
+  refundProcessedWebhookFixture,
+  signWebhookPayload,
+} from '../helpers/razorpay-mock.js';
 import { encryptSecret } from '../../src/lib/crypto.js';
+import { applyWebhookEvent } from '../../src/modules/billing/webhook.worker.js';
 
 /**
  * BIL-06 — the Razorpay webhook endpoint.
@@ -45,6 +50,8 @@ let app: FastifyInstance;
 let clinicId: string;
 let webhookToken: string;
 let token: string;
+let frontDeskId: string;
+let otherClinicId: string;
 
 beforeAll(async () => {
   app = await buildTestApp();
@@ -62,6 +69,7 @@ beforeEach(async () => {
   if (keys.length > 0) await app.redis.del(...keys);
 
   const frontDesk = await createTestUser({ fullName: 'Front Desk' });
+  frontDeskId = frontDesk.id;
 
   webhookToken = randomUUID().replace(/-/g, '');
   const clinic = await createTestClinic(frontDesk.id, {
@@ -75,6 +83,12 @@ beforeEach(async () => {
 
   await createTestClinicMember(frontDesk.id, clinic.id, 'FrontDesk');
   token = (await createTestTokens(app, frontDesk.id, clinic.id)).accessToken;
+
+  // A second tenant, so "another clinic's invoice reference" is a real id.
+  const otherOwner = await createTestUser({ fullName: 'Other Owner' });
+  const otherClinic = await createTestClinic(otherOwner.id, { name: 'Other Clinic' });
+  otherClinicId = otherClinic.id;
+  await createTestClinicMember(otherOwner.id, otherClinic.id, 'FrontDesk');
 });
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -103,9 +117,148 @@ function postWebhook(body: unknown, options: PostOptions = {}) {
   return req.send(raw);
 }
 
-/** A minimal, structurally valid event body. Task-1 tests never apply it. */
+/** A minimal, structurally valid event body that the worker never applies. */
 function anyEvent(overrides: Record<string, unknown> = {}) {
   return { entity: 'event', event: 'payment_link.paid', payload: {}, ...overrides };
+}
+
+const auth = () => ({ Authorization: `Bearer ${token}` });
+
+async function createFinalizedInvoice(unitPricePaise = 50000) {
+  const draft = await request(app.server)
+    .post('/api/v1/billing/invoices')
+    .set(auth())
+    .send({
+      source: 'manual',
+      lineItems: [
+        {
+          lineType: 'service',
+          description: 'Consultation',
+          quantity: 1,
+          unitPricePaise,
+          taxTreatment: 'exempt',
+          gstRatePercent: 0,
+        },
+      ],
+    });
+  expect(draft.status).toBe(201);
+
+  const finalized = await request(app.server)
+    .post(`/api/v1/billing/invoices/${draft.body.data.id}/finalize`)
+    .set(auth())
+    .send({});
+  expect(finalized.status).toBe(200);
+
+  return draft.body.data.id as string;
+}
+
+/**
+ * The pending row a Razorpay link leaves behind, written directly.
+ *
+ * `PaymentService.createPaymentLink` would produce exactly this shape, but
+ * going through it would drag the Razorpay SDK double into a suite whose
+ * subject is the INBOUND path. What the worker needs is the row, not the call
+ * that made it.
+ */
+async function seedPendingLink(
+  invoiceId: string,
+  options: {
+    amountPaise?: number;
+    paymentLinkId?: string;
+    paymentGroupId?: string;
+    method?: string;
+  } = {},
+) {
+  return prisma.payment.create({
+    data: {
+      clinicId,
+      invoiceId,
+      method: options.method ?? 'upi',
+      channel: 'razorpay',
+      amountPaise: options.amountPaise ?? 50000,
+      status: 'pending',
+      razorpayPaymentLinkId: options.paymentLinkId ?? `plink_test_${randomUUID().slice(0, 8)}`,
+      paymentGroupId: options.paymentGroupId ?? randomUUID(),
+      expiresAt: new Date(Date.now() + 15 * 60_000),
+      recordedById: frontDeskId,
+    },
+  });
+}
+
+/**
+ * Records what the worker pushed and to which room.
+ *
+ * Deliberately has no `emit` of its own: a global broadcast would then be a
+ * TypeError in the suite rather than a silent cross-tenant leak in production
+ * (T-06-63).
+ */
+function recordingIo() {
+  const emitted: Array<{ room: string; event: string; data: Record<string, unknown> }> = [];
+
+  const io = {
+    to(room: string) {
+      return {
+        emit(event: string, data: Record<string, unknown>) {
+          emitted.push({ room, event, data });
+        },
+      };
+    },
+  };
+
+  return { io: io as unknown as Parameters<typeof applyWebhookEvent>[1], emitted };
+}
+
+/** Posts an event, then runs the worker against the row it created. */
+async function deliverAndApply(
+  body: unknown,
+  io: ReturnType<typeof recordingIo>['io'] | null = null,
+  options: PostOptions = {},
+) {
+  const response = await postWebhook(body, options);
+  expect(response.status).toBe(200);
+
+  const row = await prisma.webhookEvent.findFirstOrThrow({
+    where: { clinicId },
+    orderBy: { receivedAt: 'desc' },
+  });
+
+  await applyWebhookEvent(prisma, io, row.id);
+
+  return prisma.webhookEvent.findUniqueOrThrow({ where: { id: row.id } });
+}
+
+function paidEvent(
+  invoiceId: string,
+  paymentLinkId: string,
+  amountPaid = 50000,
+  overrides: { notesClinicId?: string; paymentId?: string } = {},
+) {
+  return paymentLinkPaidWebhookFixture({
+    referenceId: invoiceId,
+    paymentLinkId,
+    amountPaid,
+    paymentId: overrides.paymentId,
+    notes: { clinicId: overrides.notesClinicId ?? clinicId, invoiceId },
+  });
+}
+
+function linkLifecycleEvent(
+  event: 'payment_link.expired' | 'payment_link.cancelled' | 'payment_link.partially_paid',
+  invoiceId: string,
+  paymentLinkId: string,
+  amountPaid = 0,
+) {
+  const base = paidEvent(invoiceId, paymentLinkId, amountPaid);
+  return {
+    ...base,
+    event,
+    payload: {
+      ...base.payload,
+      payment_link: {
+        entity: { ...base.payload.payment_link.entity, amount_paid: amountPaid },
+      },
+    },
+  };
 }
 
 // ─── Signature and routing (T-06-56, T-06-60, T-06-61) ──────────────────────
@@ -271,5 +424,332 @@ describe('POST /api/v1/webhooks/razorpay/:webhookToken — isolation and budget'
     expect(slowest).toBeLessThan(5000);
 
     expect(await prisma.webhookEvent.count({ where: { clinicId } })).toBe(50);
+  });
+});
+
+// ─── Worker: captures ───────────────────────────────────────────────────────
+
+describe('billing-webhook worker — payment capture', () => {
+  it('settles the invoice, issues a receipt and pushes to the clinic room only', async () => {
+    const invoiceId = await createFinalizedInvoice(50000);
+    const pending = await seedPendingLink(invoiceId, { paymentLinkId: 'plink_capture01' });
+    const { io, emitted } = recordingIo();
+
+    const row = await deliverAndApply(
+      paidEvent(invoiceId, 'plink_capture01', 50000, { paymentId: 'pay_capture01' }),
+      io,
+    );
+
+    expect(row.processedAt).not.toBeNull();
+    expect(row.processingError).toBeNull();
+
+    const payment = await prisma.payment.findUniqueOrThrow({ where: { id: pending.id } });
+    expect(payment.status).toBe('captured');
+    expect(payment.razorpayPaymentId).toBe('pay_capture01');
+    expect(payment.paidAt).not.toBeNull();
+
+    const invoice = await prisma.invoice.findUniqueOrThrow({ where: { id: invoiceId } });
+    expect(invoice.status).toBe('PAID');
+    expect(invoice.balancePaise).toBe(0);
+    expect(invoice.amountPaidPaise).toBe(50000);
+    expect(invoice.exceptionFlag).toBeNull();
+
+    // D-13: a receipt exists for the digital capture, carrying the gateway ref.
+    const receipts = await prisma.paymentReceipt.findMany({ where: { clinicId, invoiceId } });
+    expect(receipts).toHaveLength(1);
+    expect(receipts[0].receiptNumber).toMatch(/^RCT-\d{6}-\d{4}$/);
+    expect(receipts[0].transactionRef).toBe('pay_capture01');
+
+    const audit = await prisma.billingAuditLog.findMany({
+      where: { clinicId, invoiceId, event: 'PAYMENT_RECORDED' },
+    });
+    expect(audit).toHaveLength(1);
+
+    // Every push is room-scoped, and the room is this clinic's.
+    expect(emitted.length).toBeGreaterThanOrEqual(2);
+    for (const push of emitted) {
+      expect(push.room).toBe(`clinic:${clinicId}`);
+    }
+    expect(emitted.map((e) => e.event)).toContain('invoice:updated');
+    expect(emitted.map((e) => e.event)).toContain('payment:received');
+  });
+
+  it('leaves a partly settled link PARTIALLY_PAID', async () => {
+    const invoiceId = await createFinalizedInvoice(50000);
+    await seedPendingLink(invoiceId, { paymentLinkId: 'plink_partial01' });
+
+    await deliverAndApply(
+      linkLifecycleEvent('payment_link.partially_paid', invoiceId, 'plink_partial01', 20000),
+    );
+
+    const invoice = await prisma.invoice.findUniqueOrThrow({ where: { id: invoiceId } });
+    expect(invoice.status).toBe('PARTIALLY_PAID');
+    expect(invoice.balancePaise).toBe(30000);
+  });
+
+  it('treats a duplicate paid event for an already-PAID invoice as a no-op', async () => {
+    const invoiceId = await createFinalizedInvoice(50000);
+    await seedPendingLink(invoiceId, { paymentLinkId: 'plink_dupe01' });
+
+    await deliverAndApply(paidEvent(invoiceId, 'plink_dupe01'));
+    // A second delivery of the same event with a fresh event id — Razorpay
+    // documents both duplicate and out-of-order delivery.
+    const second = await deliverAndApply(paidEvent(invoiceId, 'plink_dupe01'));
+
+    expect(second.processedAt).not.toBeNull();
+
+    const payments = await prisma.payment.findMany({ where: { clinicId, invoiceId } });
+    expect(payments).toHaveLength(1);
+    expect(payments[0].status).toBe('captured');
+
+    const receipts = await prisma.paymentReceipt.findMany({ where: { clinicId, invoiceId } });
+    expect(receipts).toHaveLength(1);
+
+    const invoice = await prisma.invoice.findUniqueOrThrow({ where: { id: invoiceId } });
+    expect(invoice.status).toBe('PAID');
+  });
+
+  it('is a no-op when the same webhook_events row is reprocessed', async () => {
+    const invoiceId = await createFinalizedInvoice(50000);
+    await seedPendingLink(invoiceId, { paymentLinkId: 'plink_replay01' });
+
+    const row = await deliverAndApply(paidEvent(invoiceId, 'plink_replay01'));
+    const firstProcessedAt = row.processedAt;
+
+    // BullMQ's second attempt on an already-applied event.
+    await applyWebhookEvent(prisma, null, row.id);
+
+    const reread = await prisma.webhookEvent.findUniqueOrThrow({ where: { id: row.id } });
+    expect(reread.processedAt).toEqual(firstProcessedAt);
+    expect(await prisma.paymentReceipt.count({ where: { clinicId, invoiceId } })).toBe(1);
+  });
+
+  it('settles every invoice in a combined multi-invoice link (D-39)', async () => {
+    const first = await createFinalizedInvoice(50000);
+    const second = await createFinalizedInvoice(30000);
+    const groupId = randomUUID();
+
+    await seedPendingLink(first, {
+      paymentLinkId: 'plink_group01',
+      paymentGroupId: groupId,
+      amountPaise: 50000,
+    });
+    await seedPendingLink(second, {
+      paymentLinkId: 'plink_group01',
+      paymentGroupId: groupId,
+      amountPaise: 30000,
+    });
+
+    const { io, emitted } = recordingIo();
+    await deliverAndApply(paidEvent(first, 'plink_group01', 80000), io);
+
+    const firstInvoice = await prisma.invoice.findUniqueOrThrow({ where: { id: first } });
+    const secondInvoice = await prisma.invoice.findUniqueOrThrow({ where: { id: second } });
+    expect(firstInvoice.status).toBe('PAID');
+    expect(secondInvoice.status).toBe('PAID');
+    expect(firstInvoice.balancePaise).toBe(0);
+    expect(secondInvoice.balancePaise).toBe(0);
+
+    expect(await prisma.paymentReceipt.count({ where: { clinicId } })).toBe(2);
+    for (const push of emitted) {
+      expect(push.room).toBe(`clinic:${clinicId}`);
+    }
+  });
+});
+
+// ─── Worker: expiry, cancellation and refunds ───────────────────────────────
+
+describe('billing-webhook worker — link lifecycle', () => {
+  it('reverts an expired link to UNPAID', async () => {
+    const invoiceId = await createFinalizedInvoice(50000);
+    const pending = await seedPendingLink(invoiceId, { paymentLinkId: 'plink_expire01' });
+
+    await deliverAndApply(
+      linkLifecycleEvent('payment_link.expired', invoiceId, 'plink_expire01'),
+    );
+
+    const payment = await prisma.payment.findUniqueOrThrow({ where: { id: pending.id } });
+    expect(payment.status).toBe('expired');
+
+    const invoice = await prisma.invoice.findUniqueOrThrow({ where: { id: invoiceId } });
+    expect(invoice.status).toBe('UNPAID');
+    expect(invoice.balancePaise).toBe(50000);
+  });
+
+  it('keeps a collected cash leg and stays PARTIALLY_PAID when the digital leg expires (D-37)', async () => {
+    const invoiceId = await createFinalizedInvoice(150000);
+
+    const split = await request(app.server)
+      .post(`/api/v1/billing/invoices/${invoiceId}/payments`)
+      .set(auth())
+      .send({ mode: 'single', method: 'cash', amountPaise: 100000 });
+    expect(split.status).toBe(200);
+
+    await seedPendingLink(invoiceId, { paymentLinkId: 'plink_split01', amountPaise: 50000 });
+
+    await deliverAndApply(linkLifecycleEvent('payment_link.expired', invoiceId, 'plink_split01'));
+
+    const invoice = await prisma.invoice.findUniqueOrThrow({ where: { id: invoiceId } });
+    // The cash is in the drawer. Falling back to UNPAID would erase it.
+    expect(invoice.status).toBe('PARTIALLY_PAID');
+    expect(invoice.balancePaise).toBe(50000);
+
+    const cash = await prisma.payment.findFirstOrThrow({ where: { clinicId, invoiceId, method: 'cash' } });
+    expect(cash.status).toBe('captured');
+  });
+
+  it('marks a cancelled link cancelled and recomputes', async () => {
+    const invoiceId = await createFinalizedInvoice(50000);
+    const pending = await seedPendingLink(invoiceId, { paymentLinkId: 'plink_cancel01' });
+
+    await deliverAndApply(
+      linkLifecycleEvent('payment_link.cancelled', invoiceId, 'plink_cancel01'),
+    );
+
+    const payment = await prisma.payment.findUniqueOrThrow({ where: { id: pending.id } });
+    expect(payment.status).toBe('cancelled');
+
+    const invoice = await prisma.invoice.findUniqueOrThrow({ where: { id: invoiceId } });
+    expect(invoice.status).toBe('UNPAID');
+  });
+
+  it('applies refund.processed and recomputes the balance', async () => {
+    const invoiceId = await createFinalizedInvoice(50000);
+    const pending = await seedPendingLink(invoiceId, { paymentLinkId: 'plink_refund01' });
+    await deliverAndApply(paidEvent(invoiceId, 'plink_refund01'));
+
+    const refund = await prisma.refund.create({
+      data: {
+        clinicId,
+        invoiceId,
+        paymentId: pending.id,
+        method: 'razorpay',
+        amountPaise: 50000,
+        status: 'pending',
+        razorpayRefundId: 'rfnd_test_worker01',
+        createdById: frontDeskId,
+      },
+    });
+
+    await deliverAndApply(refundProcessedWebhookFixture({ refundId: 'rfnd_test_worker01' }));
+
+    const applied = await prisma.refund.findUniqueOrThrow({ where: { id: refund.id } });
+    expect(applied.status).toBe('processed');
+    expect(applied.processedAt).not.toBeNull();
+
+    const invoice = await prisma.invoice.findUniqueOrThrow({ where: { id: invoiceId } });
+    expect(invoice.amountPaidPaise).toBe(0);
+
+    const audit = await prisma.billingAuditLog.findMany({
+      where: { clinicId, invoiceId, event: 'REFUND_PROCESSED' },
+    });
+    expect(audit).toHaveLength(1);
+  });
+
+  it('applies refund.failed with the gateway reason', async () => {
+    const invoiceId = await createFinalizedInvoice(50000);
+    const refund = await prisma.refund.create({
+      data: {
+        clinicId,
+        invoiceId,
+        method: 'razorpay',
+        amountPaise: 50000,
+        status: 'pending',
+        razorpayRefundId: 'rfnd_test_fail01',
+        createdById: frontDeskId,
+      },
+    });
+
+    const failed = refundProcessedWebhookFixture({ refundId: 'rfnd_test_fail01' });
+    await deliverAndApply({
+      ...failed,
+      event: 'refund.failed',
+      payload: {
+        refund: {
+          entity: {
+            ...failed.payload.refund.entity,
+            status: 'failed',
+            error_description: 'Refund could not be processed by the bank',
+          },
+        },
+      },
+    });
+
+    const applied = await prisma.refund.findUniqueOrThrow({ where: { id: refund.id } });
+    expect(applied.status).toBe('failed');
+    expect(applied.failureReason).toContain('bank');
+
+    expect(
+      await prisma.billingAuditLog.count({ where: { clinicId, event: 'REFUND_FAILED' } }),
+    ).toBe(1);
+  });
+});
+
+// ─── Worker: refusal paths ──────────────────────────────────────────────────
+
+describe('billing-webhook worker — refusals and exceptions', () => {
+  it('records an unhandled event type without throwing, so BullMQ stops retrying', async () => {
+    const row = await deliverAndApply({
+      entity: 'event',
+      event: 'payment.authorized',
+      payload: {},
+    });
+
+    expect(row.processedAt).not.toBeNull();
+    expect(row.processingError).toContain('payment.authorized');
+  });
+
+  it('refuses a verified event whose invoice belongs to another clinic (T-06-64)', async () => {
+    const invoiceId = await createFinalizedInvoice(50000);
+    await seedPendingLink(invoiceId, { paymentLinkId: 'plink_cross01' });
+
+    const row = await deliverAndApply(
+      paidEvent(invoiceId, 'plink_cross01', 50000, { notesClinicId: otherClinicId }),
+    );
+
+    expect(row.processingError).toBeTruthy();
+
+    const invoice = await prisma.invoice.findUniqueOrThrow({ where: { id: invoiceId } });
+    expect(invoice.status).toBe('UNPAID');
+    expect(await prisma.paymentReceipt.count({ where: { clinicId } })).toBe(0);
+  });
+
+  it('records money that lands on a voided invoice without reopening it (D-35)', async () => {
+    const invoiceId = await createFinalizedInvoice(50000);
+    await seedPendingLink(invoiceId, { paymentLinkId: 'plink_void01' });
+
+    const voided = await request(app.server)
+      .post(`/api/v1/billing/invoices/${invoiceId}/void`)
+      .set(auth())
+      .send({ reason: 'Owner cancelled the visit' });
+    expect(voided.status).toBe(200);
+
+    await deliverAndApply(paidEvent(invoiceId, 'plink_void01'));
+
+    const invoice = await prisma.invoice.findUniqueOrThrow({ where: { id: invoiceId } });
+    // Terminal: the payment is recorded, the invoice is NOT reopened.
+    expect(invoice.status).toBe('VOIDED');
+    expect(invoice.exceptionFlag).toBe('payment_after_void');
+    expect(invoice.amountPaidPaise).toBe(50000);
+  });
+
+  it('flags an overpayment rather than silently absorbing it (D-36)', async () => {
+    const invoiceId = await createFinalizedInvoice(50000);
+    // A link was opened, then the owner paid cash at the counter anyway.
+    await seedPendingLink(invoiceId, { paymentLinkId: 'plink_over01' });
+
+    const cash = await request(app.server)
+      .post(`/api/v1/billing/invoices/${invoiceId}/payments`)
+      .set(auth())
+      .send({ mode: 'single', method: 'cash', amountPaise: 50000 });
+    expect(cash.status).toBe(200);
+
+    // Razorpay believes the link was paid. That cannot be un-succeeded.
+    await deliverAndApply(paidEvent(invoiceId, 'plink_over01'));
+
+    const invoice = await prisma.invoice.findUniqueOrThrow({ where: { id: invoiceId } });
+    expect(invoice.amountPaidPaise).toBe(100000);
+    expect(invoice.balancePaise).toBe(-50000);
+    expect(invoice.exceptionFlag).toBe('overpayment');
   });
 });
