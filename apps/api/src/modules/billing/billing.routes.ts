@@ -12,7 +12,9 @@ import { RefundService } from './refund.service.js';
 import { CreditNoteService } from './credit-note.service.js';
 import { StockValidatorService } from './stock-validator.service.js';
 import { DashboardService } from './dashboard.service.js';
+import { ServiceCatalogService } from './service-catalog.service.js';
 import { createDashboardController } from './dashboard.controller.js';
+import { createServiceCatalogController } from './service-catalog.controller.js';
 import { createInvoiceController } from './invoice.controller.js';
 import { createPaymentController } from './payment.controller.js';
 import { createRefundController } from './refund.controller.js';
@@ -98,8 +100,12 @@ export default async function billingRoutes(fastify: FastifyInstance) {
    */
   const buildDashboardService = (db: TenantPrismaClient) => new DashboardService(db);
 
+  /** D-02 catalog CRUD. Reference data, so no repository and no stock validator. */
+  const buildServiceCatalogService = (db: TenantPrismaClient) => new ServiceCatalogService(db);
+
   const controller = createInvoiceController(buildService);
   const dashboardController = createDashboardController(buildDashboardService);
+  const serviceCatalogController = createServiceCatalogController(buildServiceCatalogService);
   const paymentController = createPaymentController(buildPaymentService);
   const refundController = createRefundController(buildRefundService);
   const creditNoteController = createCreditNoteController(buildCreditNoteService);
@@ -130,6 +136,22 @@ export default async function billingRoutes(fastify: FastifyInstance) {
   // day's totals. Registered before the `/billing/invoices/:invoiceId` pattern
   // for readability only — the path is fixed and cannot be shadowed by it.
   fastify.get('/billing/dashboard', { preHandler: readHandler, handler: dashboardController.getSummaryHandler });
+
+  // D-02 service catalog. Reads sit behind VIEW_INVOICES so a Clinician can see
+  // what a service costs; writes behind CREATE_INVOICES, because repricing the
+  // catalog changes what every future invoice charges.
+  //
+  // `/search` is declared before `/:serviceId` so the literal segment wins the
+  // match. Fastify's radix router prefers a static segment over a parametric one
+  // regardless of registration order, but the ordering makes that independent of
+  // a router implementation detail.
+  fastify.get('/billing/services', { preHandler: readHandler, handler: serviceCatalogController.listHandler });
+  fastify.get('/billing/services/search', { preHandler: readHandler, handler: serviceCatalogController.searchHandler });
+  fastify.get('/billing/services/:serviceId', { preHandler: readHandler, handler: serviceCatalogController.getHandler });
+  fastify.post('/billing/services', { preHandler: writeHandler, handler: serviceCatalogController.createHandler });
+  fastify.patch('/billing/services/:serviceId', { preHandler: writeHandler, handler: serviceCatalogController.updateHandler });
+  // Not a DELETE: the row survives, because a finalized invoice line points at it.
+  fastify.post('/billing/services/:serviceId/deactivate', { preHandler: writeHandler, handler: serviceCatalogController.deactivateHandler });
 
   // Reads
   fastify.get('/billing/invoices', { preHandler: readHandler, handler: controller.listHandler });

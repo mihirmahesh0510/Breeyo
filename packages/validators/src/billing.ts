@@ -16,29 +16,85 @@ import {
   stateCodeFromGstin,
 } from '@breeyo/types';
 
+/**
+ * A GST rate must be one of the current slabs, not merely a percentage.
+ *
+ * Declared here, above its first use, rather than beside the invoice schemas
+ * further down: `serviceCatalogSchema` needs it too, and a `const` is not
+ * hoisted into the object literal that references it.
+ *
+ * `min(0).max(100)` — the previous guard on `gstRateOverride` — accepts 12 and
+ * 28, the two slabs GST 2.0 retired on 22 September 2025. A catalog row saved
+ * at a rate that no longer legally exists produces an incorrect tax charge on
+ * every invoice that uses it, and `invoice_line_items.gst_rate_percent` freezes
+ * that wrong rate onto the finalized document permanently (Finding G2).
+ */
+const gstRateSlabSchema = z
+  .number()
+  .refine((rate) => GST_RATE_SLABS.includes(rate), {
+    message: 'Not a current GST slab',
+  });
+
+const serviceCategorySchema = z
+  .enum([
+    'consultation',
+    'vaccination',
+    'surgery',
+    'diagnostic',
+    'dental',
+    'grooming',
+    'preventive',
+    'emergency',
+    'other',
+  ])
+  .default('other');
+
 export const serviceCatalogSchema = z.object({
   name: z.string().min(1).max(100),
-  category: z
-    .enum([
-      'consultation',
-      'vaccination',
-      'surgery',
-      'diagnostic',
-      'dental',
-      'grooming',
-      'preventive',
-      'emergency',
-      'other',
-    ])
-    .default('other'),
+  category: serviceCategorySchema,
+  /**
+   * Integer paise (D-31). A fractional value here is a rupee figure that
+   * slipped through unconverted — a 100x error on a money field — never a
+   * rounding nicety.
+   */
   price: z.number().int().nonnegative(),
   sacCode: z.string().max(10).optional(),
   hsnCode: z.string().max(10).optional(),
-  gstRateOverride: z.number().min(0).max(100).optional(),
+  gstRateOverride: gstRateSlabSchema.optional(),
   isActive: z.boolean().default(true),
+  sortOrder: z.number().int().min(0).optional(),
 });
 
 export type ServiceCatalogInput = z.infer<typeof serviceCatalogSchema>;
+
+/**
+ * The PATCH shape for an existing catalog entry (D-02).
+ *
+ * Every field is optional because the mobile form submits only what changed,
+ * and `.strict()` because an unrecognised key on a reference-data write is a
+ * client bug worth surfacing rather than silently dropping.
+ *
+ * `isPreset` is accepted here **only so the service can reject it** with
+ * `CANNOT_MODIFY_PRESET`. Omitting it from the schema would have Zod strip the
+ * key silently, and the caller would get a 200 for a change that never
+ * happened. Which fields a *preset* may change is a domain rule, not a shape
+ * rule, and lives in `ServiceCatalogService.update`.
+ */
+export const serviceCatalogUpdateSchema = z
+  .object({
+    name: z.string().min(1).max(100).optional(),
+    category: serviceCategorySchema.optional(),
+    price: z.number().int().nonnegative().optional(),
+    sacCode: z.string().max(10).nullable().optional(),
+    hsnCode: z.string().max(10).nullable().optional(),
+    gstRateOverride: gstRateSlabSchema.nullable().optional(),
+    isActive: z.boolean().optional(),
+    sortOrder: z.number().int().min(0).optional(),
+    isPreset: z.boolean().optional(),
+  })
+  .strict();
+
+export type ServiceCatalogUpdateInput = z.infer<typeof serviceCatalogUpdateSchema>;
 
 // ─── Phase 6 billing write schemas ──────────────────────────────────────────
 //
@@ -97,11 +153,8 @@ function discountGuard(
   }
 }
 
-const gstRateSlabSchema = z
-  .number()
-  .refine((rate) => GST_RATE_SLABS.includes(rate), {
-    message: 'Not a current GST slab',
-  });
+// `gstRateSlabSchema` is declared at the top of this file, above
+// `serviceCatalogSchema`, which needs it as well.
 
 export const invoiceLineItemInputSchema = z
   .object({
