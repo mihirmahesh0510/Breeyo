@@ -32,6 +32,7 @@ import {
   buildDraftPayload,
   buildFinalizeInput,
   classifyFinalizeError,
+  draftFromInvoiceDetail,
   inventoryLineFrom,
   inventorySellingPriceToPaise,
   isFinalizeBlocked,
@@ -67,7 +68,7 @@ const DISPENSED_PRODUCT_LINE: InvoiceBuilderLine = {
   quantity: 6,
   unitPricePaise: 4_500,
   taxTreatment: 'taxable',
-  gstRatePercent: 12,
+  gstRatePercent: 5,
 };
 
 function insufficientStockError(shortfalls: unknown): ApiClientError {
@@ -116,7 +117,7 @@ describe('opening the builder for an existing draft', () => {
           discountType: null,
           discountValue: null,
           taxTreatment: 'taxable',
-          gstRatePercent: 12,
+          gstRatePercent: 5,
         },
       ],
     });
@@ -131,6 +132,52 @@ describe('opening the builder for an existing draft', () => {
 
   it('titles the screen for the pet when one is known', () => {
     expect(screenTitle('Bruno')).toBe('Invoice for Bruno');
+  });
+
+  it('normalises the fetched due date to an ISO string before hydrating', () => {
+    // `InvoiceDetail.dueDate` is declared `Date | null` but arrives from JSON as
+    // a string. Both must survive; the store and the save schema want a string.
+    const fromWire = draftFromInvoiceDetail({
+      invoiceDiscountType: null,
+      invoiceDiscountValue: null,
+      dueDate: '2026-09-01T00:00:00.000Z',
+      notes: null,
+      lineItems: [],
+    });
+    expect(fromWire.dueDate).toBe('2026-09-01T00:00:00.000Z');
+
+    const fromDate = draftFromInvoiceDetail({
+      invoiceDiscountType: null,
+      invoiceDiscountValue: null,
+      dueDate: new Date('2026-09-01T00:00:00.000Z'),
+      notes: null,
+      lineItems: [],
+    });
+    expect(fromDate.dueDate).toBe('2026-09-01T00:00:00.000Z');
+
+    const missing = draftFromInvoiceDetail({
+      invoiceDiscountType: null,
+      invoiceDiscountValue: null,
+      dueDate: null,
+      notes: null,
+      lineItems: [],
+    });
+    expect(missing.dueDate).toBeNull();
+  });
+
+  it('orders the hydrated lines by sortOrder rather than by array position', () => {
+    const draft = draftFromInvoiceDetail({
+      invoiceDiscountType: null,
+      invoiceDiscountValue: null,
+      dueDate: null,
+      notes: null,
+      lineItems: [
+        { ...DISPENSED_PRODUCT_LINE, sortOrder: 2, description: 'second' } as never,
+        { ...SERVICE_LINE, sortOrder: 1, description: 'first' } as never,
+      ],
+    });
+
+    expect(draft.lineItems.map((line) => line.description)).toEqual(['first', 'second']);
   });
 });
 
@@ -467,7 +514,7 @@ describe('turning a catalog or inventory selection into a line', () => {
         name: 'Amoxicillin 250mg',
         sellingPrice: 45,
         hsnSacCode: '3004',
-        gstRate: 12,
+        gstRate: 5,
         currentStock: 40,
         isActive: true,
       } as never,
@@ -477,7 +524,7 @@ describe('turning a catalog or inventory selection into a line', () => {
     expect(line.lineType).toBe('product');
     expect(line.inventoryItemId).toBe('22222222-2222-4222-8222-222222222222');
     expect(line.unitPricePaise).toBe(4_500);
-    expect(line.gstRatePercent).toBe(12);
+    expect(line.gstRatePercent).toBe(5);
     // Adding a product by hand does not decrement stock — finalize does that.
     expect(line.stockMovementId).toBeUndefined();
   });

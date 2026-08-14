@@ -35,21 +35,31 @@ import {
 /**
  * Routes the New Invoice sheet pushes to.
  *
- * Neither exists yet — the consultation picker and the D-04 Quick Sale screen
- * are plan 06-18's. They are declared here as named constants rather than
- * inlined so `06-14-SUMMARY.md` can record exactly which paths 06-18 has to
- * create, and so a rename is a one-line change rather than a search.
+ * ## Every billing sub-route is a sibling of `(tabs)`, not a child of it
+ *
+ * Plan 06-14 declared the first two under `/(app)/(tabs)/billing/...`. That
+ * namespace cannot resolve: `app/(app)/(tabs)/billing.tsx` is a *file* — the
+ * Billing tab itself — so there is no `(tabs)/billing/` directory for a child
+ * route to live in, and a push to one of those paths silently did nothing. Since
+ * the sheet is the primary entry point to the entire billing flow, that was a
+ * dead end on the first tap.
+ *
+ * `settings` already had it right, and plan 06-21 corrected the rest to match:
+ * every one of these is a full-screen form or picker that pushes *over* the tab
+ * bar, exactly as `patient/register` does. Corrected here rather than at the
+ * call sites so there stays one source of truth.
  */
 export const BILLING_ROUTES = {
-  consultationPicker: '/(app)/(tabs)/billing/from-consultation',
-  quickSale: '/(app)/(tabs)/billing/quick-sale',
-  /**
-   * D-29 billing settings (plan 06-23). Unlike the two above it is a sibling of
-   * `(tabs)`, not a child: it is an Admin form holding a live payment
-   * credential, so it pushes over the tab bar the way `patient/register` does.
-   * It exists today — this one is not a forward reference.
-   */
+  /** Plan 06-21 — the D-06 Path B picker. */
+  consultationPicker: '/(app)/billing/from-consultation',
+  /** Plan 06-21 — the standalone builder. */
+  newInvoice: '/(app)/billing/new',
+  /** Plan 06-18's D-04 Quick Sale screen. Still a forward reference. */
+  quickSale: '/(app)/billing/quick-sale',
+  /** D-29 billing settings (plan 06-23). */
   settings: '/(app)/billing/settings',
+  /** One invoice. The builder replaces itself with this on finalize. */
+  invoiceDetail: (invoiceId: string) => `/(app)/billing/${invoiceId}`,
 } as const;
 
 const COLORS = {
@@ -153,8 +163,10 @@ export function BillingDashboardScreen() {
   const handleInvoicePress = useCallback(
     (invoice: InvoiceListItem) => {
       // The invoice detail route is plan 06-15's; pushing it here keeps the
-      // list's press behaviour honest rather than silently inert.
-      router.push(`/(app)/(tabs)/billing/${invoice.id}` as never);
+      // list's press behaviour honest rather than silently inert. Routed through
+      // BILLING_ROUTES so it shares the corrected namespace — the inline
+      // `(tabs)/billing/...` path it used before could never resolve.
+      router.push(BILLING_ROUTES.invoiceDetail(invoice.id) as never);
     },
     [router],
   );
