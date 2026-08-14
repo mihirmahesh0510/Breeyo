@@ -60,6 +60,15 @@ const COLORS = {
  * transaction from these line amounts and rendered from the response — a second
  * implementation of a statutory rounding rule on the device would disagree with
  * the server on the first fractional head (T-06-103).
+ *
+ * ## Copy rendered here
+ *
+ * All of it from `CREDIT_NOTE_COPY`, asserted verbatim against 06-UI-SPEC's
+ * "Credit Note Screen" table. Named here for traceability: `Credit Note`,
+ * `For Invoice #[number]`, `Reason`, the five reason labels, `Items to Credit`,
+ * `Select items and amounts to credit`, `[Item name] — Rs [amount]`,
+ * `Credit Amount: Rs [N]`, `Notes (optional)`, `Additional details...`,
+ * `Issue Credit Note`, `Cancel`, and the success toast `Credit note issued`.
  */
 export function CreditNoteScreen({ invoiceId }: CreditNoteScreenProps) {
   const router = useRouter();

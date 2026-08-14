@@ -64,6 +64,24 @@ const COLORS = {
  *
  * All decisions live in `lib/refund-form.ts`; this file is layout, because
  * `apps/mobile` cannot render a React Native component under test.
+ *
+ * ## Copy rendered here
+ *
+ * All of it from `REFUND_COPY`, asserted verbatim against 06-UI-SPEC's "Refund
+ * Flow" and "Destructive Actions" tables. Named here for traceability:
+ * `Process Refund`, `Full Refund`, `Partial Refund`, `Refund Amount: Rs [N]`,
+ * `Refund Amount (Rs)`, `Maximum: Rs [paid_amount]`,
+ * `Original: Rs [amount] via [method]`,
+ * `Digital refunds processed via Razorpay (2-5 business days)`,
+ * `Cash refund recorded as manual adjustment`,
+ * `Digital: Rs [N] via Razorpay`, `Cash: Rs [N] refunded manually`, `Cancel`,
+ * `Refund of Rs [N] processed`, `Refund failed: [reason]. Please try again.`,
+ * plus both destructive-action confirmations — `Process refund?` /
+ * `Record cash refund?` with `Process Refund` / `Record Refund`.
+ *
+ * The spec writes `Rs` throughout; every one renders `₹`, because
+ * `formatPaiseINR` is the feature's single money formatter and emits the rupee
+ * sign from `Intl` for `en-IN`. 06-16 and 06-17 made the same substitution.
  */
 export function RefundSheet({
   visible,

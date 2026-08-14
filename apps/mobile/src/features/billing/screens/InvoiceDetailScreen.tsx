@@ -72,6 +72,18 @@ const COLORS = {
  * `useInvoiceSocket` invalidates the `['invoices']` namespace on
  * `invoice:updated` and `payment:received`, and `useInvoice` sets no polling
  * timer. Pull-to-refresh is the fallback, not the mechanism (T-06-113).
+ *
+ * ## Copy rendered here
+ *
+ * All of it from `INVOICE_SCREEN_COPY` in `lib/invoice-screen.ts`, which
+ * `__tests__/InvoiceDetailScreen.test.tsx` asserts verbatim against 06-UI-SPEC.
+ * Named here so a reader can find the strings without opening the copy module:
+ * `Items`, `Patient: [name] ([species])`, `Owner: [name] — [phone]`,
+ * `Balance Due: Rs [N]`, `Could not load invoice. Go back and try again.`,
+ * `Go Back`, and the two void outcomes `Invoice voided. Items returned to stock.`
+ * and `Invoice voided` — which of those two appears is decided by
+ * `voidSuccessToast` from the server's own `restoredMovementCount`, not by this
+ * file. The action labels belong to `lib/invoice-actions.ts`.
  */
 export function InvoiceDetailScreen({ invoiceId }: InvoiceDetailScreenProps) {
   const router = useRouter();
