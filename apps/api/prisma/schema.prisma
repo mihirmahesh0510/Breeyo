@@ -102,6 +102,15 @@ model Clinic {
   webhookEvents        WebhookEvent[]
   billingAuditLog      BillingAuditLog[]
 
+  // Phase 7 back-relations
+  whatsAppThreads          WhatsAppThread[]
+  whatsAppMessages         WhatsAppMessage[]
+  whatsAppOwnerPreferences WhatsAppOwnerPreference[]
+  whatsAppReminderTasks    WhatsAppReminderTask[]
+  whatsAppBookingRequests  WhatsAppBookingRequest[]
+  whatsAppSlotHolds        WhatsAppSlotHold[]
+  whatsAppClinicConfig     WhatsAppClinicConfig?
+
   @@map("clinics")
 }
 
@@ -313,6 +322,10 @@ model Pet {
   vaccinationRecords VaccinationRecord[]
   dewormingRecords   DewormingRecord[]
   invoices           Invoice[] // Phase 6 (D-25 pet-profile Invoices tab, D-47)
+
+  // Phase 7 back-relations (D-21: booking flow always carries a petId)
+  whatsAppReminderTasks   WhatsAppReminderTask[]
+  whatsAppBookingRequests WhatsAppBookingRequest[]
 
   @@index([clinicId])
   @@index([clinicId, ownerId])
@@ -1179,4 +1192,287 @@ model BillingAuditLog {
   @@index([event])
   @@index([invoiceId])
   @@map("billing_audit_log")
+}
+
+// ─── Phase 7: WhatsApp Communication ─────────────────────────────────
+
+enum WaChannel {
+  SIMULATOR
+  CLOUD_API
+}
+
+enum WaDirection {
+  OUTBOUND
+  INBOUND
+}
+
+enum WaDeliveryStatus {
+  QUEUED
+  SENT
+  DELIVERED
+  READ
+  FAILED
+  REPLIED
+}
+
+enum WaNumberStatus {
+  VALID
+  INVALID
+}
+
+enum WaContextType {
+  NONE
+  INVOICE
+  PET
+  REMINDER
+  BOOKING
+  DOCUMENT
+}
+
+/// NOT payment (D-05): the reminder engine can only send follow-up, vaccine
+/// and deworming reminders. Adding a payment value here would require a
+/// schema migration, which is the structural enforcement D-05 asks for.
+enum WaReminderKind {
+  FOLLOW_UP
+  VACCINE_DUE
+  DEWORMING_DUE
+}
+
+/// Two-touch model (D-01, D-02): ADVANCE fires some days before the due
+/// date, ON_DATE fires on the due date itself.
+enum WaReminderTouch {
+  ADVANCE
+  ON_DATE
+}
+
+/// D-03/D-04 escalation state machine.
+enum WaReminderState {
+  PENDING
+  SENT
+  REPLIED
+  CAPPED_NEEDS_ACTION
+  CANCELLED
+}
+
+/// D-06/D-09 booking conversation state machine.
+enum WaBookingState {
+  AWAITING_SLOT_CHOICE
+  CONFIRMED
+  CANCELLED
+  MOVED
+  EXPIRED
+}
+
+/// D-16 simulator global deterministic controls.
+enum WaDeliveryMode {
+  NORMAL
+  DELAYED
+  FAIL
+  INVALID_NUMBER
+}
+
+model WhatsAppThread {
+  id                     String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clinicId               String         @map("clinic_id") @db.Uuid
+  ownerId                String         @map("owner_id") @db.Uuid // PetOwner
+  waPhone                String         @map("wa_phone") // E.164 with '+'
+  resolvedWaId           String?        @map("resolved_wa_id") // Meta contacts[].wa_id
+  numberStatus           WaNumberStatus @default(VALID) @map("number_status")
+  lastMessageAt          DateTime?      @map("last_message_at")
+  lastMessagePreview     String?        @map("last_message_preview")
+  lastContextType        WaContextType  @default(NONE) @map("last_context_type")
+  unreadCount            Int            @default(0) @map("unread_count")
+  needsAction            Boolean        @default(false) @map("needs_action") // D-04
+  needsActionReason      String?        @map("needs_action_reason")
+  serviceWindowExpiresAt DateTime?      @map("service_window_expires_at") // 24h model
+  createdAt              DateTime       @default(now()) @map("created_at")
+  updatedAt              DateTime       @updatedAt @map("updated_at")
+
+  clinic Clinic @relation(fields: [clinicId], references: [id])
+
+  @@unique([clinicId, waPhone])
+  @@index([clinicId, lastMessageAt])
+  @@index([clinicId, needsAction])
+  @@map("whatsapp_threads")
+}
+
+model WhatsAppMessage {
+  id                       String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clinicId                 String           @map("clinic_id") @db.Uuid
+  threadId                 String           @map("thread_id") @db.Uuid
+  direction                WaDirection
+  channel                  WaChannel
+  providerMessageId        String?          @unique @map("provider_message_id") // wamid — webhook idempotency
+  replyToProviderMessageId String?          @map("reply_to_provider_message_id")
+  templateKey              String?          @map("template_key")
+  templateCategory         String?          @map("template_category") // REMINDER | TRANSACTIONAL (D-10)
+  body                     String // locally rendered text
+  renderedVariables        Json?            @map("rendered_variables")
+  interactiveOptions       Json?            @map("interactive_options") // buttons/rows offered
+  status                   WaDeliveryStatus @default(QUEUED)
+  failureCode              String?          @map("failure_code")
+  failureReason            String?          @map("failure_reason")
+  contextType              WaContextType    @default(NONE) @map("context_type")
+  contextId                String?          @map("context_id") @db.Uuid // invoice/pet/booking/attachment — NO relation (Pitfall 8)
+  mediaProviderId          String?          @map("media_provider_id")
+  mediaFilename            String?          @map("media_filename")
+  mediaMimeType            String?          @map("media_mime_type")
+  mediaExpiresAt           DateTime?        @map("media_expires_at")
+  staffNote                String?          @map("staff_note") // UI-SPEC optional note
+  sentByUserId             String?          @map("sent_by_user_id") @db.Uuid // null = automated
+  reminderTaskId           String?          @map("reminder_task_id") @db.Uuid
+  bookingRequestId         String?          @map("booking_request_id") @db.Uuid
+  retryOfMessageId         String?          @map("retry_of_message_id") @db.Uuid
+  queuedAt                 DateTime         @default(now()) @map("queued_at")
+  sentAt                   DateTime?        @map("sent_at")
+  deliveredAt              DateTime?        @map("delivered_at")
+  readAt                   DateTime?        @map("read_at")
+  failedAt                 DateTime?        @map("failed_at")
+  createdAt                DateTime         @default(now()) @map("created_at")
+  updatedAt                DateTime         @updatedAt @map("updated_at")
+
+  clinic Clinic @relation(fields: [clinicId], references: [id])
+
+  @@index([clinicId, threadId, createdAt])
+  @@index([clinicId, status])
+  @@index([clinicId, contextType, contextId])
+  @@map("whatsapp_messages")
+}
+
+/// Append-only ledger (WHA-05, Phase 1 audit pattern). No update path is
+/// modelled — see Pattern 9 (monotonic status ranking) in 07-RESEARCH.md.
+model WhatsAppMessageStatusEvent {
+  id           String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  messageId    String           @map("message_id") @db.Uuid
+  status       WaDeliveryStatus
+  providerCode String?          @map("provider_code")
+  rawPayload   Json?            @map("raw_payload")
+  occurredAt   DateTime         @map("occurred_at")
+  createdAt    DateTime         @default(now()) @map("created_at")
+
+  @@index([messageId, occurredAt])
+  @@map("whatsapp_message_status_events")
+}
+
+/// D-10/D-11 operational opt-out and number-validity gate.
+model WhatsAppOwnerPreference {
+  id                String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clinicId          String         @map("clinic_id") @db.Uuid
+  ownerId           String         @unique @map("owner_id") @db.Uuid
+  remindersOptedOut Boolean        @default(false) @map("reminders_opted_out")
+  optedOutAt        DateTime?      @map("opted_out_at")
+  optedOutSource    String?        @map("opted_out_source") // OWNER_STOP | STAFF
+  numberStatus      WaNumberStatus @default(VALID) @map("number_status")
+  markedInvalidAt   DateTime?      @map("marked_invalid_at")
+  markedInvalidBy   String?        @map("marked_invalid_by") @db.Uuid
+  createdAt         DateTime       @default(now()) @map("created_at")
+  updatedAt         DateTime       @updatedAt @map("updated_at")
+
+  clinic Clinic @relation(fields: [clinicId], references: [id])
+
+  @@index([clinicId])
+  @@map("whatsapp_owner_preferences")
+}
+
+/// D-01, D-02, D-03, D-04 reminder scheduling and escalation.
+model WhatsAppReminderTask {
+  id             String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clinicId       String          @map("clinic_id") @db.Uuid
+  ownerId        String          @map("owner_id") @db.Uuid
+  petId          String          @map("pet_id") @db.Uuid
+  kind           WaReminderKind
+  touch          WaReminderTouch
+  sourceType     String          @map("source_type") // CONSULTATION | VACCINATION_RECORD | DEWORMING_RECORD
+  sourceId       String          @map("source_id") @db.Uuid
+  sourceLabel    String?         @map("source_label") // e.g. vaccine name, for template variables
+  dueDate        DateTime        @map("due_date") @db.Date
+  scheduledFor   DateTime        @map("scheduled_for") @db.Date
+  state          WaReminderState @default(PENDING)
+  attemptCount   Int             @default(0) @map("attempt_count")
+  lastAttemptAt  DateTime?       @map("last_attempt_at")
+  nextAttemptAt  DateTime?       @map("next_attempt_at")
+  repliedAt      DateTime?       @map("replied_at")
+  cappedAt       DateTime?       @map("capped_at")
+  cappedReason   String?         @map("capped_reason")
+  acknowledgedAt DateTime?       @map("acknowledged_at") // auditable target for UI-SPEC's Mark Resolved
+  createdAt      DateTime        @default(now()) @map("created_at")
+  updatedAt      DateTime        @updatedAt @map("updated_at")
+
+  clinic Clinic @relation(fields: [clinicId], references: [id])
+  pet    Pet    @relation(fields: [petId], references: [id])
+
+  @@unique([clinicId, sourceType, sourceId, kind, touch]) // idempotency
+  @@index([clinicId, state, scheduledFor])
+  @@index([clinicId, state, nextAttemptAt])
+  @@map("whatsapp_reminder_tasks")
+}
+
+/// D-06 to D-09 booking conversation state machine.
+/// D-21: petId is required (not optional) — the booking flow always asks
+/// the owner which pet the appointment is for.
+model WhatsAppBookingRequest {
+  id                        String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clinicId                  String         @map("clinic_id") @db.Uuid
+  threadId                  String         @map("thread_id") @db.Uuid
+  ownerId                   String         @map("owner_id") @db.Uuid
+  petId                     String         @map("pet_id") @db.Uuid // D-21: owner must choose a pet
+  reference                 String         @unique // BK-YYYYMM-XXXX
+  state                     WaBookingState @default(AWAITING_SLOT_CHOICE)
+  slotDate                  DateTime?      @map("slot_date") @db.Date
+  slotStartMinutes          Int?           @map("slot_start_minutes")
+  slotDurationMinutes       Int?           @map("slot_duration_minutes")
+  confirmedAt               DateTime?      @map("confirmed_at")
+  cancelledAt               DateTime?      @map("cancelled_at")
+  cancelReason              String?        @map("cancel_reason")
+  movedToBookingId          String?        @map("moved_to_booking_id") @db.Uuid
+  supersededByAppointmentId String?        @map("superseded_by_appointment_id") @db.Uuid // Phase 8 hook
+  actedByUserId             String?        @map("acted_by_user_id") @db.Uuid
+  createdAt                 DateTime       @default(now()) @map("created_at")
+  updatedAt                 DateTime       @updatedAt @map("updated_at")
+
+  clinic Clinic @relation(fields: [clinicId], references: [id])
+  pet    Pet    @relation(fields: [petId], references: [id])
+
+  @@index([clinicId, state])
+  @@index([clinicId, slotDate])
+  @@index([clinicId, petId]) // D-21
+  @@map("whatsapp_booking_requests")
+}
+
+/// Slot blocking via database unique constraint (D-07, D-08, Pattern 8).
+/// slotStartMinutes is minutes-from-IST-midnight, not a DateTime, so the
+/// key is immune to timezone drift.
+model WhatsAppSlotHold {
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clinicId         String   @map("clinic_id") @db.Uuid
+  slotDate         DateTime @map("slot_date") @db.Date
+  slotStartMinutes Int      @map("slot_start_minutes") // minutes from midnight IST
+  bookingRequestId String   @unique @map("booking_request_id") @db.Uuid
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  clinic Clinic @relation(fields: [clinicId], references: [id])
+
+  @@unique([clinicId, slotDate, slotStartMinutes])
+  @@index([clinicId, slotDate])
+  @@map("whatsapp_slot_holds")
+}
+
+/// D-16 global controls + Beta defaults.
+model WhatsAppClinicConfig {
+  id                         String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clinicId                   String         @unique @map("clinic_id") @db.Uuid
+  provider                   WaChannel      @default(SIMULATOR)
+  deliveryMode               WaDeliveryMode @default(NORMAL) @map("delivery_mode")
+  autoReplyEnabled           Boolean        @default(true) @map("auto_reply_enabled") // D-14
+  autoReplyDelaySeconds      Int            @default(10) @map("auto_reply_delay_seconds") // D-14
+  allowFreeformOutsideWindow Boolean        @default(false) @map("allow_freeform_outside_window")
+  slotDurationMinutes        Int            @default(30) @map("slot_duration_minutes")
+  escalationMaxAttempts      Int            @default(2) @map("escalation_max_attempts") // D-03
+  escalationIntervalDays     Int            @default(3) @map("escalation_interval_days") // D-03
+  createdAt                  DateTime       @default(now()) @map("created_at")
+  updatedAt                  DateTime       @updatedAt @map("updated_at")
+
+  clinic Clinic @relation(fields: [clinicId], references: [id])
+
+  @@map("whatsapp_clinic_configs")
 }
