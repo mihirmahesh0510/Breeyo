@@ -99,6 +99,22 @@ export async function buildApp(
   await app.register(import('./modules/inventory/inventory.routes.js'), { prefix: '/api/v1' });
   await app.register(import('./modules/inventory/dispense.routes.js'), { prefix: '/api/v1' });
 
+  // Phase 6: Invoicing & Payments
+  // No `config` override: billing keeps the global 200/min rate limit. The
+  // Razorpay webhook route (plan 06-10) is the documented exception and is
+  // registered as a separate plugin with its own limit.
+  await app.register(import('./modules/billing/billing.routes.js'), { prefix: '/api/v1' });
+
+  // D-04 Quick Sale. A separate plugin so the counter-sale path owns its own
+  // file rather than growing `billing.routes.ts`; it shares the same gates and
+  // the same global rate limit.
+  await app.register(import('./modules/billing/quick-sale.routes.js'), { prefix: '/api/v1' });
+
+  // BIL-06. Its own registration on purpose: the plugin installs a raw-buffer
+  // body parser, and Fastify's encapsulation is what keeps that scoped to this
+  // one route instead of breaking JSON parsing everywhere else.
+  await app.register(import('./modules/billing/webhook.routes.js'), { prefix: '/api/v1' });
+
   // Midnight archive cron (skip in test environment)
   if (!isTest) {
     scheduleMidnightArchive(app.prisma, app.io);
@@ -110,6 +126,20 @@ export async function buildApp(
       await expiryNotificationBus.close();
     });
     scheduleExpiryCron(app.prisma, expiryNotificationBus);
+
+    // BIL-06: the consumer for the queue the webhook route produces into. The
+    // route acknowledges Razorpay inside its five-second budget; everything
+    // that touches an invoice happens here.
+    const { createBillingWebhookWorker } = await import('./modules/billing/webhook.worker.js');
+    const billingWebhookWorker = createBillingWebhookWorker(app.redis, app.prisma, app.io);
+    app.addHook('onClose', async () => {
+      await billingWebhookWorker.close();
+    });
+
+    // D-23 and D-11. Imported at the call site rather than at module scope so
+    // the two cron modules are not even loaded when the guard is false.
+    (await import('./jobs/overdue-invoices.js')).scheduleOverdueInvoices(app.prisma, app.io);
+    (await import('./jobs/expire-payment-links.js')).scheduleExpirePaymentLinks(app.prisma, app.io);
   }
 
   return app;

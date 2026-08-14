@@ -129,7 +129,7 @@ describe('createItemSchema', () => {
     expect(result.success).toBe(true);
   });
 
-  it.each([0, 5, 12, 18, 28])('accepts gstRate of %i', (gstRate) => {
+  it.each([0, 5, 18, 40])('accepts gstRate of %i', (gstRate) => {
     const result = createItemSchema.safeParse({
       name: 'Test',
       category: 'medicine',
@@ -140,13 +140,13 @@ describe('createItemSchema', () => {
     expect(result.success).toBe(true);
   });
 
-  it('rejects gstRate outside 0-28 range', () => {
+  it('rejects gstRate above the highest GST 2.0 slab', () => {
     const result = createItemSchema.safeParse({
       name: 'Test',
       category: 'medicine',
       unit: 'tablets',
       sellingPrice: 5.5,
-      gstRate: 30,
+      gstRate: 45,
     });
     expect(result.success).toBe(false);
   });
@@ -201,7 +201,7 @@ describe('updateItemSchema', () => {
   });
 
   it('rejects a partial update with an out-of-range gstRate', () => {
-    const result = updateItemSchema.safeParse({ gstRate: 40 });
+    const result = updateItemSchema.safeParse({ gstRate: 45 });
     expect(result.success).toBe(false);
   });
 });
@@ -366,8 +366,8 @@ describe('inventory constants', () => {
   });
 
   // INV-09
-  it('GST_RATE_SLABS equals the 5 standard Indian GST slabs', () => {
-    expect(GST_RATE_SLABS).toEqual([0, 5, 12, 18, 28]);
+  it('GST_RATE_SLABS equals the post-GST-2.0 Indian slabs', () => {
+    expect(GST_RATE_SLABS).toEqual([0, 5, 18, 40]);
   });
 
   it('COMMON_VET_HSN_CODES has at least 10 entries covering medicine, vaccine, surgical, and food categories', () => {

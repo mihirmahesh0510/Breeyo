@@ -1,4 +1,5 @@
-import type { PrismaClient, QueueEntryStatus } from '@prisma/client';
+import type { QueueEntryStatus } from '@prisma/client';
+import type { DbClient } from '../../lib/prisma-rls.js';
 
 const PET_OWNER_INCLUDE = {
   pet: {
@@ -9,7 +10,7 @@ const PET_OWNER_INCLUDE = {
 } as const;
 
 export class QueueRepository {
-  constructor(private readonly prisma: PrismaClient) {}
+  constructor(private readonly prisma: DbClient) {}
 
   /**
    * Gets start of today in IST (Asia/Kolkata, UTC+5:30).
@@ -51,6 +52,20 @@ export class QueueRepository {
         status: 'DONE',
         archivedAt: null,
       },
+    });
+  }
+
+  /**
+   * Finds a pet within the calling clinic.
+   *
+   * D-30 defence in depth: RLS already hides other clinics' pets from the
+   * tenant handle, but check-in must fail cleanly rather than surfacing a
+   * constraint error, so the explicit clinicId filter stays as layer one.
+   */
+  async findPetInClinic(clinicId: string, petId: string) {
+    return this.prisma.pet.findFirst({
+      where: { id: petId, clinicId },
+      select: { id: true },
     });
   }
 

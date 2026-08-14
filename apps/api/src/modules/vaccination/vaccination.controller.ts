@@ -1,10 +1,20 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import type { VaccinationService } from './vaccination.service.js';
+import type { TenantPrismaClient } from '../../lib/prisma-rls.js';
 
+/**
+ * D-30: holds a factory rather than a prebuilt service, so every handler
+ * resolves its Prisma handle from `request.db` (the tenant-scoped, RLS-bound
+ * client) instead of sharing a plugin-scope admin client across all clinics.
+ */
 export class VaccinationController {
-  constructor(private readonly service: VaccinationService) {}
+  constructor(
+    private readonly buildService: (db: TenantPrismaClient) => VaccinationService,
+  ) {}
 
   addVaccination = async (request: FastifyRequest, reply: FastifyReply) => {
+    const service = this.buildService(request.db);
+
     const { petId } = request.params as { petId: string };
     const clinicId = request.user.activeClinicId;
     const vetId = request.user.id;
@@ -21,7 +31,7 @@ export class VaccinationController {
       return reply.status(400).send({ error: 'vaccineName is required' });
     }
 
-    const result = await this.service.createVaccination(
+    const result = await service.createVaccination(
       clinicId,
       petId,
       body.consultationId ?? null,
@@ -39,14 +49,18 @@ export class VaccinationController {
   };
 
   getVaccinationHistory = async (request: FastifyRequest, reply: FastifyReply) => {
+    const service = this.buildService(request.db);
+
     const { petId } = request.params as { petId: string };
     const clinicId = request.user.activeClinicId;
 
-    const records = await this.service.getVaccinationHistory(clinicId, petId);
+    const records = await service.getVaccinationHistory(clinicId, petId);
     return reply.send({ data: records });
   };
 
   addDeworming = async (request: FastifyRequest, reply: FastifyReply) => {
+    const service = this.buildService(request.db);
+
     const { petId } = request.params as { petId: string };
     const clinicId = request.user.activeClinicId;
     const vetId = request.user.id;
@@ -60,7 +74,7 @@ export class VaccinationController {
       return reply.status(400).send({ error: 'drugName is required' });
     }
 
-    const result = await this.service.createDeworming(
+    const result = await service.createDeworming(
       clinicId,
       petId,
       body.consultationId ?? null,
@@ -75,26 +89,32 @@ export class VaccinationController {
   };
 
   getDewormingHistory = async (request: FastifyRequest, reply: FastifyReply) => {
+    const service = this.buildService(request.db);
+
     const { petId } = request.params as { petId: string };
     const clinicId = request.user.activeClinicId;
 
-    const records = await this.service.getDewormingHistory(clinicId, petId);
+    const records = await service.getDewormingHistory(clinicId, petId);
     return reply.send({ data: records });
   };
 
   getPreventiveCareStatus = async (request: FastifyRequest, reply: FastifyReply) => {
+    const service = this.buildService(request.db);
+
     const { petId } = request.params as { petId: string };
     const clinicId = request.user.activeClinicId;
 
-    const status = await this.service.getPreventiveCareStatus(clinicId, petId);
+    const status = await service.getPreventiveCareStatus(clinicId, petId);
     return reply.send(status);
   };
 
   getCertificateData = async (request: FastifyRequest, reply: FastifyReply) => {
+    const service = this.buildService(request.db);
+
     const { petId, vaccinationId } = request.params as { petId: string; vaccinationId: string };
     const clinicId = request.user.activeClinicId;
 
-    const data = await this.service.getCertificateData(clinicId, petId, vaccinationId);
+    const data = await service.getCertificateData(clinicId, petId, vaccinationId);
     return reply.send(data);
   };
 }

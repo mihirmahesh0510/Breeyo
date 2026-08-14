@@ -269,7 +269,7 @@ describe('InventoryItemService', () => {
       expect(repository.create).not.toHaveBeenCalled();
     });
 
-    it.each([0, 5, 12, 18, 28])('accepts gstRate of %i (standard GST slab)', async (gstRate) => {
+    it.each([0, 5, 18, 40])('accepts gstRate of %i (current GST slab)', async (gstRate) => {
       repository.create.mockResolvedValue({ ...mockItem, gstRate });
 
       await service.createItem(mockClinic.id, mockUser.id, {
@@ -286,14 +286,14 @@ describe('InventoryItemService', () => {
       );
     });
 
-    it('rejects gstRate above 28', async () => {
+    it('rejects gstRate above the highest current slab', async () => {
       await expect(
         service.createItem(mockClinic.id, mockUser.id, {
           name: mockItem.name,
           category: mockItem.category,
           unit: mockItem.unit,
           sellingPrice: mockItem.sellingPrice,
-          gstRate: 30,
+          gstRate: 45,
         }),
       ).rejects.toThrow();
 

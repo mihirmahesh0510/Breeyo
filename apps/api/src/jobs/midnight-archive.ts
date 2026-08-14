@@ -8,6 +8,13 @@ import { QueueRepository } from '../modules/queue/queue.repository.js';
  * Schedules midnight auto-archive of queue entries.
  * D-23: Queue resets at midnight IST.
  * D-39: IN_CONSULT entries persist past midnight.
+ *
+ * Admin client by design: cron has no request context (D-30 exemption).
+ * This job runs on a timer with no HTTP request, so there is no `request.db`
+ * and no single `app.clinic_id` to bind — it is cross-clinic by design, since
+ * every clinic's queue resets at the same IST midnight.
+ * `QueueRepository.archiveEntries(today)` therefore takes no `clinicId`; that
+ * is the one intentional unscoped write in the codebase.
  */
 export function scheduleMidnightArchive(prisma: PrismaClient, io: Server) {
   cron.schedule(

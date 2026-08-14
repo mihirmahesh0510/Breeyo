@@ -1,6 +1,7 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import type { DrugService } from './drug.service.js';
+import type { TenantPrismaClient } from '../../lib/prisma-rls.js';
 
 const searchQuerySchema = z.object({
   q: z.string().min(1).max(100),
@@ -25,14 +26,25 @@ function validationError(reply: FastifyReply, issues: { message: string }[]) {
   });
 }
 
-export function createDrugController(drugService: DrugService) {
+/**
+ * D-30: takes a factory rather than a prebuilt service, so every handler
+ * resolves its Prisma handle from `request.db` (the tenant-scoped, RLS-bound
+ * client) instead of sharing a plugin-scope admin client across all clinics.
+ */
+export function createDrugController(
+  buildService: (db: TenantPrismaClient) => DrugService,
+) {
   return {
     async getAllDrugsHandler(request: FastifyRequest, reply: FastifyReply) {
+      const drugService = buildService(request.db);
+
       const drugs = await drugService.getAllDrugs(request.user.activeClinicId);
       return reply.status(200).send({ data: drugs });
     },
 
     async searchDrugsHandler(request: FastifyRequest, reply: FastifyReply) {
+      const drugService = buildService(request.db);
+
       const query = searchQuerySchema.safeParse(request.query);
       if (!query.success) {
         return validationError(reply, query.error.errors);
@@ -47,6 +59,8 @@ export function createDrugController(drugService: DrugService) {
     },
 
     async getDosageRangeHandler(request: FastifyRequest, reply: FastifyReply) {
+      const drugService = buildService(request.db);
+
       const params = dosageParamsSchema.safeParse(request.params);
       if (!params.success) {
         return validationError(reply, params.error.errors);

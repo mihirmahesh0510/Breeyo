@@ -50,7 +50,12 @@ describe('EMR controller — lock endpoints (Bug fix #5)', () => {
     emrService = createMockEmrService();
     lockService = createMockLockService();
     notificationBus = createMockNotificationBus();
-    controller = createEmrController(emrService, lockService, notificationBus);
+    // D-30: the controller now resolves its services per request from
+    // `request.db`, so the test supplies a factory returning the same mocks.
+    controller = createEmrController(
+      () => ({ emrService, lockService }),
+      notificationBus,
+    );
   });
 
   describe('acquireLockHandler', () => {

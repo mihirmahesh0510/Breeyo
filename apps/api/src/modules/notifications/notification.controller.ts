@@ -1,5 +1,6 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import type { NotificationService } from './notification.service.js';
+import type { TenantPrismaClient } from '../../lib/prisma-rls.js';
 import {
   registerDeviceTokenSchema,
   removeDeviceTokenSchema,
@@ -7,7 +8,16 @@ import {
   markReadSchema,
 } from './notification.schema.js';
 
-export function createNotificationController(service: NotificationService) {
+/**
+ * D-30: the four clinic-scoped handlers build their service per request from
+ * `request.db`. The two device-token handlers take the pre-built
+ * `deviceTokenService` instead, because their routes carry `authenticate` only
+ * — no `tenantContext`, so no `request.db`. See `notification.routes.ts`.
+ */
+export function createNotificationController(
+  buildService: (db: TenantPrismaClient) => NotificationService,
+  deviceTokenService: NotificationService,
+) {
   return {
     async registerDeviceTokenHandler(
       request: FastifyRequest,
@@ -18,7 +28,7 @@ export function createNotificationController(service: NotificationService) {
       );
       const userId = request.user.id;
 
-      const { deviceToken, created } = await service.registerDeviceToken(
+      const { deviceToken, created } = await deviceTokenService.registerDeviceToken(
         userId,
         token,
         platform,
@@ -34,7 +44,7 @@ export function createNotificationController(service: NotificationService) {
       const { token } = removeDeviceTokenSchema.body.parse(request.body);
       const userId = request.user.id;
 
-      await service.removeDeviceToken(userId, token);
+      await deviceTokenService.removeDeviceToken(userId, token);
 
       return reply.status(200).send({ data: { success: true } });
     },
@@ -43,6 +53,7 @@ export function createNotificationController(service: NotificationService) {
       request: FastifyRequest,
       reply: FastifyReply,
     ) {
+      const service = buildService(request.db);
       const query = listNotificationsSchema.querystring.parse(request.query);
       const userId = request.user.id;
       const clinicId = request.user.activeClinicId;
@@ -60,6 +71,7 @@ export function createNotificationController(service: NotificationService) {
       request: FastifyRequest,
       reply: FastifyReply,
     ) {
+      const service = buildService(request.db);
       const userId = request.user.id;
       const clinicId = request.user.activeClinicId;
 
@@ -69,6 +81,7 @@ export function createNotificationController(service: NotificationService) {
     },
 
     async markReadHandler(request: FastifyRequest, reply: FastifyReply) {
+      const service = buildService(request.db);
       const { id } = markReadSchema.params.parse(request.params);
       const userId = request.user.id;
 
@@ -87,6 +100,7 @@ export function createNotificationController(service: NotificationService) {
     },
 
     async markAllReadHandler(request: FastifyRequest, reply: FastifyReply) {
+      const service = buildService(request.db);
       const userId = request.user.id;
       const clinicId = request.user.activeClinicId;
 

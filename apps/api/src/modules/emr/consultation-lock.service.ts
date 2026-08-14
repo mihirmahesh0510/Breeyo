@@ -1,4 +1,4 @@
-import type { PrismaClient } from '@prisma/client';
+import type { TenantPrismaClient } from '../../lib/prisma-rls.js';
 
 const LOCK_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
@@ -17,7 +17,7 @@ export interface LockStatus {
 }
 
 export class ConsultationLockService {
-  constructor(private readonly prisma: PrismaClient) {}
+  constructor(private readonly prisma: TenantPrismaClient) {}
 
   /**
    * Acquires a consultation lock. If stale lock exists, takes it over.

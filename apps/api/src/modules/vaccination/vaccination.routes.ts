@@ -4,11 +4,15 @@ import { VaccinationService } from './vaccination.service.js';
 import { VaccinationController } from './vaccination.controller.js';
 import { authenticate } from '../../middleware/authenticate.js';
 import { tenantContext } from '../../middleware/tenant-context.js';
+import type { TenantPrismaClient } from '../../lib/prisma-rls.js';
 
 export default async function vaccinationRoutes(fastify: FastifyInstance) {
-  const repository = new VaccinationRepository(fastify.prisma);
-  const service = new VaccinationService(repository, fastify.prisma);
-  const controller = new VaccinationController(service);
+  // D-30: vaccination_records and deworming_records are clinic-scoped and only
+  // isolated when reached via the tenant handle.
+  const buildService = (db: TenantPrismaClient) =>
+    new VaccinationService(new VaccinationRepository(db), db);
+
+  const controller = new VaccinationController(buildService);
 
   const preHandler = [authenticate, tenantContext];
 

@@ -1,4 +1,5 @@
-import { Prisma, type PrismaClient } from '@prisma/client';
+import { Prisma } from '@prisma/client';
+import type { TenantPrismaClient, TenantTransactionClient } from '../../lib/prisma-rls.js';
 import crypto from 'crypto';
 import { CATEGORY_VALUES, UNIT_VALUES, INVENTORY_CATEGORIES, INVENTORY_UNITS } from '@breeyo/types';
 import type { AddBarcodeResult, InventorySummary } from '@breeyo/types';
@@ -37,7 +38,7 @@ const ITEM_INCLUDE = {
 } as const;
 
 export class InventoryItemRepository {
-  constructor(private readonly prisma: PrismaClient) {}
+  constructor(private readonly prisma: TenantPrismaClient) {}
 
   /**
    * D-61: upserts a ClinicInventoryCategory (or ClinicInventoryUnit, in the
@@ -47,7 +48,7 @@ export class InventoryItemRepository {
    * `update`, which compiles to the same upsert-or-noop statement).
    */
   private async upsertCustomCategoryIfNeeded(
-    tx: Prisma.TransactionClient,
+    tx: TenantTransactionClient,
     clinicId: string,
     category: string,
   ): Promise<void> {
@@ -60,7 +61,7 @@ export class InventoryItemRepository {
   }
 
   private async upsertCustomUnitIfNeeded(
-    tx: Prisma.TransactionClient,
+    tx: TenantTransactionClient,
     clinicId: string,
     unit: string,
   ): Promise<void> {

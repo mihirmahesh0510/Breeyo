@@ -31,6 +31,12 @@ model User {
   deviceTokens       DeviceToken[]
   consultationsAsVet Consultation[] @relation("ConsultationVet")
 
+  // Phase 6 back-relations
+  invoicesCreated   Invoice[]    @relation("InvoiceCreatedBy")
+  paymentsRecorded  Payment[]    @relation("PaymentRecordedBy")
+  refundsCreated    Refund[]     @relation("RefundCreatedBy")
+  creditNotesIssued CreditNote[] @relation("CreditNoteIssuedBy")
+
   @@map("users")
 }
 
@@ -48,6 +54,27 @@ model Clinic {
   createdAt         DateTime  @default(now()) @map("created_at")
   updatedAt         DateTime  @updatedAt @map("updated_at")
 
+  // ─── Phase 6 billing settings (D-29) ───────────────────────────────
+  // GST defaults OFF (Finding G3): most solo vets are below the ₹20 lakh
+  // registration threshold, and collecting GST while unregistered is a
+  // Section 122 offence. Turning this on requires a GSTIN.
+  gstEnabled               Boolean  @default(false) @map("gst_enabled")
+  stateCode                String?  @map("state_code") @db.Char(2) // 2-digit GST state code, chars 1-2 of the GSTIN
+  defaultGstRate           Decimal? @map("default_gst_rate") @db.Decimal(5, 2)
+  defaultDueDays           Int      @default(0) @map("default_due_days") // D-23
+  bankDetails              String?  @map("bank_details") // displayed on the invoice PDF (D-14)
+  invoiceFooterText        String?  @map("invoice_footer_text")
+  razorpayKeyId            String?  @map("razorpay_key_id") // public key id, safe at rest
+  // The two *_enc columns hold AES-256-GCM ciphertext produced by lib/crypto.ts
+  // (plan 06-06). They MUST NEVER hold plaintext and are never serialized by
+  // any API response. There is deliberately no plaintext-named twin (T-06-07).
+  razorpayKeySecretEnc     String?  @map("razorpay_key_secret_enc")
+  razorpayWebhookSecretEnc String?  @map("razorpay_webhook_secret_enc")
+  // Unguessable per-clinic path segment for POST /webhooks/razorpay/:token.
+  // Razorpay sends no tenant identifier, so the token IS the tenant routing key.
+  razorpayWebhookToken     String?  @unique @map("razorpay_webhook_token")
+  razorpayTestMode         Boolean  @default(true) @map("razorpay_test_mode")
+
   owner               User                      @relation(fields: [ownerId], references: [id])
   members             ClinicMember[]
   petOwners           PetOwner[]
@@ -62,6 +89,18 @@ model Clinic {
   inventoryItems      InventoryItem[]
   inventoryCategories ClinicInventoryCategory[]
   inventoryUnits      ClinicInventoryUnit[]
+
+  // Phase 6 back-relations
+  invoices             Invoice[]
+  invoiceLineItems     InvoiceLineItem[]
+  payments             Payment[]
+  paymentReceipts      PaymentReceipt[]
+  refunds              Refund[]
+  creditNotes          CreditNote[]
+  creditNoteLineItems  CreditNoteLineItem[]
+  invoiceNumberCounter InvoiceNumberCounter[]
+  webhookEvents        WebhookEvent[]
+  billingAuditLog      BillingAuditLog[]
 
   @@map("clinics")
 }
@@ -241,6 +280,8 @@ model PetOwner {
   clinic         Clinic          @relation(fields: [clinicId], references: [id])
   pets           Pet[]
   stockMovements StockMovement[] // D-60: counter-sale owner attribution
+  invoices       Invoice[] // Phase 6 (D-27). FK is RESTRICT, which is what
+  // blocks deleting an owner who still has invoices (D-47).
 
   @@unique([clinicId, mobile])
   @@index([clinicId])
@@ -271,6 +312,7 @@ model Pet {
   consultations      Consultation[]
   vaccinationRecords VaccinationRecord[]
   dewormingRecords   DewormingRecord[]
+  invoices           Invoice[] // Phase 6 (D-25 pet-profile Invoices tab, D-47)
 
   @@index([clinicId])
   @@index([clinicId, ownerId])
@@ -352,11 +394,21 @@ model Consultation {
   attachments        ConsultationAttachment[]
   vaccinationRecords VaccinationRecord[]
   dewormingRecords   DewormingRecord[]
+  invoices           Invoice[] // Phase 6 (D-03 End-Consultation draft invoice)
 
   @@index([clinicId])
   @@index([clinicId, petId])
   @@index([clinicId, vetId])
   @@index([clinicId, status])
+  // RPT-01 / D-33 (Phase 6, plan 06-12): the billing dashboard's
+  // patients-seen-today card is `COUNT(DISTINCT pet_id)` filtered on
+  // `(clinic_id, status, finalized_at)`. The `(clinicId, status)` index above
+  // stops one column short, leaving the `finalized_at >= <IST midnight>`
+  // predicate to a filter over every consultation the clinic has ever
+  // finalized — a set that only grows. This is a Phase 4 model touched by a
+  // Phase 6 plan deliberately: the index belongs with the table, not with the
+  // query.
+  @@index([clinicId, status, finalizedAt])
   @@map("consultations")
 }
 
@@ -553,7 +605,8 @@ model ServiceCatalog {
   createdAt       DateTime @default(now()) @map("created_at")
   updatedAt       DateTime @updatedAt @map("updated_at")
 
-  clinic Clinic @relation(fields: [clinicId], references: [id])
+  clinic           Clinic            @relation(fields: [clinicId], references: [id])
+  invoiceLineItems InvoiceLineItem[] // Phase 6
 
   @@index([clinicId, isActive])
   @@index([clinicId, category])
@@ -580,10 +633,11 @@ model InventoryItem {
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
-  clinic    Clinic             @relation(fields: [clinicId], references: [id])
-  barcodes  InventoryBarcode[]
-  batches   StockBatch[]
-  movements StockMovement[]
+  clinic           Clinic             @relation(fields: [clinicId], references: [id])
+  barcodes         InventoryBarcode[]
+  batches          StockBatch[]
+  movements        StockMovement[]
+  invoiceLineItems InvoiceLineItem[] // Phase 6
 
   @@index([clinicId, name])
   @@index([clinicId, category])
@@ -653,9 +707,10 @@ model StockMovement {
   reversedMovement   StockMovement? @relation("MovementReversal", fields: [reversedMovementId], references: [id])
   reversal           StockMovement? @relation("MovementReversal")
 
-  item  InventoryItem @relation(fields: [itemId], references: [id])
-  batch StockBatch?   @relation(fields: [batchId], references: [id])
-  owner PetOwner?     @relation(fields: [ownerId], references: [id])
+  item             InventoryItem     @relation(fields: [itemId], references: [id])
+  batch            StockBatch?       @relation(fields: [batchId], references: [id])
+  owner            PetOwner?         @relation(fields: [ownerId], references: [id])
+  invoiceLineItems InvoiceLineItem[] // Phase 6: BIL-01 quantity provenance
 
   @@index([itemId, createdAt(sort: Desc)])
   @@index([clinicId, createdAt(sort: Desc)])
@@ -691,4 +746,437 @@ model ClinicInventoryUnit {
 
   @@unique([clinicId, value])
   @@map("clinic_inventory_units")
+}
+
+// ─── Phase 6: Invoicing & Payments ────────────────
+//
+// Money representation (D-31): every monetary column in this section is `Int`
+// paise, matching the already-shipped `ServiceCatalog.price: Int`. No money
+// column below is floating-point, and none is Decimal. Phase 5's
+// `InventoryItem.sellingPrice` / `StockMovement.unitPrice` stay `Decimal(10,2)`
+// rupees and are converted exactly once, at the line-item boundary, by the
+// `toPaise()` adapter (plan 06-05). Decimal is used ONLY for tax *rates*.
+//
+// Audit re-derivability: every rate, price and tax amount a finalized invoice
+// depends on is frozen onto the invoice/line rows at finalize. A historical
+// invoice must be re-derivable without reading current clinic settings, current
+// catalog prices or the current GST slab table.
+
+model Invoice {
+  id       String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clinicId String @map("clinic_id") @db.Uuid
+
+  // Null while DRAFT (D-15): a number is assigned only at finalize, inside the
+  // finalize transaction, so a rolled-back finalize never burns a number and
+  // Rule 46(b) consecutiveness holds.
+  invoiceNumber String? @map("invoice_number")
+  // DRAFT | FINALIZED | UNPAID | PARTIALLY_PAID | PAID | OVERDUE | VOIDED (D-20)
+  status        String  @default("DRAFT")
+  // consultation | manual | quick_sale (D-03, D-04)
+  source        String  @default("manual")
+
+  consultationId String? @map("consultation_id") @db.Uuid
+  petId          String? @map("pet_id") @db.Uuid
+  ownerId        String? @map("owner_id") @db.Uuid
+  createdById    String  @map("created_by_id") @db.Uuid
+
+  // ─── GST snapshot, frozen at finalize (D-08/D-17 superseding, Finding G4) ──
+  // invoice | tax_invoice | bill_of_supply | invoice_cum_bill_of_supply
+  documentType           String? @map("document_type")
+  placeOfSupplyStateCode String? @map("place_of_supply_state_code") @db.Char(2)
+  isInterState           Boolean @default(false) @map("is_inter_state")
+  gstEnabledSnapshot     Boolean @default(false) @map("gst_enabled_snapshot")
+  clinicGstinSnapshot    String? @map("clinic_gstin_snapshot")
+
+  // ─── Money, all integer paise ─────────────────────────────────────────────
+  subtotalPaise        Int     @default(0) @map("subtotal_paise") // paise
+  lineDiscountPaise    Int     @default(0) @map("line_discount_paise") // paise
+  invoiceDiscountType  String? @map("invoice_discount_type") // percent | flat (D-07)
+  invoiceDiscountValue Int?    @map("invoice_discount_value") // basis: paise when flat, whole percent 0-100 when percent
+  invoiceDiscountPaise Int     @default(0) @map("invoice_discount_paise") // paise
+  taxableValuePaise    Int     @default(0) @map("taxable_value_paise") // paise
+  cgstPaise            Int     @default(0) @map("cgst_paise") // paise
+  sgstPaise            Int     @default(0) @map("sgst_paise") // paise
+  igstPaise            Int     @default(0) @map("igst_paise") // paise
+  // Section 170 / Rule 51 delta so subtotal + taxes + roundOff = grandTotal exactly
+  roundOffPaise        Int     @default(0) @map("round_off_paise") // paise
+  grandTotalPaise      Int     @default(0) @map("grand_total_paise") // paise
+  amountPaidPaise      Int     @default(0) @map("amount_paid_paise") // paise
+  creditedPaise        Int     @default(0) @map("credited_paise") // paise
+  // May go NEGATIVE on overpayment (D-36) — deliberately NOT CHECK-constrained
+  // to >= 0, because an overpaid invoice must be representable in order to be
+  // detected and flagged.
+  balancePaise         Int     @default(0) @map("balance_paise") // paise
+
+  dueDate DateTime? @map("due_date") // D-23
+  notes   String?
+
+  finalizedAt       DateTime? @map("finalized_at")
+  voidedAt          DateTime? @map("voided_at")
+  voidReason        String?   @map("void_reason")
+  // D-26/D-34: void always reverses every stock movement tied to the invoice,
+  // however old. This records that the reversal actually ran.
+  voidRestoredStock Boolean   @default(false) @map("void_restored_stock")
+
+  // ─── Billing exceptions (D-35, D-36) ──────────────────────────────────────
+  // Non-null means the invoice needs manual staff resolution and further
+  // status-changing actions are blocked. Values: payment_after_void (D-35),
+  // overpayment (D-36).
+  exceptionFlag         String?   @map("exception_flag")
+  exceptionDetectedAt   DateTime? @map("exception_detected_at")
+  exceptionResolvedAt   DateTime? @map("exception_resolved_at")
+  exceptionResolvedById String?   @map("exception_resolved_by_id") @db.Uuid
+  exceptionNotes        String?   @map("exception_notes")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  clinic       Clinic        @relation(fields: [clinicId], references: [id])
+  // Restrict, not the Prisma default SET NULL for an optional relation: an
+  // invoice is a record of account with a 6-year retention obligation (GST
+  // Section 36), so silently severing it from its patient/owner on a delete
+  // would destroy audit context. D-47's "settle, then delete or merge" flow
+  // must repoint these columns explicitly before the parent row can go.
+  pet          Pet?          @relation(fields: [petId], references: [id], onDelete: Restrict)
+  owner        PetOwner?     @relation(fields: [ownerId], references: [id], onDelete: Restrict)
+  consultation Consultation? @relation(fields: [consultationId], references: [id], onDelete: Restrict)
+  createdBy    User          @relation("InvoiceCreatedBy", fields: [createdById], references: [id])
+
+  lineItems   InvoiceLineItem[]
+  payments    Payment[]
+  refunds     Refund[]
+  creditNotes CreditNote[]
+  receipts    PaymentReceipt[]
+
+  @@unique([clinicId, invoiceNumber])
+  @@index([clinicId, status])
+  @@index([clinicId, createdAt])
+  @@index([clinicId, dueDate])
+  @@index([clinicId, petId])
+  @@index([clinicId, exceptionFlag])
+  @@index([consultationId])
+  @@map("invoices")
+}
+
+model InvoiceLineItem {
+  id        String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clinicId  String @map("clinic_id") @db.Uuid
+  invoiceId String @map("invoice_id") @db.Uuid
+
+  lineType  String @map("line_type") // service | product
+  sortOrder Int    @default(0) @map("sort_order")
+
+  serviceCatalogId String? @map("service_catalog_id") @db.Uuid
+  inventoryItemId  String? @map("inventory_item_id") @db.Uuid
+
+  /// THE DEDUCT/SKIP DISCRIMINATOR — do not get this wrong.
+  ///
+  /// Non-null: Phase 5's dispense flow ALREADY decremented a batch for this
+  /// line, and this is the movement that did it. Finalize (plan 06-07) must
+  /// stamp `StockMovement.invoiceId` on it and MUST NOT deduct again.
+  ///
+  /// Null on a `product` line: no stock has moved yet, so finalize MUST deduct
+  /// (FIFO, under row locks) and create the movement itself.
+  ///
+  /// It is also the BIL-01 quantity provenance: `quantity` below is copied from
+  /// `ABS(StockMovement.quantity)`, because `Prescription` carries no quantity.
+  stockMovementId String? @map("stock_movement_id") @db.Uuid
+
+  description String
+  hsnSacCode  String? @map("hsn_sac_code")
+  quantity    Int
+
+  unitPricePaise                Int     @map("unit_price_paise") // paise, frozen at add-to-invoice
+  discountType                  String? @map("discount_type") // percent | flat (D-07)
+  discountValue                 Int?    @map("discount_value") // basis: paise when flat, whole percent 0-100 when percent
+  lineDiscountPaise             Int     @default(0) @map("line_discount_paise") // paise
+  // Pro-rata share of the invoice-level discount (RESEARCH Pitfall 5): an
+  // invoice-level discount must be pushed down to lines before GST, or the tax
+  // base is wrong.
+  allocatedInvoiceDiscountPaise Int     @default(0) @map("allocated_invoice_discount_paise") // paise
+
+  // exempt | taxable | nil_rated (Finding G1: veterinary healthcare is exempt
+  // by law, so a single flat rate across all lines is an incorrect tax charge)
+  taxTreatment      String  @default("taxable") @map("tax_treatment")
+  // The rate APPLIED, frozen at finalize. Never recompute a historical line
+  // from the current slab table — slabs change by notification (Finding G2).
+  gstRatePercent    Decimal @default(0) @map("gst_rate_percent") @db.Decimal(5, 2)
+  taxableValuePaise Int     @default(0) @map("taxable_value_paise") // paise
+  cgstPaise         Int     @default(0) @map("cgst_paise") // paise
+  sgstPaise         Int     @default(0) @map("sgst_paise") // paise
+  igstPaise         Int     @default(0) @map("igst_paise") // paise
+  lineTotalPaise    Int     @default(0) @map("line_total_paise") // paise
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  clinic         Clinic          @relation(fields: [clinicId], references: [id])
+  invoice        Invoice         @relation(fields: [invoiceId], references: [id])
+  serviceCatalog ServiceCatalog? @relation(fields: [serviceCatalogId], references: [id])
+  inventoryItem  InventoryItem?  @relation(fields: [inventoryItemId], references: [id])
+  stockMovement  StockMovement?  @relation(fields: [stockMovementId], references: [id])
+
+  @@index([clinicId, invoiceId])
+  @@index([invoiceId, sortOrder])
+  @@index([stockMovementId])
+  @@map("invoice_line_items")
+}
+
+model Payment {
+  id        String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clinicId  String @map("clinic_id") @db.Uuid
+  invoiceId String @map("invoice_id") @db.Uuid
+
+  method  String // cash | upi | card (D-10)
+  channel String // manual | razorpay
+
+  amountPaise Int    @map("amount_paise") // paise
+  status      String @default("pending") // pending | captured | failed | expired | cancelled
+
+  razorpayPaymentLinkId String?   @map("razorpay_payment_link_id")
+  razorpayPaymentId     String?   @map("razorpay_payment_id")
+  shortUrl              String?   @map("short_url")
+  // D-39: one Razorpay link may settle several invoices for the same owner.
+  // Rows sharing a paymentGroupId were created by one combined link.
+  paymentGroupId        String?   @map("payment_group_id") @db.Uuid
+  expiresAt             DateTime? @map("expires_at") // D-11
+  paidAt                DateTime? @map("paid_at")
+  failureReason         String?   @map("failure_reason")
+  recordedById          String?   @map("recorded_by_id") @db.Uuid
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  clinic     Clinic           @relation(fields: [clinicId], references: [id])
+  invoice    Invoice          @relation(fields: [invoiceId], references: [id])
+  recordedBy User?            @relation("PaymentRecordedBy", fields: [recordedById], references: [id])
+  receipts   PaymentReceipt[]
+  refunds    Refund[]
+
+  // At most one payment row per (link, invoice). This is the idempotency key a
+  // webhook uses to find the row it must settle. It is a composite rather than
+  // a bare unique on the link id so that D-39's combined multi-invoice link can
+  // legitimately produce one row per covered invoice.
+  @@unique([razorpayPaymentLinkId, invoiceId])
+  @@index([clinicId, invoiceId])
+  @@index([invoiceId, paidAt])
+  @@index([clinicId, status, expiresAt])
+  @@index([paymentGroupId])
+  @@map("payments")
+}
+
+model PaymentReceipt {
+  id        String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clinicId  String @map("clinic_id") @db.Uuid
+  paymentId String @map("payment_id") @db.Uuid
+  invoiceId String @map("invoice_id") @db.Uuid
+
+  receiptNumber  String   @map("receipt_number")
+  amountPaise    Int      @map("amount_paise") // paise
+  method         String
+  transactionRef String?  @map("transaction_ref")
+  issuedAt       DateTime @default(now()) @map("issued_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  clinic  Clinic  @relation(fields: [clinicId], references: [id])
+  payment Payment @relation(fields: [paymentId], references: [id])
+  invoice Invoice @relation(fields: [invoiceId], references: [id])
+
+  @@unique([clinicId, receiptNumber])
+  @@index([clinicId, invoiceId])
+  @@map("payment_receipts")
+}
+
+model Refund {
+  id        String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clinicId  String  @map("clinic_id") @db.Uuid
+  invoiceId String  @map("invoice_id") @db.Uuid
+  // D-42: split-payment refunds are issued per leg, so a refund points at the
+  // specific payment it reverses. Null means a whole-invoice cash adjustment.
+  paymentId String? @map("payment_id") @db.Uuid
+
+  method      String // razorpay | cash (D-12)
+  amountPaise Int    @map("amount_paise") // paise
+  status      String @default("pending") // pending | processed | failed
+
+  razorpayRefundId String?   @map("razorpay_refund_id")
+  reason           String?
+  processedAt      DateTime? @map("processed_at")
+  failureReason    String?   @map("failure_reason")
+  createdById      String    @map("created_by_id") @db.Uuid
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  clinic    Clinic   @relation(fields: [clinicId], references: [id])
+  invoice   Invoice  @relation(fields: [invoiceId], references: [id])
+  payment   Payment? @relation(fields: [paymentId], references: [id])
+  createdBy User     @relation("RefundCreatedBy", fields: [createdById], references: [id])
+
+  @@unique([razorpayRefundId])
+  @@index([clinicId, invoiceId])
+  @@index([clinicId, status])
+  @@map("refunds")
+}
+
+model CreditNote {
+  id        String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clinicId  String @map("clinic_id") @db.Uuid
+  invoiceId String @map("invoice_id") @db.Uuid
+
+  creditNoteNumber String  @map("credit_note_number") // CN-YYYYMM-XXXX (D-19)
+  reason           String
+  notes            String?
+
+  subtotalPaise     Int @default(0) @map("subtotal_paise") // paise
+  taxableValuePaise Int @default(0) @map("taxable_value_paise") // paise
+  cgstPaise         Int @default(0) @map("cgst_paise") // paise
+  sgstPaise         Int @default(0) @map("sgst_paise") // paise
+  igstPaise         Int @default(0) @map("igst_paise") // paise
+  roundOffPaise     Int @default(0) @map("round_off_paise") // paise
+  // D-22: a credit note carries POSITIVE amounts and reduces the referenced
+  // invoice's balance by reference. It is not a negative-amount invoice row.
+  totalPaise        Int @default(0) @map("total_paise") // paise
+
+  issuedById String   @map("issued_by_id") @db.Uuid
+  // D-43: revenue reporting attributes a credit note to the month it was
+  // ISSUED in — no retroactive restatement of the original invoice's month.
+  issuedAt   DateTime @default(now()) @map("issued_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  clinic    Clinic               @relation(fields: [clinicId], references: [id])
+  invoice   Invoice              @relation(fields: [invoiceId], references: [id])
+  issuedBy  User                 @relation("CreditNoteIssuedBy", fields: [issuedById], references: [id])
+  lineItems CreditNoteLineItem[]
+
+  @@unique([clinicId, creditNoteNumber])
+  @@index([clinicId, invoiceId])
+  @@index([clinicId, issuedAt])
+  @@map("credit_notes")
+}
+
+model CreditNoteLineItem {
+  id                String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clinicId          String  @map("clinic_id") @db.Uuid
+  creditNoteId      String  @map("credit_note_id") @db.Uuid
+  // Null when crediting an amount that does not map to a single original line.
+  invoiceLineItemId String? @map("invoice_line_item_id") @db.Uuid
+
+  description String
+  hsnSacCode  String? @map("hsn_sac_code")
+  quantity    Int
+
+  taxTreatment      String  @map("tax_treatment")
+  gstRatePercent    Decimal @map("gst_rate_percent") @db.Decimal(5, 2)
+  taxableValuePaise Int     @map("taxable_value_paise") // paise
+  cgstPaise         Int     @default(0) @map("cgst_paise") // paise
+  sgstPaise         Int     @default(0) @map("sgst_paise") // paise
+  igstPaise         Int     @default(0) @map("igst_paise") // paise
+  totalPaise        Int     @map("total_paise") // paise
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  clinic     Clinic     @relation(fields: [clinicId], references: [id])
+  creditNote CreditNote @relation(fields: [creditNoteId], references: [id])
+
+  @@index([clinicId, creditNoteId])
+  @@map("credit_note_line_items")
+}
+
+/// Gap-free per-clinic document numbering (D-15, D-19, D-38).
+///
+/// Deliberately NOT a PostgreSQL SEQUENCE: sequences do not roll back, so a
+/// failed finalize would burn a number and leave a gap that Rule 46(b)'s
+/// "consecutive serial number" requirement cannot survive. The
+/// `INSERT ... ON CONFLICT (clinic_id, doc_type, period) DO UPDATE SET
+/// last_number = last_number + 1 RETURNING last_number` upsert takes a row lock
+/// (serializing concurrent finalizes for the same clinic) and rolls back with
+/// the enclosing transaction.
+///
+/// There is no `id` and no `updatedAt`: the composite primary key IS the
+/// conflict target the upsert needs.
+model InvoiceNumberCounter {
+  clinicId String @map("clinic_id") @db.Uuid
+  // INV (invoices, D-15) | CN (credit notes, D-19) | RCT (payment receipts,
+  // D-13, added by plan 06-09). Free-text by design: the primary key below
+  // scopes the counter, so a new document type is a data addition rather than
+  // a migration.
+  docType  String @map("doc_type")
+
+  /// The RESET SCOPE key, not a display field.
+  ///
+  /// D-38 (amends D-15): the sequence resets at the start of the Indian
+  /// financial year (1 April), not every calendar month, so this holds an IST
+  /// financial-year key such as `2026-27`. The rendered document number keeps
+  /// the `INV-YYYYMM-XXXX` shape (D-15) — the month is there for readability
+  /// and the XXXX component is scoped to this row.
+  ///
+  /// Typed VarChar(12) rather than Char(6) precisely so an FY key fits without
+  /// blank padding, and so a future change of reset cadence is a data decision
+  /// rather than a migration.
+  period String @map("period") @db.VarChar(12)
+
+  lastNumber Int @default(0) @map("last_number")
+
+  clinic Clinic @relation(fields: [clinicId], references: [id])
+
+  @@id([clinicId, docType, period])
+  @@map("invoice_number_counters")
+}
+
+/// Razorpay webhook inbox (BIL-06, RESEARCH Pattern 5).
+///
+/// The row is the durable record; the BullMQ job carries only this row's id.
+/// `eventId` (the `x-razorpay-event-id` header) is UNIQUE, which is what makes
+/// Razorpay's documented duplicate delivery a no-op: the insert conflicts, zero
+/// rows are affected, and the handler fast-acks 200 without re-applying the
+/// payment (T-06-09).
+model WebhookEvent {
+  id       String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clinicId String @map("clinic_id") @db.Uuid
+
+  eventId    String @unique @map("event_id")
+  eventType  String @map("event_type")
+  // Untrusted external input, persisted verbatim BEFORE it is trusted, so the
+  // HMAC can be re-verified and the event replayed during an investigation.
+  rawPayload String @map("raw_payload") @db.Text
+
+  signatureVerified Boolean   @default(false) @map("signature_verified")
+  receivedAt        DateTime  @default(now()) @map("received_at")
+  processedAt       DateTime? @map("processed_at")
+  processingError   String?   @map("processing_error")
+
+  clinic Clinic @relation(fields: [clinicId], references: [id])
+
+  @@index([clinicId, eventType])
+  @@index([processedAt])
+  @@map("webhook_events")
+}
+
+/// Financial audit trail (D-32).
+///
+/// Structurally mirrors `AuthAuditLog`, but is a SEPARATE table because GST
+/// Section 36 mandates 6-year retention for records of account, independent of
+/// whatever retention policy auth events end up with. Append-only: the RLS
+/// policy set in post-migrate.sql deliberately omits UPDATE and DELETE.
+model BillingAuditLog {
+  id        String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clinicId  String  @map("clinic_id") @db.Uuid
+  userId    String? @map("user_id") @db.Uuid
+  event     String
+  invoiceId String? @map("invoice_id") @db.Uuid
+  metadata  Json?
+  ipAddress String? @map("ip_address")
+  userAgent String? @map("user_agent")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  clinic Clinic @relation(fields: [clinicId], references: [id])
+
+  @@index([clinicId])
+  @@index([userId])
+  @@index([event])
+  @@index([invoiceId])
+  @@map("billing_audit_log")
 }

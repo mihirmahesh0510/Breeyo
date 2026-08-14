@@ -31,6 +31,19 @@ export class QueueService {
 
     const today = QueueRepository.getTodayIST();
 
+    // D-30: the pet must belong to the calling clinic. RLS hides other
+    // clinics' pets from the tenant handle, so without this check the insert
+    // fails on the invisible relation and surfaces as a 500 instead of a
+    // clean 404. Explicit filter first, RLS as the backstop.
+    const pet = await this.repository.findPetInClinic(params.clinicId, parsed.petId);
+
+    if (!pet) {
+      const error = new Error('Pet not found') as Error & { statusCode: number; code: string };
+      error.statusCode = 404;
+      error.code = 'PET_NOT_FOUND';
+      throw error;
+    }
+
     // Check for existing active entry (WAITING or IN_CONSULT)
     const activeEntry = await this.repository.findTodayActiveEntryForPet(
       params.clinicId,

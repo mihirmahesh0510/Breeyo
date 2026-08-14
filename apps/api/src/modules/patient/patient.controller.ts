@@ -1,5 +1,6 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import type { PatientService } from './patient.service.js';
+import type { TenantPrismaClient } from '../../lib/prisma-rls.js';
 import {
   ownerRegistrationSchema,
   petRegistrationSchema,
@@ -23,9 +24,18 @@ function validationError(reply: FastifyReply, issues: { message: string }[]) {
   });
 }
 
-export function createPatientController(patientService: PatientService) {
+/**
+ * D-30: takes a factory rather than a prebuilt service, so every handler
+ * resolves its Prisma handle from `request.db` (the tenant-scoped, RLS-bound
+ * client) instead of sharing a plugin-scope admin client across all clinics.
+ */
+export function createPatientController(
+  buildService: (db: TenantPrismaClient) => PatientService,
+) {
   return {
     async registerOwnerHandler(request: FastifyRequest, reply: FastifyReply) {
+      const patientService = buildService(request.db);
+
       const result = ownerRegistrationSchema.safeParse(request.body);
       if (!result.success) {
         return validationError(reply, result.error.errors);
@@ -40,6 +50,8 @@ export function createPatientController(patientService: PatientService) {
     },
 
     async registerPetHandler(request: FastifyRequest, reply: FastifyReply) {
+      const patientService = buildService(request.db);
+
       const params = ownerParamsSchema.safeParse(request.params);
       if (!params.success) {
         return validationError(reply, params.error.errors);
@@ -60,6 +72,8 @@ export function createPatientController(patientService: PatientService) {
     },
 
     async registerPatientHandler(request: FastifyRequest, reply: FastifyReply) {
+      const patientService = buildService(request.db);
+
       const result = registerPatientBodySchema.safeParse(request.body);
       if (!result.success) {
         return validationError(reply, result.error.errors);
@@ -75,6 +89,8 @@ export function createPatientController(patientService: PatientService) {
     },
 
     async lookupByMobileHandler(request: FastifyRequest, reply: FastifyReply) {
+      const patientService = buildService(request.db);
+
       const query = mobileLookupQuerySchema.safeParse(request.query);
       if (!query.success) {
         return validationError(reply, query.error.errors);
@@ -95,6 +111,8 @@ export function createPatientController(patientService: PatientService) {
     },
 
     async getOwnerDetailHandler(request: FastifyRequest, reply: FastifyReply) {
+      const patientService = buildService(request.db);
+
       const params = ownerParamsSchema.safeParse(request.params);
       if (!params.success) {
         return validationError(reply, params.error.errors);
@@ -115,6 +133,8 @@ export function createPatientController(patientService: PatientService) {
     },
 
     async searchPatientsHandler(request: FastifyRequest, reply: FastifyReply) {
+      const patientService = buildService(request.db);
+
       const query = searchQuerySchema.safeParse(request.query);
       if (!query.success) {
         return validationError(reply, query.error.errors);
@@ -130,6 +150,8 @@ export function createPatientController(patientService: PatientService) {
     },
 
     async getRecentPatientsHandler(request: FastifyRequest, reply: FastifyReply) {
+      const patientService = buildService(request.db);
+
       const query = recentQuerySchema.safeParse(request.query);
       if (!query.success) {
         return validationError(reply, query.error.errors);
@@ -144,6 +166,8 @@ export function createPatientController(patientService: PatientService) {
     },
 
     async getPetProfileHandler(request: FastifyRequest, reply: FastifyReply) {
+      const patientService = buildService(request.db);
+
       const params = petParamsSchema.safeParse(request.params);
       if (!params.success) {
         return validationError(reply, params.error.errors);
@@ -164,6 +188,8 @@ export function createPatientController(patientService: PatientService) {
     },
 
     async updatePetHandler(request: FastifyRequest, reply: FastifyReply) {
+      const patientService = buildService(request.db);
+
       const params = petParamsSchema.safeParse(request.params);
       if (!params.success) {
         return validationError(reply, params.error.errors);

@@ -1,7 +1,7 @@
-import type { PrismaClient } from '@prisma/client';
+import type { DbClient } from '../../lib/prisma-rls.js';
 
 export class DrugRepository {
-  constructor(private readonly prisma: PrismaClient) {}
+  constructor(private readonly prisma: DbClient) {}
 
   /**
    * Drugs are either global (clinicId null, shared seed data) or

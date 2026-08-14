@@ -47,6 +47,10 @@ export default function AppLayout() {
         name="owner/[ownerId]"
         options={{ title: 'Owner Detail' }}
       />
+      <Stack.Screen
+        name="billing/settings"
+        options={{ title: 'Billing Settings' }}
+      />
     </Stack>
   );
 }

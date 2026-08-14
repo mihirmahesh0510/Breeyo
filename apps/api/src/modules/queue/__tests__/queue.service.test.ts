@@ -5,6 +5,10 @@ import type { Server } from 'socket.io';
 
 function createMockRepository(): QueueRepository {
   return {
+    // D-30: checkIn verifies the pet belongs to the calling clinic first.
+    // Default to "found" so the existing check-in cases exercise the paths
+    // they were written for; the not-found path is asserted explicitly below.
+    findPetInClinic: vi.fn().mockResolvedValue({ id: PET_ID }),
     findTodayActiveEntryForPet: vi.fn(),
     findTodayDoneEntryForPet: vi.fn(),
     countWaiting: vi.fn(),
@@ -167,6 +171,22 @@ describe('QueueService', () => {
           petId: PET_ID,
         }),
       ).rejects.toThrow('Pet is already in today\'s queue');
+    });
+
+    it('rejects with PET_NOT_FOUND when the pet is not in the calling clinic (D-30)', async () => {
+      vi.mocked(repo.findPetInClinic).mockResolvedValue(null);
+
+      await expect(
+        service.checkIn({
+          clinicId: CLINIC_ID,
+          userId: USER_ID,
+          petId: PET_ID,
+        }),
+      ).rejects.toMatchObject({ statusCode: 404, code: 'PET_NOT_FOUND' });
+
+      // The clinic-scoped lookup runs before any queue state is touched.
+      expect(repo.findPetInClinic).toHaveBeenCalledWith(CLINIC_ID, PET_ID);
+      expect(repo.createEntry).not.toHaveBeenCalled();
     });
 
     it('returns SAME_DAY_RECHECK when pet has DONE entry today without flag (D-40)', async () => {

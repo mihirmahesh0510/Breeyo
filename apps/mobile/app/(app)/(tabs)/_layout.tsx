@@ -46,6 +46,15 @@ export default function TabsLayout() {
           ),
         }}
       />
+      <Tabs.Screen
+        name="billing"
+        options={{
+          title: 'Billing',
+          tabBarIcon: ({ color, size }) => (
+            <MaterialCommunityIcons name="receipt" size={size} color={color} />
+          ),
+        }}
+      />
     </Tabs>
   );
 }

@@ -1,4 +1,4 @@
-import type { PrismaClient } from '@prisma/client';
+import type { TenantPrismaClient } from '../../lib/prisma-rls.js';
 import {
   createConsultationSchema,
   saveDraftSchema,
@@ -15,14 +15,37 @@ import type {
 import type { EmrRepository } from './emr.repository.js';
 import type { ConsultationLockService } from './consultation-lock.service.js';
 import type { DosageService } from './dosage.service.js';
+import type { InvoiceService } from '../billing/invoice.service.js';
 import { writeAuditLog, AuditEvent } from '../../lib/audit-log.js';
+
+/**
+ * The actor name recorded against the D-03 draft-invoice hook.
+ *
+ * `finalize` is handed a `vetId` but no display name, and `BillingActor`
+ * requires one. On this path the name is never persisted: the only consumer of
+ * `BillingActor.userName` is `StockValidatorService.reserveAndDeduct`, and
+ * seeding a draft deducts nothing — the stock already moved when the clinician
+ * dispensed. Fetching the user row purely to fill a field nobody reads would
+ * add a query to the finalize hot path, so a constant is used and the reason
+ * recorded here.
+ */
+const END_CONSULTATION_ACTOR_NAME = 'End Consultation (system)';
 
 export class EmrService {
   constructor(
     private readonly repository: EmrRepository,
     private readonly lockService: ConsultationLockService,
     private readonly dosageService: DosageService,
-    private readonly prisma: PrismaClient,
+    private readonly prisma: TenantPrismaClient,
+    /**
+     * D-03's draft-invoice collaborator. Optional on purpose: the EMR unit
+     * suites construct this service with four arguments and are not exercising
+     * billing at all. A null service means the draft hook is disabled, which is
+     * the correct behaviour for those tests — and, because the hook is
+     * best-effort anyway, an unwired service degrades exactly as a failing one
+     * does rather than breaking the clinical path.
+     */
+    private readonly invoiceService?: InvoiceService,
   ) {}
 
   /**
@@ -177,6 +200,9 @@ export class EmrService {
     // Release lock
     await this.lockService.releaseLock(consultationId, vetId);
 
+    // D-03: seed the draft invoice the front desk will collect against.
+    await this.seedDraftInvoice(clinicId, consultationId, vetId);
+
     // EMR-07 / D-62: Audit trail for consultation finalization
     await writeAuditLog(this.prisma, AuditEvent.CONSULTATION_FINALIZED, {
       userId: vetId,
@@ -189,6 +215,64 @@ export class EmrService {
     });
 
     return finalized;
+  }
+
+  /**
+   * D-03: creates the draft invoice for a consultation that has just been
+   * finalized, pre-populated with everything the clinician dispensed.
+   *
+   * ## Why this is not a permission-checked call
+   *
+   * The trigger is a Clinician ending a consultation, and D-05 deliberately
+   * does NOT grant the Clinician role `CREATE_INVOICES` — only Front Desk and
+   * Admin hold it. This is therefore a server-initiated internal service call
+   * with no HTTP surface and no authorization check. The *gated* surface onto
+   * the same method is `POST /billing/invoices/from-consultation/:consultationId`,
+   * which the Front Desk uses from the D-06 picker and which `billing.routes.ts`
+   * puts behind `CREATE_INVOICES`.
+   *
+   * Conflating the two breaks one decision or the other: routing this through
+   * the HTTP endpoint would 403 the exact role D-03 depends on, and gating
+   * `InvoiceService.createDraftFromConsultation` itself would break the phase's
+   * primary invoice-creation flow.
+   *
+   * ## Why it is best-effort
+   *
+   * A billing failure must never prevent a vet from closing a medical record
+   * (T-06-84), so this sits outside the repository's finalize transaction and
+   * swallows nothing quietly. It runs after the queue-entry update — so a draft
+   * can never exist for a consultation that failed to finalize — and before the
+   * `CONSULTATION_FINALIZED` audit write, which keeps finalize one logical
+   * operation.
+   *
+   * Idempotency is the service's own: `createDraftFromConsultation` reads the
+   * existing draft first and catches `P2002` from the
+   * `invoices_one_draft_per_consultation` partial unique index, so a retried
+   * End Consultation returns the first draft rather than seeding a second.
+   */
+  private async seedDraftInvoice(
+    clinicId: string,
+    consultationId: string,
+    vetId: string,
+  ): Promise<void> {
+    if (!this.invoiceService) return;
+
+    try {
+      await this.invoiceService.createDraftFromConsultation(clinicId, consultationId, {
+        userId: vetId,
+        userName: END_CONSULTATION_ACTOR_NAME,
+      });
+    } catch (err) {
+      // Matches the dosage-override precedent below rather than introducing a
+      // second best-effort idiom. `EmrService` holds no logger reference, and
+      // adding one for this single call would leave the two side effects in the
+      // same method reporting failures two different ways; the summary records
+      // migrating both to the Fastify logger as a follow-up.
+      console.error(
+        `[EmrService] D-03 draft invoice creation failed for consultation ${consultationId}`,
+        err,
+      );
+    }
   }
 
   /**

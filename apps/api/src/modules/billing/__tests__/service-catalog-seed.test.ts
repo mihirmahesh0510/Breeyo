@@ -1,5 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
+  VETERINARY_SAC,
+  VETERINARY_SAC_LEGACY_CORRECTABLE,
+} from '@breeyo/types';
+import {
   SERVICE_CATALOG_SEED_DATA,
   seedServiceCatalog,
 } from '../service-catalog-seed.js';
@@ -68,6 +72,29 @@ describe('Service Catalog Seed Data', () => {
     expect(grooming.length).toBeGreaterThan(0);
     for (const entry of grooming) {
       expect(entry.gstRateOverride).toBe(18);
+    }
+  });
+
+  /**
+   * A1, resolved 2026-08-14. A newly-seeded clinic must ship the Notification
+   * 12/2017-Central Tax (Rate) Entry 46 code for veterinary services. The
+   * `9993xx` family the seed originally carried is preserved as
+   * `VETERINARY_SAC_LEGACY_CORRECTABLE` only so already-seeded clinics can be
+   * offered an opt-in correction; it must never be written into a new clinic.
+   */
+  it('should give every clinical preset the Entry 46 SAC, not a legacy 9993xx code', () => {
+    const clinical = SERVICE_CATALOG_SEED_DATA.filter(
+      (s) => CLINICAL_CATEGORIES.includes(s.category),
+    );
+    expect(clinical.length).toBeGreaterThan(0);
+    for (const entry of clinical) {
+      expect(entry.sacCode).toBe(VETERINARY_SAC);
+    }
+  });
+
+  it('should ship no legacy SAC code anywhere in the preset list', () => {
+    for (const entry of SERVICE_CATALOG_SEED_DATA) {
+      expect(VETERINARY_SAC_LEGACY_CORRECTABLE).not.toContain(entry.sacCode);
     }
   });
 

@@ -18,7 +18,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 3: Patient Registration & Walk-in Queue** - Pet/owner registration, walk-in queue as the primary workflow with real-time updates
 - [ ] **Phase 4: EMR & Clinical Records** - SOAP notes, vitals, prescriptions, voice-to-text, medical history, audit trail
 - [ ] **Phase 5: Inventory Management** - Stock tracking, barcode scanning, batch/lot/expiry management, par-level alerts, offline scanning
-- [ ] **Phase 6: Invoicing & Payments** - Invoice builder with stock validation, GST calculation, Razorpay integration, payment recording
+- [x] **Phase 6: Invoicing & Payments** - Invoice builder with stock validation, GST calculation, Razorpay integration, payment recording (completed 2026-08-14)
 - [ ] **Phase 7: WhatsApp Communication** - Simulator with abstraction layer, preventive-care reminders, invoice delivery, booking flow, mobile message log
 - [ ] **Phase 8: Scheduling & Calendar** - Future appointments merging into walk-in queue, calendar views, multi-device sync, push notifications
 - [ ] **Phase 9: Web Dashboard & Owner Portal** - Browser-based admin interface for analytics, inventory management, user/role management; pet owner portal via tokenised magic links for EMR access and invoice payment
@@ -187,72 +187,72 @@ Plans:
 
 **Wave 1**
 
-- [ ] 06-00-PLAN.md -- [Wave 0a, BLOCKING] Tenant-client remediation (pooled client, transaction-scoped `set_config`), baseline migration for the 15 untracked Phase 3/4 tables, RLS ENABLE+FORCE and per-operation policies on all clinic-scoped tables, orphan RLS file deleted, cross-tenant isolation tests
-- [ ] 06-01-PLAN.md -- [Wave 0b] Dependency provisioning: `razorpay@2.9.8`, `expo-print`/`expo-sharing`/`expo-file-system`/`react-native-svg` via `expo install`, `react-native-qrcode-svg`, `react-native-paper`, `@breeyo/ui`, PaperProvider at the mobile root, billing env contract, PDF resolution smoke test
+- [x] 06-00-PLAN.md -- [Wave 0a, BLOCKING] Tenant-client remediation (pooled client, transaction-scoped `set_config`), baseline migration for the 15 untracked Phase 3/4 tables, RLS ENABLE+FORCE and per-operation policies on all clinic-scoped tables, orphan RLS file deleted, cross-tenant isolation tests
+- [x] 06-01-PLAN.md -- [Wave 0b] Dependency provisioning: `razorpay@2.9.8`, `expo-print`/`expo-sharing`/`expo-file-system`/`react-native-svg` via `expo install`, `react-native-qrcode-svg`, `react-native-paper`, `@breeyo/ui`, PaperProvider at the mobile root, billing env contract, PDF resolution smoke test
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 06-02-PLAN.md -- [Wave 0c] Migrate six clinic-scoped modules (patient, queue, emr, attachment, vaccination, drug) to the per-request tenant client, establishing the `buildService(db)` reference pattern, with HTTP-layer cross-tenant IDOR tests
+- [x] 06-02-PLAN.md -- [Wave 0c] Migrate six clinic-scoped modules (patient, queue, emr, attachment, vaccination, drug) to the per-request tenant client, establishing the `buildService(db)` reference pattern, with HTTP-layer cross-tenant IDOR tests
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 06-03-PLAN.md -- Prisma billing schema: 10 models (Invoice, InvoiceLineItem, Payment, PaymentReceipt, Refund, CreditNote, CreditNoteLineItem, InvoiceNumberCounter, WebhookEvent, BillingAuditLog) + D-29 Clinic settings, migration with the draft partial unique index, billing RLS policies, [BLOCKING] `prisma db push`, test factories
-- [ ] 06-20-PLAN.md -- [Wave 0c, split from 06-02] Convert the remaining notifications and clinic modules, document the three admin-client exemptions inline, and add the `check-tenant-client.sh` CI gate plus the Expo dependency check
+- [x] 06-03-PLAN.md -- Prisma billing schema: 10 models (Invoice, InvoiceLineItem, Payment, PaymentReceipt, Refund, CreditNote, CreditNoteLineItem, InvoiceNumberCounter, WebhookEvent, BillingAuditLog) + D-29 Clinic settings, migration with the draft partial unique index, billing RLS policies, [BLOCKING] `prisma db push`, test factories
+- [x] 06-20-PLAN.md -- [Wave 0c, split from 06-02] Convert the remaining notifications and clinic modules, document the three admin-client exemptions inline, and add the `check-tenant-client.sh` CI gate plus the Expo dependency check
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 06-04-PLAN.md -- Shared contracts: billing entity types, invoice state machine (7 statuses), GST constants (slabs 0/5/18/40, Rule 46A document types, GSTIN regex), socket events, 11 Zod schemas that accept no client-supplied total
+- [x] 06-04-PLAN.md -- Shared contracts: billing entity types, invoice state machine (7 statuses), GST constants (slabs 0/5/18/40, Rule 46A document types, GSTIN regex), socket events, 11 Zod schemas that accept no client-supplied total
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
-- [ ] 06-05-PLAN.md -- [TDD] GST engine: integer-paise `money.ts` with `toPaise` boundary adapter and remainder-exact pro-rata, `gst.service.ts` with per-line exempt-aware CGST/SGST/IGST, invoice-level per-head rounding and Rule 46A document typing (BIL-07)
-- [ ] 06-06-PLAN.md -- [TDD] Cross-cutting primitives: gap-free per-clinic monthly numbering (counter-row `ON CONFLICT`), AES-256-GCM credential encryption, dedicated append-only `billing_audit_log` (D-15, D-19, D-29, D-32)
+- [x] 06-05-PLAN.md -- [TDD] GST engine: integer-paise `money.ts` with `toPaise` boundary adapter and remainder-exact pro-rata, `gst.service.ts` with per-line exempt-aware CGST/SGST/IGST, invoice-level per-head rounding and Rule 46A document typing (BIL-07)
+- [x] 06-06-PLAN.md -- [TDD] Cross-cutting primitives: gap-free per-clinic monthly numbering (counter-row `ON CONFLICT`), AES-256-GCM credential encryption, dedicated append-only `billing_audit_log` (D-15, D-19, D-29, D-32)
 
 **Wave 6** *(blocked on Wave 5 completion)*
 
-- [ ] 06-07-PLAN.md -- Invoice core: repository sourcing dispensed quantities from `StockMovement`, `FOR UPDATE` FIFO stock validator, single-transaction finalize (numbering + GST freeze + stock deduction), state guards, void with stock restoration (BIL-01, BIL-02, BIL-03)
+- [x] 06-07-PLAN.md -- Invoice core: repository sourcing dispensed quantities from `StockMovement`, `FOR UPDATE` FIFO stock validator, single-transaction finalize (numbering + GST freeze + stock deduction), state guards, void with stock restoration (BIL-01, BIL-02, BIL-03)
 
 **Wave 7** *(blocked on Wave 6 completion)*
 
-- [ ] 06-08-PLAN.md -- Billing HTTP surface: 12 routes with three permission gates, `CREATE_INVOICES` removed from the Clinician seed (D-05) without breaking the D-03 draft hook, integration tests for quantity sourcing, concurrent finalize and draft immutability
+- [x] 06-08-PLAN.md -- Billing HTTP surface: 12 routes with three permission gates, `CREATE_INVOICES` removed from the Clinician seed (D-05) without breaking the D-03 draft hook, integration tests for quantity sourcing, concurrent finalize and draft immutability
 
 **Wave 8** *(blocked on Wave 7 completion)*
 
-- [ ] 06-09-PLAN.md -- Payments: per-clinic Razorpay client factory with credential decryption and 502 error normalisation, cash/split/Payment Link collection with a 16-minute expiry buffer, receipt records, 4 payment endpoints (BIL-05)
+- [x] 06-09-PLAN.md -- Payments: per-clinic Razorpay client factory with credential decryption and 502 error normalisation, cash/split/Payment Link collection with a 16-minute expiry buffer, receipt records, 4 payment endpoints (BIL-05)
 
 **Wave 9** *(blocked on Wave 8 completion)*
 
-- [ ] 06-10-PLAN.md -- Webhook pipeline: raw-body rate-limit-exempt route with timing-safe HMAC and insert-based idempotency, BullMQ worker with clinic-room Socket.IO push, overdue and payment-link-expiry IST crons (BIL-06, D-11, D-23)
-- [ ] 06-11-PLAN.md -- Refunds bounded by captured-minus-pending payments with async gateway completion, credit notes with CN numbering and frozen-rate tax that leave the invoice immutable, 6 endpoints (D-12, D-19, D-22)
+- [x] 06-10-PLAN.md -- Webhook pipeline: raw-body rate-limit-exempt route with timing-safe HMAC and insert-based idempotency, BullMQ worker with clinic-room Socket.IO push, overdue and payment-link-expiry IST crons (BIL-06, D-11, D-23)
+- [x] 06-11-PLAN.md -- Refunds bounded by captured-minus-pending payments with async gateway completion, credit notes with CN numbering and frozen-rate tax that leave the invoice immutable, 6 endpoints (D-12, D-19, D-22)
 
 **Wave 10** *(blocked on Wave 9 completion)*
 
-- [ ] 06-12-PLAN.md -- Dashboard aggregate (D-24's four cards + RPT-01 patients-seen-today, IST-bounded, two queries), service catalog CRUD with soft deactivation, billing settings with presence-only credential reads and a webhook health flag (RPT-01, D-02, D-29)
-- [ ] 06-13-PLAN.md -- D-03 best-effort draft-invoice hook in the consultation finalize path (ungated, non-blocking, idempotent) and the D-04 Quick Sale create-and-finalize endpoint with row-locked stock
+- [x] 06-12-PLAN.md -- Dashboard aggregate (D-24's four cards + RPT-01 patients-seen-today, IST-bounded, two queries), service catalog CRUD with soft deactivation, billing settings with presence-only credential reads and a webhook health flag (RPT-01, D-02, D-29)
+- [x] 06-13-PLAN.md -- D-03 best-effort draft-invoice hook in the consultation finalize path (ungated, non-blocking, idempotent) and the D-04 Quick Sale create-and-finalize endpoint with row-locked stock
 
 **Wave 11** *(blocked on Wave 10 completion)*
 
-- [ ] 06-14-PLAN.md -- Mobile Billing tab: five summary cards with skeletons, filterable/sortable invoice list, shared paise-only money formatter, `invoice:updated` socket subscription (RPT-01, D-24, D-28)
+- [x] 06-14-PLAN.md -- Mobile Billing tab: five summary cards with skeletons, filterable/sortable invoice list, shared paise-only money formatter, `invoice:updated` socket subscription (RPT-01, D-24, D-28)
 
 **Wave 12** *(blocked on Wave 11 completion)*
 
-- [ ] 06-15-PLAN.md -- PDF templates: Rule 46-compliant invoice with Rule 46A heading switching and no tax artefact for unregistered clinics, 80mm payment receipt, credit note, plus the missing Print and Download actions (BIL-04)
-- [ ] 06-16-PLAN.md -- Invoice builder pieces: Zustand line-item store holding no totals, mutation and catalog hooks, eight components (line rows, discount inputs, no-arithmetic totals section, catalog sheet, stock-shortfall banner) (BIL-01, BIL-02, BIL-07)
-- [ ] 06-23-PLAN.md -- [split from 06-18] Billing settings: write-only Razorpay credential fields, GST-off default with the rate field gated on a valid GSTIN, per-clinic webhook URL with a configured indicator, `MANAGE_CLINIC_SETTINGS` gate (BIL-05, BIL-06, BIL-07)
+- [x] 06-15-PLAN.md -- PDF templates: Rule 46-compliant invoice with Rule 46A heading switching and no tax artefact for unregistered clinics, 80mm payment receipt, credit note, plus the missing Print and Download actions (BIL-04)
+- [x] 06-16-PLAN.md -- Invoice builder pieces: Zustand line-item store holding no totals, mutation and catalog hooks, eight components (line rows, discount inputs, no-arithmetic totals section, catalog sheet, stock-shortfall banner) (BIL-01, BIL-02, BIL-07)
+- [x] 06-23-PLAN.md -- [split from 06-18] Billing settings: write-only Razorpay credential fields, GST-off default with the rate field gated on a valid GSTIN, per-clinic webhook URL with a configured indicator, `MANAGE_CLINIC_SETTINGS` gate (BIL-05, BIL-06, BIL-07)
 
 **Wave 13** *(blocked on Wave 12 completion)*
 
-- [ ] 06-17-PLAN.md -- Invoice detail foundation: the detail query and payment-mutation hooks (no polling, explicit invalidation) plus six presentation components including the `isValidInvoiceTransition`-gated action bar (BIL-03)
-- [ ] 06-18-PLAN.md -- Mobile Quick Sale cart (merges duplicate items, holds no totals) with one-tap checkout and per-row stock errors, plus the additive pet-profile Invoices section (D-04, D-25)
-- [ ] 06-21-PLAN.md -- [split from 06-16] Invoice builder screen composing the 06-16 pieces with debounced server preview and both 409 paths, plus the two entry routes including the D-06 completed-consultation picker (BIL-01, BIL-02)
+- [x] 06-17-PLAN.md -- Invoice detail foundation: the detail query and payment-mutation hooks (no polling, explicit invalidation) plus six presentation components including the `isValidInvoiceTransition`-gated action bar (BIL-03)
+- [x] 06-18-PLAN.md -- Mobile Quick Sale cart (merges duplicate items, holds no totals) with one-tap checkout and per-row stock errors, plus the additive pet-profile Invoices section (D-04, D-25)
+- [x] 06-21-PLAN.md -- [split from 06-16] Invoice builder screen composing the 06-16 pieces with debounced server preview and both 409 paths, plus the two entry routes including the D-06 completed-consultation picker (BIL-01, BIL-02)
 
 **Wave 14** *(blocked on Wave 13 completion)*
 
-- [ ] 06-22-PLAN.md -- [split from 06-17] Payment collection sheet with device-rendered QR and push-driven confirmation, plus the invoice detail screen, refund sheet and credit-note screen (BIL-03, BIL-04, BIL-05, BIL-06)
+- [x] 06-22-PLAN.md -- [split from 06-17] Payment collection sheet with device-rendered QR and push-driven confirmation, plus the invoice detail screen, refund sheet and credit-note screen (BIL-03, BIL-04, BIL-05, BIL-06)
 
 **Wave 15** *(blocked on Wave 14 completion)*
 
-- [ ] 06-19-PLAN.md -- Phase gate: one-command requirement-to-test verification script with phase-wide money/tenancy/credential invariants, plus blocking human verification of the eight core flows and the GST/Razorpay-onboarding review
+- [x] 06-19-PLAN.md -- Phase gate: one-command requirement-to-test verification script with phase-wide money/tenancy/credential invariants, plus blocking human verification of the eight core flows and the GST/Razorpay-onboarding review
 
 ### Phase 7: WhatsApp Communication
 
@@ -461,7 +461,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9 -> 10
 | 3. Patient Registration & Walk-in Queue | 8/8 | **Done** | 2026-08-03 (PR #3) |
 | 4. EMR & Clinical Records | 8/8 | Next | - |
 | 5. Inventory Management | 8/8 | Planned | - |
-| 6. Invoicing & Payments | 4/4 | Planned | - |
+| 6. Invoicing & Payments | 27/24 | Complete   | 2026-08-14 |
 | 7. WhatsApp Communication | 16/16 | Planned | - |
 | 8. Scheduling & Calendar | 7/7 | Planned | - |
 | 9. Web Dashboard & Owner Portal | 7/7 | Planned | - |

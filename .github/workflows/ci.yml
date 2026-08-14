@@ -42,6 +42,10 @@ jobs:
     env:
       DATABASE_URL: postgresql://breeyo_admin:admin_dev_password@localhost:5432/breeyo
       DATABASE_URL_APP: postgresql://breeyo_app:app_dev_password@localhost:5432/breeyo
+      # A separate, disposable database. `prisma migrate diff --from-migrations`
+      # replays the migration set into it and RESETS it to do so, which is why
+      # it must never be DATABASE_URL. Created by the step below.
+      SHADOW_DATABASE_URL: postgresql://breeyo_admin:admin_dev_password@localhost:5432/breeyo_shadow
       REDIS_URL: redis://localhost:6379
       JWT_SECRET: ci-jwt-secret-not-for-production
       COOKIE_SECRET: ci-cookie-secret-not-for-production
@@ -61,6 +65,13 @@ jobs:
           node-version: 22
           cache: pnpm
 
+      # CR-05: the test suite runs against a local .env, so a variable the code
+      # requires can be missing from the ECS task definitions with every test
+      # still green -- exactly how BIL-05/BIL-06 shipped unable to start in any
+      # deployed environment. A static JSON check, no database or deps needed.
+      - name: Task definition env parity gate
+        run: bash scripts/check-task-def-env.sh
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
@@ -70,12 +81,26 @@ jobs:
       - name: Run database migrations
         run: pnpm --filter @breeyo/api db:migrate
 
+      # Must run BEFORE post-migrate.sql: that script adds pg_trgm GIN indexes
+      # which are deliberately not modelled in schema.prisma, and would be
+      # reported here as drift. This gate asserts the narrower, correct claim --
+      # that the migration set ALONE reproduces schema.prisma from empty.
+      - name: Verify schema reproducibility
+        working-directory: apps/api
+        run: pnpm exec prisma migrate diff --from-schema-datasource prisma/schema.prisma --to-schema-datamodel prisma/schema.prisma --exit-code
+
       - name: Setup RLS roles and permissions
         run: |
           psql "$DATABASE_URL" -f apps/api/prisma/init-rls-roles.sql
           psql "$DATABASE_URL" -f apps/api/prisma/post-migrate.sql
-          psql "$DATABASE_URL" -f apps/api/prisma/rls/phase-03-patient-queue-rls.sql
-          psql "$DATABASE_URL" -f apps/api/prisma/rls/phase-05-inventory-rls.sql
+
+      # D-30: RLS policies only protect queries that go through the tenant
+      # handle. This fails the build if a route or controller builds a
+      # repository from the RLS-bypassing admin client without a documented
+      # exemption. Runs before the test step so the failure is unambiguous --
+      # a tenancy regression reads as a tenancy failure, not a flaky test.
+      - name: Tenant client gate
+        run: bash scripts/check-tenant-client.sh
 
       - name: Build
         run: pnpm build
@@ -85,3 +110,54 @@ jobs:
 
       - name: Run tests
         run: pnpm test
+
+      # Phase 6 close-out gate (plan 06-19). Maps each of BIL-01..BIL-07,
+      # RPT-01 and the inherited PLT-04 to its specific named test, then
+      # asserts the phase-wide invariants no single plan owns: no float money,
+      # no client-supplied total, no credential in client code, no global
+      # socket emit, RLS on all ten billing tables, and that the live database
+      # differs from schema.prisma by exactly the four deliberately-unmodelled
+      # pg_trgm indexes and nothing else.
+      #
+      # `--skip-suite` skips only the `pnpm test` step, which the job above
+      # already ran. The typechecks and the Expo check still run here: the
+      # mobile check is a Phase-6-scoped error baseline, and this is the only
+      # place it is enforced.
+      - name: Create shadow database for the schema-reproducibility check
+        run: psql "$DATABASE_URL" -c 'CREATE DATABASE breeyo_shadow;'
+
+      - name: Phase 06 gate
+        run: bash scripts/verify-phase-06.sh --skip-suite
+
+  # Expo's native modules are pinned to the installed SDK. When one drifts, the
+  # JS build and the test suite both still pass -- the failure only surfaces at
+  # native build time, on EAS, long after the offending commit merged
+  # (06-RESEARCH.md Pitfall 8). `expo install --check` compares every Expo
+  # package against the SDK's expected range and exits non-zero on a mismatch,
+  # which moves that failure onto the PR that causes it.
+  #
+  # Separate job rather than a step in `test`: it needs neither Postgres nor
+  # Redis, so it runs in parallel and reports independently.
+  mobile:
+    name: Mobile Dependency Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Expo dependency check
+        working-directory: apps/mobile
+        run: npx expo install --check

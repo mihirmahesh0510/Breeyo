@@ -1,11 +1,11 @@
-import type { PrismaClient } from '@prisma/client';
+import type { DbClient } from '../../lib/prisma-rls.js';
 import { attachmentMetaSchema } from '@breeyo/validators';
 import { MAX_FILES_PER_CONSULTATION } from '@breeyo/types';
 import crypto from 'crypto';
 import { writeAuditLog, AuditEvent } from '../../lib/audit-log.js';
 
 export class AttachmentService {
-  constructor(private readonly prisma: PrismaClient) {}
+  constructor(private readonly prisma: DbClient) {}
 
   /**
    * Generates a presigned upload URL and creates attachment record.

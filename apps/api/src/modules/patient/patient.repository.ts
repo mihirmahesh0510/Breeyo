@@ -1,4 +1,4 @@
-import type { PrismaClient } from '@prisma/client';
+import type { DbClient } from '../../lib/prisma-rls.js';
 import type { PatientSearchResult } from '@breeyo/types';
 import type {
   RegisterOwnerParams,
@@ -7,7 +7,7 @@ import type {
 } from './patient.types.js';
 
 export class PatientRepository {
-  constructor(private readonly prisma: PrismaClient) {}
+  constructor(private readonly prisma: DbClient) {}
 
   /**
    * Upserts owner: creates if new, returns existing if mobile already registered at clinic.

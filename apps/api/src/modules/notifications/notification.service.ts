@@ -1,4 +1,5 @@
-import type { PrismaClient, Notification, DeviceToken, Prisma } from '@prisma/client';
+import type { Notification, DeviceToken, Prisma } from '@prisma/client';
+import type { DbClient } from '../../lib/prisma-rls.js';
 
 export interface ListOptions {
   page: number;
@@ -16,8 +17,17 @@ export interface PaginatedResult<T> {
   };
 }
 
+/**
+ * D-30: takes the `DbClient` union rather than `PrismaClient`.
+ *
+ * The four clinic-scoped handlers (`list`, `getUnreadCount`, `markRead`,
+ * `markAllRead`) are constructed per request from `request.db`, so RLS applies.
+ * The two device-token methods are reached from routes that deliberately omit
+ * `tenantContext` and are therefore constructed from the admin client — see the
+ * exemption comment in `notification.routes.ts`.
+ */
 export class NotificationService {
-  constructor(private prisma: PrismaClient) {}
+  constructor(private prisma: DbClient) {}
 
   async registerDeviceToken(
     userId: string,

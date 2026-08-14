@@ -1,4 +1,5 @@
-import type { Prisma, PrismaClient } from '@prisma/client';
+import type { Prisma } from '@prisma/client';
+import type { TenantPrismaClient, TenantTransactionClient } from '../../lib/prisma-rls.js';
 
 /**
  * Data accepted by recordMovement. `quantity` is signed (positive = stock
@@ -32,7 +33,7 @@ const DEFAULT_HISTORY_LIMIT = 20;
 const EXPORT_RETENTION_MONTHS = 12; // D-48 rolling 12-month retention window
 
 export class StockMovementService {
-  constructor(private readonly prisma: PrismaClient) {}
+  constructor(private readonly prisma: TenantPrismaClient) {}
 
   /**
    * D-45: append-only movement creation. No UPDATE or DELETE on movements —
@@ -44,7 +45,7 @@ export class StockMovementService {
    * stock-adjustment, stock-take services) can compose this into their own
    * atomic transaction rather than opening a nested one.
    */
-  async recordMovement(tx: Prisma.TransactionClient, data: RecordMovementInput) {
+  async recordMovement(tx: TenantTransactionClient, data: RecordMovementInput) {
     const lastMovement = await tx.stockMovement.findFirst({
       where: { itemId: data.itemId, clinicId: data.clinicId },
       orderBy: { createdAt: 'desc' },

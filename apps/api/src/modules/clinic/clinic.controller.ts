@@ -1,5 +1,6 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import type { ClinicService } from './clinic.service.js';
+import type { TenantPrismaClient } from '../../lib/prisma-rls.js';
 import {
   clinicProfileUpdateSchema,
   workingHoursBodySchema,
@@ -14,14 +15,18 @@ function validationError(reply: FastifyReply, issues: { message: string }[]) {
   });
 }
 
-export function createClinicController(clinicService: ClinicService) {
+export function createClinicController(
+  buildService: (db: TenantPrismaClient) => ClinicService,
+) {
   return {
     async getClinicHandler(request: FastifyRequest, reply: FastifyReply) {
+      const clinicService = buildService(request.db);
       const clinic = await clinicService.getClinic(request.user.activeClinicId);
       return reply.status(200).send({ data: clinic });
     },
 
     async updateProfileHandler(request: FastifyRequest, reply: FastifyReply) {
+      const clinicService = buildService(request.db);
       const result = clinicProfileUpdateSchema.safeParse(request.body);
       if (!result.success) {
         return validationError(reply, result.error.errors);
@@ -36,6 +41,7 @@ export function createClinicController(clinicService: ClinicService) {
     },
 
     async updateHoursHandler(request: FastifyRequest, reply: FastifyReply) {
+      const clinicService = buildService(request.db);
       const result = workingHoursBodySchema.safeParse(request.body);
       if (!result.success) {
         return validationError(reply, result.error.errors);
@@ -50,6 +56,7 @@ export function createClinicController(clinicService: ClinicService) {
     },
 
     async completeWizardHandler(request: FastifyRequest, reply: FastifyReply) {
+      const clinicService = buildService(request.db);
       const clinic = await clinicService.completeWizard(
         request.user.activeClinicId,
       );
