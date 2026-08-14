@@ -236,9 +236,9 @@ Plans:
 
 **Wave 12** *(blocked on Wave 11 completion)*
 
-- [ ] 06-15-PLAN.md -- PDF templates: Rule 46-compliant invoice with Rule 46A heading switching and no tax artefact for unregistered clinics, 80mm payment receipt, credit note, plus the missing Print and Download actions (BIL-04)
-- [ ] 06-16-PLAN.md -- Invoice builder pieces: Zustand line-item store holding no totals, mutation and catalog hooks, eight components (line rows, discount inputs, no-arithmetic totals section, catalog sheet, stock-shortfall banner) (BIL-01, BIL-02, BIL-07)
-- [ ] 06-23-PLAN.md -- [split from 06-18] Billing settings: write-only Razorpay credential fields, GST-off default with the rate field gated on a valid GSTIN, per-clinic webhook URL with a configured indicator, `MANAGE_CLINIC_SETTINGS` gate (BIL-05, BIL-06, BIL-07)
+- [x] 06-15-PLAN.md -- PDF templates: Rule 46-compliant invoice with Rule 46A heading switching and no tax artefact for unregistered clinics, 80mm payment receipt, credit note, plus the missing Print and Download actions (BIL-04)
+- [x] 06-16-PLAN.md -- Invoice builder pieces: Zustand line-item store holding no totals, mutation and catalog hooks, eight components (line rows, discount inputs, no-arithmetic totals section, catalog sheet, stock-shortfall banner) (BIL-01, BIL-02, BIL-07)
+- [x] 06-23-PLAN.md -- [split from 06-18] Billing settings: write-only Razorpay credential fields, GST-off default with the rate field gated on a valid GSTIN, per-clinic webhook URL with a configured indicator, `MANAGE_CLINIC_SETTINGS` gate (BIL-05, BIL-06, BIL-07)
 
 **Wave 13** *(blocked on Wave 12 completion)*
 
@@ -461,7 +461,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9 -> 10
 | 3. Patient Registration & Walk-in Queue | 8/8 | **Done** | 2026-08-03 (PR #3) |
 | 4. EMR & Clinical Records | 8/8 | Next | - |
 | 5. Inventory Management | 8/8 | Planned | - |
-| 6. Invoicing & Payments | 17/24 | In Progress|  |
+| 6. Invoicing & Payments | 21/24 | In Progress|  |
 | 7. WhatsApp Communication | 16/16 | Planned | - |
 | 8. Scheduling & Calendar | 7/7 | Planned | - |
 | 9. Web Dashboard & Owner Portal | 7/7 | Planned | - |
