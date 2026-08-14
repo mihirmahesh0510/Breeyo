@@ -132,11 +132,13 @@ Claude Code branched the worktree from `origin/main` (Phase 5), so it was fast-f
 
 **[Rule 3 — Blocking] The developer's dev database is at Phase 5 and has a divergent migration history.** It lacks every Phase 6 table, and it holds a migration (`20260812200629_add_phases_3_through_5`) that does not exist on this branch, so `migrate deploy` against it would have been both destructive and unreliable. Rather than mutate the developer's database, an isolated `breeyo_d39` database was provisioned in the existing `breeyo-postgres-1` container with the CI sequence: `migrate deploy`, `init-rls-roles.sql`, `post-migrate.sql`, `prisma/seed.ts`. Connection URLs were derived programmatically from the developer's own `.env` by swapping only the database name, so no credential was read, printed or copied. **The developer's `breeyo` database was not modified.**
 
-Two consequences worth noting:
-* `apps/api/.env` was copied into the worktree (it is gitignored and was not committed).
-* `apps/api/tmp-run.mjs` — the throwaway env-swapping runner — is left uncommitted and untracked; delete it, or leave it, at your discretion. Nothing in the committed tree references it.
+One consequence worth noting: `apps/api/.env` was copied into the worktree so the suite could reach the container. It is gitignored and was not committed. The throwaway env-swapping runner used during this work has been deleted; the working tree is clean.
 
-To re-run this suite later: `node apps/api/tmp-run.mjs ./node_modules/.bin/vitest run` from `apps/api`, or point `DATABASE_URL`/`DATABASE_URL_APP` at any database provisioned by the CI sequence above.
+To re-run this suite later, provision a database with the CI sequence above and export `DATABASE_URL` and `DATABASE_URL_APP` pointing at it, then run `pnpm exec vitest run` from `apps/api`. The `breeyo_d39` database created for this work is still present in the `breeyo-postgres-1` container and can be dropped whenever convenient:
+
+```
+docker exec -i breeyo-postgres-1 psql -U breeyo_admin -d postgres -c "DROP DATABASE breeyo_d39;"
+```
 
 No Rule 1, Rule 2 or Rule 4 deviations. No architectural decisions required.
 
