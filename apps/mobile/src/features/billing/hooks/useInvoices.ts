@@ -1,10 +1,12 @@
 import { useQuery } from '@tanstack/react-query';
 import type { InvoiceListItem } from '@breeyo/types';
-// The filter and sort literals are IMPORTED, never retyped. `invoiceListQuerySchema`
-// is the exact schema the server parses `GET /billing/invoices` with, so running
-// the client's filters through it here makes a client-side value the server
-// would reject unrepresentable rather than merely unlikely.
-import { invoiceListQuerySchema, type InvoiceListQueryInput } from '@breeyo/validators';
+// The filter and sort literals reach this hook through `lib/invoice-query.ts`,
+// which parses them with `invoiceListQuerySchema` from '@breeyo/validators' —
+// the exact schema the server uses — so a client filter value the server would
+// reject is unrepresentable rather than merely unlikely. The serialiser lives
+// in `lib/` because this module imports `AuthProvider`, which transitively
+// imports `react-native` and therefore cannot be loaded under test.
+import { buildInvoiceListQueryString, type InvoiceFilters } from '../lib/invoice-query';
 import { apiClient } from '../../../lib/api';
 import { useAuth } from '../../../providers/AuthProvider';
 
@@ -23,34 +25,10 @@ interface InvoiceListResponse {
   data: InvoiceListPage;
 }
 
-export type InvoiceFilters = Partial<InvoiceListQueryInput>;
+export type { InvoiceFilters };
 
 /** Shared by every clinic-scoped invoice query key. */
 export const INVOICES_QUERY_KEY = ['invoices'] as const;
-
-/**
- * Serialises filters into a query string using only values the shared schema
- * accepts. Undefined optional fields are omitted rather than sent as the string
- * `"undefined"`, which the server's `z.string().uuid()` would reject with a 400.
- */
-export function buildInvoiceListQueryString(filters: InvoiceFilters): string {
-  // Throws on a value outside the shared literal unions, and fills in the
-  // server's own defaults (`status: 'all'`, `sort: 'newest'`, `limit: 20`) so
-  // the query key and the request agree on what was actually asked for.
-  const parsed = invoiceListQuerySchema.parse(filters);
-
-  const params = new URLSearchParams();
-  params.set('status', parsed.status);
-  params.set('sort', parsed.sort);
-  params.set('limit', String(parsed.limit));
-  if (parsed.search) params.set('search', parsed.search);
-  if (parsed.from) params.set('from', parsed.from);
-  if (parsed.to) params.set('to', parsed.to);
-  if (parsed.petId) params.set('petId', parsed.petId);
-  if (parsed.cursor) params.set('cursor', parsed.cursor);
-
-  return params.toString();
-}
 
 /**
  * The Billing tab's invoice list (D-24).
