@@ -121,6 +121,15 @@ export async function buildApp(
       await expiryNotificationBus.close();
     });
     scheduleExpiryCron(app.prisma, expiryNotificationBus);
+
+    // BIL-06: the consumer for the queue the webhook route produces into. The
+    // route acknowledges Razorpay inside its five-second budget; everything
+    // that touches an invoice happens here.
+    const { createBillingWebhookWorker } = await import('./modules/billing/webhook.worker.js');
+    const billingWebhookWorker = createBillingWebhookWorker(app.redis, app.prisma, app.io);
+    app.addHook('onClose', async () => {
+      await billingWebhookWorker.close();
+    });
   }
 
   return app;

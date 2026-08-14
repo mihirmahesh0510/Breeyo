@@ -56,6 +56,51 @@ import {
  * 06-RESEARCH `## Environment Availability`.
  */
 
+// ─── Receipts (D-13) ────────────────────────────────────────────────────────
+
+/**
+ * Allocates a receipt number and writes the `PaymentReceipt`.
+ *
+ * A module-level function rather than a method because plan 06-10's webhook
+ * worker issues receipts too, for digital captures Razorpay confirms, and it
+ * has no `PaymentService` instance — it holds a transaction handle and a
+ * settled `Payment` row. A second implementation over there is how the cash
+ * receipt and the digital receipt would end up with different numbering, or
+ * different columns populated, for the same event in the clinic's books.
+ *
+ * Uses the project's existing `invoice_number_counters` allocator with a third
+ * `docType`, `RCT`, rather than inventing a second numbering mechanism.
+ * `doc_type` is a free-text column whose primary key is
+ * `(clinic_id, doc_type, period)`, so this needed no migration — see the note
+ * on `DOCUMENT_NUMBER_TYPES` in `@breeyo/types`.
+ *
+ * `transactionRef` carries the gateway payment id for a digital payment and is
+ * null for cash, which is the only honest value: there is no reference to quote
+ * for notes handed across a counter.
+ */
+export async function issuePaymentReceipt(
+  tx: TenantTransactionClient,
+  clinicId: string,
+  invoiceId: string,
+  payment: { id: string; amountPaise: number; method: string; razorpayPaymentId?: string | null },
+  now: Date,
+) {
+  const receiptNumber = await nextDocumentNumber(tx, clinicId, 'RCT', now);
+
+  return tx.paymentReceipt.create({
+    data: {
+      clinicId,
+      paymentId: payment.id,
+      invoiceId,
+      receiptNumber,
+      amountPaise: payment.amountPaise,
+      method: payment.method,
+      transactionRef: payment.razorpayPaymentId ?? null,
+      issuedAt: now,
+    },
+  });
+}
+
 // ─── Domain errors ──────────────────────────────────────────────────────────
 
 type DomainError = Error & { statusCode: number; code: string };
@@ -555,19 +600,7 @@ export class PaymentService {
     return { paymentId: payment.id, receiptId: receipt.id, receiptNumber: receipt.receiptNumber };
   }
 
-  /**
-   * Allocates a receipt number and writes the `PaymentReceipt` (D-13).
-   *
-   * Uses the project's existing `invoice_number_counters` allocator with a
-   * third `docType`, `RCT`, rather than inventing a second numbering
-   * mechanism. `doc_type` is a free-text column whose primary key is
-   * `(clinic_id, doc_type, period)`, so this needed no migration — see the note
-   * on `DOCUMENT_NUMBER_TYPES` in `@breeyo/types`.
-   *
-   * `transactionRef` carries the gateway payment id for a digital payment and
-   * is null for cash, which is the only honest value: there is no reference to
-   * quote for notes handed across a counter.
-   */
+  /** Delegates to {@link issuePaymentReceipt}; see the note there (D-13). */
   private async generateReceipt(
     tx: TenantTransactionClient,
     clinicId: string,
@@ -575,20 +608,7 @@ export class PaymentService {
     payment: { id: string; amountPaise: number; method: string; razorpayPaymentId?: string | null },
     now: Date,
   ) {
-    const receiptNumber = await nextDocumentNumber(tx, clinicId, 'RCT', now);
-
-    return tx.paymentReceipt.create({
-      data: {
-        clinicId,
-        paymentId: payment.id,
-        invoiceId,
-        receiptNumber,
-        amountPaise: payment.amountPaise,
-        method: payment.method,
-        transactionRef: payment.razorpayPaymentId ?? null,
-        issuedAt: now,
-      },
-    });
+    return issuePaymentReceipt(tx, clinicId, invoiceId, payment, now);
   }
 
   /**
