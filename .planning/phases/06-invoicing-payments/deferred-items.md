@@ -388,3 +388,43 @@ correct the comment. Out of scope for 06-16 under the executor's scope boundary
 today — so it wants an owner before Phase 6 closes. Flat discounts are
 unaffected: `type === 'flat'` returns `Math.min(value, basePaise)` with no
 scaling, and that path is correct.
+
+---
+
+## `apps/mobile` typecheck does not exit 0 (found during plan 06-18)
+
+`pnpm --filter @breeyo/mobile exec tsc --noEmit` exits 1 with **61 errors**,
+none of them in Phase 6 billing code. Two acceptance criteria in 06-18 required
+exit 0, so this is recorded rather than silently passed over.
+
+Grouped by cause:
+
+* **`packages/ui` atoms/molecules/organisms (~40 errors).** Every wrapper that
+  forwards to the local `Typography` fails with "Property 'children' is missing
+  in type ...". Affects `IconButton`, `NotificationBadge`, `StatusBadge`,
+  `TextInput`, `AccordionItem`, `EmptyState`, `FormField`, `NotificationItem`,
+  `BottomSheet`, `BottomTabBar`, `Card`, `Modal`, `NavigationBar`,
+  `NotificationList`, `QueueCard`, `WizardStepper`. One prop-type fix in the
+  Typography wrapper likely clears the whole group.
+* **Absent modules.** `expo-image-manipulator`
+  (`features/attachment/hooks/useFileUpload.ts`) and `expo-speech-recognition`
+  (`features/consultation/hooks/useVoiceTranscription.ts`) are imported but not
+  installed. Note these are *installs*, so they are out of scope for automatic
+  repair by an executor regardless.
+* **`app/setup-wizard/_layout.tsx`.** Two relative imports need explicit `.js`
+  extensions under `moduleResolution: node16`.
+* **Route prop passing.** `app/(app)/owner/[ownerId].tsx`,
+  `app/(app)/patient/[petId].tsx` and `app/(app)/patient/register.tsx` pass
+  props to screen components whose signatures take none.
+* **Phase 3/4 screens.** `PatientDetailScreen.tsx` (the `WeightTrendChart`
+  `Visit` vs `Record<string, unknown>` mismatch), `ConsultationScreen.tsx`,
+  `CareInstructionsSection.tsx`, `CheckInSheet.tsx`, `AuthProvider.tsx`.
+
+Out of scope for 06-18 under the executor's scope boundary: all of it is
+pre-existing, spread across four packages, and owned by Phases 1-5. Verified
+instead that **zero** errors fall in the eleven files 06-18 created. The two
+errors in `PatientDetailScreen.tsx` are pre-existing; their line numbers moved
+from 169-170 to 172-173 only because 06-18 inserted three lines above them.
+
+Wants an owner before Phase 6 closes if the phase's exit criteria include a
+clean mobile typecheck.
