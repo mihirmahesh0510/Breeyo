@@ -169,6 +169,49 @@ describe('updateDraftInvoiceSchema / finalizeInvoiceSchema', () => {
     expect(result.success).toBe(false);
   });
 
+  /**
+   * CR-01. An omitted key and an explicit `null` are different requests: the
+   * first says "I am not editing the discount", the second says "remove it".
+   * Without a wire form for the second, an invoice-level discount could never be
+   * taken off a draft once applied.
+   */
+  it('accepts an explicit null pair as the "clear this discount" signal', () => {
+    const result = updateDraftInvoiceSchema.safeParse({
+      invoiceDiscountType: null,
+      invoiceDiscountValue: null,
+    });
+    expect(result.success).toBe(true);
+    const parsed = result.success ? result.data : {};
+    // The keys must SURVIVE parsing — the service distinguishes "present and
+    // null" from "absent", so a schema that stripped them would erase the intent.
+    expect(parsed).toHaveProperty('invoiceDiscountType', null);
+    expect(parsed).toHaveProperty('invoiceDiscountValue', null);
+  });
+
+  it('leaves the discount keys absent when the patch does not mention them', () => {
+    const result = updateDraftInvoiceSchema.safeParse({ notes: 'just a note' });
+    expect(result.success).toBe(true);
+    const parsed = result.success ? (result.data as Record<string, unknown>) : {};
+    expect('invoiceDiscountType' in parsed).toBe(false);
+    expect('invoiceDiscountValue' in parsed).toBe(false);
+  });
+
+  it('rejects a half-cleared discount, which is neither a discount nor a removal', () => {
+    expect(
+      updateDraftInvoiceSchema.safeParse({
+        invoiceDiscountType: null,
+        invoiceDiscountValue: 5_000,
+      }).success,
+    ).toBe(false);
+
+    expect(
+      updateDraftInvoiceSchema.safeParse({
+        invoiceDiscountType: 'flat',
+        invoiceDiscountValue: null,
+      }).success,
+    ).toBe(false);
+  });
+
   it('finalize accepts no line items and no totals', () => {
     const result = finalizeInvoiceSchema.safeParse({ placeOfSupplyStateCode: '27' });
     expect(result.success).toBe(true);

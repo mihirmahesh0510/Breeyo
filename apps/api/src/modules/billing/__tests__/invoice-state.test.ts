@@ -33,8 +33,29 @@ function createMockRepository() {
   };
 }
 
+/**
+ * The `FOR UPDATE` row the collection paths lock before they write (CR-04).
+ * Snake_case because it comes back from `$queryRaw`, not from a Prisma delegate.
+ */
+function lockedRowFor(invoice: Record<string, unknown> | null) {
+  if (!invoice) return [];
+  const grandTotal = (invoice.grandTotalPaise as number) ?? 0;
+  const paid = (invoice.amountPaidPaise as number) ?? 0;
+  return [
+    {
+      id: invoice.id,
+      status: invoice.status,
+      grand_total_paise: grandTotal,
+      balance_paise: (invoice.balancePaise as number) ?? grandTotal - paid,
+      exception_flag: invoice.exceptionFlag ?? null,
+      invoice_number: invoice.invoiceNumber ?? null,
+    },
+  ];
+}
+
 function createMockPrisma(invoice: Record<string, unknown> | null) {
   const tx = {
+    $queryRaw: vi.fn(async () => lockedRowFor(invoice)),
     payment: {
       create: vi.fn(async () => ({ id: 'pay-1' })),
       updateMany: vi.fn(async () => ({ count: 1 })),
@@ -211,6 +232,66 @@ describe('InvoiceService state guards — manual payment status (BIL-03)', () =>
     await expect(service.markPaid(CLINIC, INVOICE, ACTOR, { method: 'cash' })).rejects.toMatchObject({
       code: 'INVALID_STATE_TRANSITION',
     });
+  });
+
+  /**
+   * CR-04. `payment.service.ts` documents this invariant at
+   * `paymentExceedsBalance` and enforces it on every other collection path:
+   * D-36's exception list is for the overpayment we cannot prevent (two legs
+   * racing), not for a figure someone typed at the counter. An unbounded
+   * mark-paid drives the invoice into a state with no resolve endpoint
+   * (deferred-items.md #15), which blocks void, refund, credit note and payment
+   * on it permanently.
+   */
+  it('rejects a mark-paid amount larger than the outstanding balance', async () => {
+    const { service, prisma } = build({
+      id: INVOICE,
+      status: 'UNPAID',
+      grandTotalPaise: 10000,
+      amountPaidPaise: 0,
+      balancePaise: 10000,
+      exceptionFlag: null,
+    });
+
+    await expect(
+      service.markPaid(CLINIC, INVOICE, ACTOR, { method: 'cash', amountPaise: 12500 }),
+    ).rejects.toMatchObject({ statusCode: 400, code: 'PAYMENT_EXCEEDS_BALANCE' });
+
+    expect(prisma.tx.payment.create).not.toHaveBeenCalled();
+  });
+
+  it('takes a FOR UPDATE lock on the invoice before writing the payment row', async () => {
+    const { service, prisma } = build({
+      id: INVOICE,
+      status: 'UNPAID',
+      grandTotalPaise: 10000,
+      amountPaidPaise: 0,
+      balancePaise: 10000,
+      exceptionFlag: null,
+    });
+
+    await service.markPaid(CLINIC, INVOICE, ACTOR, { method: 'cash' });
+
+    expect(prisma.tx.$queryRaw).toHaveBeenCalled();
+    const sql = (prisma.tx.$queryRaw.mock.calls[0][0] as { sql: string }).sql;
+    expect(sql).toContain('FROM invoices');
+    expect(sql).toContain('FOR UPDATE');
+  });
+
+  it('derives the amount from the LOCKED balance, not from a figure read before the lock', async () => {
+    const { service, prisma } = build({
+      id: INVOICE,
+      status: 'PARTIALLY_PAID',
+      grandTotalPaise: 10000,
+      amountPaidPaise: 4000,
+      balancePaise: 6000,
+      exceptionFlag: null,
+    });
+
+    await service.markPaid(CLINIC, INVOICE, ACTOR, { method: 'cash' });
+
+    const created = prisma.tx.payment.create.mock.calls[0][0] as { data: { amountPaise: number } };
+    expect(created.data.amountPaise).toBe(6000);
   });
 
   it('rejects marking PARTIALLY_PAID back to UNPAID — the cash leg is real (D-37)', async () => {
