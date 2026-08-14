@@ -1,18 +1,19 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { View, Pressable, StyleSheet } from 'react-native';
-import { Text, TextInput, Checkbox } from 'react-native-paper';
+import { Text, TextInput } from 'react-native-paper';
 import { BottomSheet } from '@breeyo/ui';
 import { INVOICE_DETAIL_COPY, voidConfirmCopy } from '../lib/invoice-detail';
 
 export interface VoidConfirmPayload {
   reason: string;
   /**
-   * The checkbox's value, reported unchanged (T-06-115).
+   * Always `true` (D-34, T-06-115).
    *
-   * Whether dispensed items return to inventory is a real stock decision, not a
-   * UI detail, so it is the caller's to send rather than this sheet's to assume.
+   * The field is kept on the payload rather than dropped so the intent is
+   * explicit in the request and in the financial audit log, but it is no longer
+   * a value this sheet collects — see the note on the component below.
    */
-  restoreStock: boolean;
+  restoreStock: true;
 }
 
 export interface VoidConfirmSheetProps {
@@ -46,26 +47,27 @@ const COLORS = {
  * a string no test can reach, since `apps/mobile` cannot render a React Native
  * component under test.
  *
- * ## The checkbox defaults to ticked
+ * ## There is no stock-restoration checkbox, and that is the point (D-34)
  *
- * A void is usually a correction of a mistaken invoice, and the items on a
- * mistaken invoice were usually never handed over. Returning them is the common
- * case, so the vet opts out rather than opting in.
+ * D-26 originally asked the vet "Return dispensed items to stock?" and plan
+ * 06-17 built the checkbox for it. D-34 then settled the question on the server
+ * instead: a void reverses the stock movements the *invoice itself* created —
+ * Quick Sale counter items, manually added product lines — and leaves a drug
+ * already administered to the patient deducted, because the animal was given it
+ * whatever the billing correction says. Which movements reverse follows from
+ * each line's provenance, not from a decision a vet is in a position to make at
+ * the moment of voiding.
  *
- * ## What the checkbox actually controls
+ * `voidInvoiceSchema` encodes exactly that: `restoreStock` is `z.literal(true)`,
+ * so an opt-out is unrepresentable on the wire and `parseVoidInput` rejects it.
+ * Keeping the checkbox would therefore have offered a choice with two outcomes,
+ * both wrong — a hard rejection on submit, or a silent coercion leaving a vet
+ * believing stock stayed deducted when it had not. It was removed here (plan
+ * 06-22) and replaced with a statement of what will happen, which is the thing
+ * the vet actually needs before confirming. This closes 06-17's deferred item 2.
  *
- * D-34 narrowed D-26: the server restores stock for lines the invoice itself
- * created — Quick Sale counter items, manually added product lines — and leaves
- * a consultation-dispensed drug deducted, because the animal was given it
- * whatever the billing correction says. The sheet says so under the checkbox
- * instead of letting a vet discover it at the next stock take.
- *
- * Note also that `voidInvoiceSchema` currently accepts `restoreStock: true`
- * alone, so `parseVoidInput` rejects an opt-out rather than dropping it
- * silently. The value is still reported here unchanged: this sheet's job is to
- * report what the user chose, and swallowing a choice the wire cannot carry is
- * how a user comes to believe something the system did not do. Plan 06-22 owns
- * how that rejection is surfaced; see `deferred-items.md`.
+ * The value is still reported on the payload rather than dropped, so the intent
+ * is explicit in the request and in the financial audit log (T-06-115).
  *
  * ## D-35
  *
@@ -87,17 +89,13 @@ export function VoidConfirmSheet({
     [invoiceNumber, grandTotalPaise],
   );
 
-  const [restoreStock, setRestoreStock] = useState(true);
   const [reason, setReason] = useState('');
 
   // A sheet reopened after a cancel must not inherit the previous attempt's
-  // reason or a toggled checkbox — a stale reason would be written into the
-  // financial audit log for a different void.
+  // reason — a stale reason would be written into the financial audit log for
+  // a different void.
   useEffect(() => {
-    if (visible) {
-      setRestoreStock(true);
-      setReason('');
-    }
+    if (visible) setReason('');
   }, [visible]);
 
   const canConfirm = reason.trim().length > 0 && !isSubmitting;
@@ -130,20 +128,15 @@ export function VoidConfirmSheet({
           testID="void-reason-input"
         />
 
-        <Pressable
-          onPress={() => setRestoreStock((value) => !value)}
-          accessibilityRole="checkbox"
-          accessibilityState={{ checked: restoreStock }}
-          accessibilityLabel={copy.checkboxLabel}
-          testID="void-restore-stock-checkbox"
-          style={styles.checkboxRow}
-        >
-          <Checkbox status={restoreStock ? 'checked' : 'unchecked'} />
-          <Text variant="bodyMedium" style={styles.checkboxLabel}>
-            {copy.checkboxLabel}
-          </Text>
-        </Pressable>
-
+        {/*
+          A statement, not a control. Stock added at billing time comes back
+          automatically; items already given to the patient do not. Both halves
+          are stated because a vet who is told only the first will be looking
+          for the second at the next stock take.
+        */}
+        <Text variant="bodySmall" style={styles.note} testID="void-restore-stock-note">
+          {copy.restoreStockStatement}
+        </Text>
         <Text variant="bodySmall" style={styles.note}>
           {copy.checkboxNote}
         </Text>
@@ -162,7 +155,7 @@ export function VoidConfirmSheet({
           </Pressable>
 
           <Pressable
-            onPress={() => onConfirm({ reason: reason.trim(), restoreStock })}
+            onPress={() => onConfirm({ reason: reason.trim(), restoreStock: true })}
             disabled={!canConfirm}
             accessibilityRole="button"
             accessibilityState={{ disabled: !canConfirm }}
@@ -194,16 +187,6 @@ const styles = StyleSheet.create({
   },
   note: {
     color: COLORS.onSurfaceVariant,
-  },
-  checkboxRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    minHeight: 44,
-  },
-  checkboxLabel: {
-    flex: 1,
-    color: COLORS.onSurface,
   },
   actions: {
     flexDirection: 'row',

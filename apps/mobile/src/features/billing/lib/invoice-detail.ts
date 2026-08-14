@@ -45,7 +45,22 @@ export const INVOICE_DETAIL_COPY = {
 
   // 06-UI-SPEC "Destructive Actions" → "Void invoice", verbatim.
   voidConfirmTitle: 'Void this invoice?',
+  /**
+   * 06-UI-SPEC's checkbox label, kept so the spec string still has a home, but
+   * no longer rendered as a control — see {@link voidRestoreStockStatement}.
+   */
   voidRestoreStockCheckbox: 'Return dispensed items to stock?',
+  /**
+   * Replaces the checkbox (D-34, resolved after the spec was written).
+   *
+   * Which stock comes back is decided by each line's provenance on the server,
+   * not by the vet, so the sheet states the outcome instead of asking for a
+   * choice `voidInvoiceSchema` cannot carry. Both halves are stated: promising
+   * only the first would have a vet looking for the second at the next stock
+   * take.
+   */
+  voidRestoreStockStatement:
+    'Stock added at billing time will be returned automatically; items already given to the patient will not.',
   voidConfirmButton: 'Void Invoice',
   cancelButton: 'Cancel',
   /**
@@ -329,7 +344,10 @@ export function voidedStampFields(
 export interface VoidConfirmCopy {
   title: string;
   body: string;
+  /** Retained for the spec's wording; the sheet renders the statement instead. */
   checkboxLabel: string;
+  /** D-34's statement of what stock actually comes back. Rendered. */
+  restoreStockStatement: string;
   checkboxNote: string;
   paymentLinkNote: string;
   confirmLabel: string;
@@ -354,6 +372,7 @@ export function voidConfirmCopy(
     title: INVOICE_DETAIL_COPY.voidConfirmTitle,
     body: `${subject} for ${formatPaiseINR(grandTotalPaise)} will be marked as void. This cannot be undone.`,
     checkboxLabel: INVOICE_DETAIL_COPY.voidRestoreStockCheckbox,
+    restoreStockStatement: INVOICE_DETAIL_COPY.voidRestoreStockStatement,
     checkboxNote: INVOICE_DETAIL_COPY.voidRestoreStockNote,
     paymentLinkNote: INVOICE_DETAIL_COPY.voidCancelsPaymentLinkNote,
     confirmLabel: INVOICE_DETAIL_COPY.voidConfirmButton,

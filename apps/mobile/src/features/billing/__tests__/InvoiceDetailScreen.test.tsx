@@ -27,6 +27,7 @@ import {
   type InvoiceStatus,
 } from '@breeyo/types';
 import { invoiceActionSet } from '../lib/invoice-actions';
+import { voidConfirmCopy } from '../lib/invoice-detail';
 import {
   INVOICE_SCREEN_COPY,
   buildVoidPayload,
@@ -223,6 +224,29 @@ describe('voiding an invoice', () => {
   it("reports what the server actually restored, in the spec's two strings", () => {
     expect(voidSuccessToast(3)).toBe('Invoice voided. Items returned to stock.');
     expect(voidSuccessToast(0)).toBe('Invoice voided');
+  });
+
+  it('states the stock outcome instead of offering an opt-out (D-34)', () => {
+    const copy = voidConfirmCopy('INV-202608-0001', 125_000);
+
+    expect(copy.restoreStockStatement).toBe(
+      'Stock added at billing time will be returned automatically; items already given to the patient will not.',
+    );
+    expect(copy.title).toBe('Void this invoice?');
+    expect(copy.confirmLabel).toBe('Void Invoice');
+  });
+
+  it('renders no stock checkbox, because the wire cannot carry an opt-out', () => {
+    const source = readFileSync(
+      join(__dirname, '..', 'components', 'VoidConfirmSheet.tsx'),
+      'utf8',
+    );
+
+    // `voidInvoiceSchema` is `z.literal(true)`: a checkbox here could only ever
+    // produce a hard rejection on submit or a silently ignored choice.
+    expect(source).not.toMatch(/<Checkbox/);
+    expect(source).not.toMatch(/setRestoreStock/);
+    expect(source).toMatch(/restoreStock: true/);
   });
 });
 
