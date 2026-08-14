@@ -294,24 +294,50 @@ long-lead item (KYC for 20 pilot clinics); this entry is about the shared **test
 key, which is a five-minute signup and should be done before plan 06-10's webhook
 work, since a webhook cannot be exercised end to end without one.
 
-### 14. D-39 combined multi-invoice payment link — groundwork only (plan 06-09)
+### 14. D-39 combined multi-invoice payment link — RESOLVED on the API (plan 06-19d)
+
+**Status: closed for the API. The remaining gap is the invoice-picker UI only.**
 
 D-39 confirms one Razorpay link settling several of an owner's invoices is in
-scope for Phase 6. Plan 06-09 lays the groundwork but does not implement it:
+scope for Phase 6. It was built across four plans and completed by the 06-19d
+follow-up:
 
-* `Payment.paymentGroupId` is populated on every link created, so a single-invoice
-  link is already the degenerate group of one. The later change is a loop over
-  invoice ids sharing a group id, not a data backfill.
-* `createPaymentLink` accepts a `paymentGroupId` option, and `retryPaymentLink`
-  carries the existing group forward rather than minting a new one.
-* `createPaymentLinkSchema` in `@breeyo/validators` already takes
-  `invoiceIds: string[]` (max 20), and plan 06-03 relaxed the unique constraint to
-  `(razorpayPaymentLinkId, invoiceId)` for this.
+* **06-03** — `Payment.paymentGroupId`, and the unique constraint relaxed to
+  `(razorpayPaymentLinkId, invoiceId)` so several invoices can share one link.
+* **06-04** — `createPaymentLinkSchema` shaped as `invoiceIds: string[]` (max 20).
+* **06-09** — `createPaymentLink` accepts a `paymentGroupId` option and populates
+  it on every link, so a single-invoice link is the degenerate group of one;
+  `retryPaymentLink` carries the existing group forward rather than minting a new
+  one.
+* **06-10** — the webhook fan-out: `resolveLegs` expands a `payment_link.paid`
+  across the whole `paymentGroupId`, settling every invoice the link covered.
+* **06-19d** — the creation path that was missing:
+  `PaymentService.createCombinedPaymentLink` and
+  `POST /billing/payment-links` (MANAGE_PAYMENTS). It sums the outstanding
+  balances, opens ONE link, and writes one pending `Payment` row per invoice
+  sharing a fresh `paymentGroupId` — the exact shape 06-10's worker resolves.
 
-Still to build: the multi-invoice endpoint, per-invoice amount allocation for a
-partial settlement, the webhook fan-out that settles every invoice in a group from
-one `payment_link.paid`, and the UI for picking invoices. The webhook fan-out is
-the substantive part and belongs with plan 06-10, which owns that worker.
+Rejected combinations return a named code rather than a gateway error:
+`INVOICES_NOT_SAME_OWNER` (D-27 — including an unattributed walk-in, since
+`null === null` is not "the same person"), `INVOICE_ALREADY_SETTLED`,
+`INVALID_STATE_TRANSITION` (voided or draft, with the invoice named),
+`INVOICE_NOT_FOUND` (cross-clinic reads as absent), and
+`AMOUNT_BELOW_GATEWAY_MINIMUM`.
+
+Coverage: `apps/api/tests/billing/combined-payment-link.test.ts` (18 tests),
+whose last case drives the real endpoint and then feeds a genuinely signed
+`payment_link.paid` through the real worker — the first test that exercises
+06-10's fan-out against a group the product actually created, rather than
+hand-seeded rows.
+
+**Still deferred:**
+
+* **The invoice-picker UI.** No mobile screen selects several of an owner's
+  invoices; the endpoint has no client caller yet.
+* **Per-invoice allocation of a *partial* settlement.** The worker allocates in
+  creation order and leaves short legs pending, which is correct but currently
+  unreachable: combined links are created with `accept_partial: false`, so a
+  partial settlement can only arise from a gateway anomaly.
 
 ### 15. Billing exceptions LIST endpoint and screen (plan 06-12)
 
