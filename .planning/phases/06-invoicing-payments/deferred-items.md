@@ -388,3 +388,57 @@ correct the comment. Out of scope for 06-16 under the executor's scope boundary
 today — so it wants an owner before Phase 6 closes. Flat discounts are
 unaffected: `type === 'flat'` returns `Math.min(value, basePaise)` with no
 scaling, and that path is correct.
+
+---
+
+## Found during 06-21 (invoice builder screen and its entry routes)
+
+### 18. A consultation whose D-03 draft-invoice hook failed is unbillable from the picker
+
+The D-06 Path B picker (`app/(app)/billing/from-consultation.tsx`) lists DRAFT
+invoices, because there is no consultation-list endpoint and because D-03 makes
+"a completed consultation without an invoice" an off-happy-path state. The full
+reasoning is in `src/features/billing/lib/consultation-picker.ts`.
+
+The gap that leaves: `EmrService.createDraftInvoiceForConsultation` catches and
+logs its own failure rather than failing the consultation
+(`apps/api/src/modules/emr/emr.service.ts:258-272`). A consultation whose hook
+failed therefore has no draft, does not appear in the picker, and cannot be
+billed through either Path A or Path B — the visit is complete, the stock is
+dispensed, and no invoice exists or can be created from the UI.
+
+The fix is server-side and small: either a reconciliation query
+(`GET /billing/consultations/unbilled` — finalized consultations with no invoice
+row) that the picker unions in, or a retry of the hook. It is not a client-side
+scan of consultations, which would not scale.
+
+Impact is bounded by how often the hook fails, which is currently unmeasured —
+the catch logs but increments no counter. Worth a metric either way.
+
+### 19. `/(app)/billing/:invoiceId` (invoice detail) does not exist yet
+
+Plan 06-15's screen. Three call sites now navigate to it: the dashboard's list
+rows, and the builder on both finalize-success and `INVOICE_NOT_DRAFT`. Until
+the route file exists those pushes are inert.
+
+Plan 06-21 routed all three through `BILLING_ROUTES.invoiceDetail(id)` so the
+path is declared once. Whoever creates the detail screen must place it at
+`app/(app)/billing/[invoiceId].tsx` — a **sibling** of `(tabs)`, not a child of
+it, for the reason in item 20.
+
+### 20. `BILLING_ROUTES` pointed into a directory that cannot exist (corrected)
+
+Plan 06-14 declared `consultationPicker` and `quickSale` under
+`/(app)/(tabs)/billing/...`. That namespace cannot resolve:
+`app/(app)/(tabs)/billing.tsx` is a **file** — the Billing tab itself — so there
+is no `(tabs)/billing/` directory for a child route to live in, and every push
+to one of those paths silently did nothing. Since the FAB's New Invoice sheet is
+the primary entry point to the whole billing flow, it was a dead end on the
+first tap.
+
+Corrected in plan 06-21 to `/(app)/billing/...`, matching `settings` (which was
+already right) and the `patient/register` precedent for a full-screen form that
+pushes over the tab bar.
+
+**Plan 06-18 must create Quick Sale at `app/(app)/billing/quick-sale.tsx`**, not
+under `(tabs)`. The constant is already pointing there.
