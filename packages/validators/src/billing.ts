@@ -118,10 +118,12 @@ export type ServiceCatalogUpdateInput = z.infer<typeof serviceCatalogUpdateSchem
  * which one is decided by the sibling `discountType`, so neither field is
  * meaningful without the other.
  *
- * Note the unit change at the persistence boundary: `invoices.invoice_discount_value`
- * and `invoice_line_items.discount_value` store a percentage multiplied by 100,
- * so that a fractional percentage stays expressible without a migration. The
- * service multiplies on the way in. Do not send basis points here.
+ * There is no unit change anywhere on this field's journey: what the client
+ * sends is what `invoices.invoice_discount_value` and
+ * `invoice_line_items.discount_value` store and what the service's arithmetic
+ * divides by 100. Do not send basis points, and do not scale on the way in —
+ * the bound below (percent <= 100) is what makes a 100% write-off expressible
+ * at all, and it is enforced against the same units the service reads.
  */
 function discountGuard(
   discountType: string | undefined,

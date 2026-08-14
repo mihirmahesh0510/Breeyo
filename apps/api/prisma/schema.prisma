@@ -792,7 +792,7 @@ model Invoice {
   subtotalPaise        Int     @default(0) @map("subtotal_paise") // paise
   lineDiscountPaise    Int     @default(0) @map("line_discount_paise") // paise
   invoiceDiscountType  String? @map("invoice_discount_type") // percent | flat (D-07)
-  invoiceDiscountValue Int?    @map("invoice_discount_value") // basis: paise when flat, percent*100 when percent
+  invoiceDiscountValue Int?    @map("invoice_discount_value") // basis: paise when flat, whole percent 0-100 when percent
   invoiceDiscountPaise Int     @default(0) @map("invoice_discount_paise") // paise
   taxableValuePaise    Int     @default(0) @map("taxable_value_paise") // paise
   cgstPaise            Int     @default(0) @map("cgst_paise") // paise
@@ -888,7 +888,7 @@ model InvoiceLineItem {
 
   unitPricePaise                Int     @map("unit_price_paise") // paise, frozen at add-to-invoice
   discountType                  String? @map("discount_type") // percent | flat (D-07)
-  discountValue                 Int?    @map("discount_value")
+  discountValue                 Int?    @map("discount_value") // basis: paise when flat, whole percent 0-100 when percent
   lineDiscountPaise             Int     @default(0) @map("line_discount_paise") // paise
   // Pro-rata share of the invoice-level discount (RESEARCH Pitfall 5): an
   // invoice-level discount must be pushed down to lines before GST, or the tax

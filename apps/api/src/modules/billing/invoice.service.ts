@@ -907,8 +907,9 @@ export class InvoiceService {
   }
 
   /**
-   * `percent` values are persisted as percent x 100 so a fractional percentage
-   * stays expressible; `flat` values are already paise (D-07).
+   * `percent` values are a whole percentage of 0-100; `flat` values are already
+   * paise (D-07). The line-level and invoice-level rules are the same rule, so
+   * they share one implementation and cannot drift apart.
    */
   private resolveLineDiscount(
     grossPaise: number,
@@ -918,6 +919,14 @@ export class InvoiceService {
     return this.resolveInvoiceDiscount(grossPaise, type, value);
   }
 
+  /**
+   * `value` is a WHOLE PERCENTAGE, in the same units the client sent and the
+   * column stores — nothing scales it on the way in, so nothing may unscale it
+   * here. `invoiceLineItemInputSchema` rejects a percent above 100 and admits
+   * exactly 100 as a full write-off (D-40), which is only coherent if 100 means
+   * 100%: dividing by 10_000 would cap the largest legal discount at 1% and
+   * silently turn every "10% off" into "0.1% off".
+   */
   private resolveInvoiceDiscount(
     basePaise: number,
     type: string | null,
@@ -925,8 +934,8 @@ export class InvoiceService {
   ): number {
     if (type == null || value == null) return 0;
     if (type === 'flat') return Math.min(value, basePaise);
-    // percent, stored as percent x 100
-    return Math.min(Math.round((basePaise * value) / 10_000), basePaise);
+    // percent of the base, rounded to whole paise (D-31) and never exceeding it
+    return Math.min(Math.round((basePaise * value) / 100), basePaise);
   }
 
   private resolveInterState(
