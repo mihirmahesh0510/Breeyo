@@ -42,7 +42,16 @@ import {
  */
 export const BILLING_ROUTES = {
   consultationPicker: '/(app)/(tabs)/billing/from-consultation',
-  quickSale: '/(app)/(tabs)/billing/quick-sale',
+  /**
+   * Corrected by plan 06-18 from a `(tabs)` child to a `(tabs)` sibling.
+   *
+   * The original path required `(tabs)/billing.tsx` to become a directory, a
+   * restructure of the tab screen that no plan in this phase owns. Quick Sale
+   * is a full-screen counter flow that pushes over the tab bar anyway — the
+   * same shape as `settings` below — so the sibling path is also the more
+   * correct one. The route file is `app/(app)/billing/quick-sale.tsx`.
+   */
+  quickSale: '/(app)/billing/quick-sale',
   /**
    * D-29 billing settings (plan 06-23). Unlike the two above it is a sibling of
    * `(tabs)`, not a child: it is an Admin form holding a live payment
