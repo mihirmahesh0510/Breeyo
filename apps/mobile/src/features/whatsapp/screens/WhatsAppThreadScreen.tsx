@@ -4,17 +4,19 @@ import { Text, TextInput, Button, ActivityIndicator } from 'react-native-paper';
 import { Stack } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { SkeletonLoader, EmptyState, BottomSheet } from '@breeyo/ui';
-import type { WaBookingState, WaSlotOption, WhatsAppMessageView } from '@breeyo/types';
+import type { WaSlotOption, WhatsAppMessageView } from '@breeyo/types';
 import { apiClient } from '../../../lib/api';
 import { useAuth } from '../../../providers/AuthProvider';
 import { useWhatsAppThread } from '../hooks/useWhatsAppThread';
 import { useWhatsAppSocket } from '../hooks/useWhatsAppSocket';
 import { useRetryMessage } from '../hooks/useRetryMessage';
 import { useMarkResolved, useCancelBooking, useMoveBooking } from '../hooks/useBookingActions';
+import { whatsappKeys } from '../hooks/whatsapp-query-keys';
 import { WA_COLORS } from '../utils/whatsapp-format';
 import { MessageBubble } from '../components/MessageBubble';
 import { ConversationActionCard } from '../components/ConversationActionCard';
 import { QuickReplyChip } from '../components/QuickReplyChip';
+import { BookingDetailCard, type BookingDetailCardBooking } from '../components/BookingDetailCard';
 
 /**
  * WHA-05 / D-04, D-09: the staff thread view. Composes `useWhatsAppThread`,
@@ -32,39 +34,22 @@ const THREAD_LOAD_ERROR_COPY = 'Could not load this conversation. Pull down to t
 const CANCEL_BOOKING_CONFIRM_COPY =
   'Cancel this booking? The owner will see the booking as cancelled, and the reason will be saved in the thread.';
 
-const BOOKING_STATE_LABELS: Record<WaBookingState, string> = {
-  AWAITING_SLOT_CHOICE: 'Awaiting slot choice',
-  CONFIRMED: 'Confirmed',
-  MOVED: 'Moved',
-  CANCELLED: 'Cancelled',
-  EXPIRED: 'Expired',
-};
-
-/** Mirrors `useBookingActions.ts`'s mobile-side booking read shape. */
-interface InlineBookingDetail {
-  id: string;
-  reference: string;
-  state: WaBookingState;
-  slotDate: string | null;
-  slotStartMinutes: number | null;
-  slotDurationMinutes: number | null;
-}
-
 /**
  * D-26 (locked after 07-15-PLAN.md was written): `confirm_booking` must be a
  * LIVE, tappable action that opens the booking's detail, not a read-only
- * receipt -- the dedicated `BookingDetailCard` component doesn't exist yet
- * (07-16 builds it), so this fetches `GET /whatsapp/bookings/:bookingId`
- * directly via `apiClient` and renders a lightweight inline detail here.
- * 07-16 replaces this with the dedicated `BookingDetailCard` component.
+ * receipt. This fetches `GET /whatsapp/bookings/:bookingId` via `apiClient`
+ * and hands the result to the dedicated `BookingDetailCard` component
+ * (built in 07-16) for rendering. It keys off `whatsappKeys.booking`, the
+ * same cache key `useCancelBooking`/`useMoveBooking` (invoked inside
+ * `BookingDetailCard`) cancel in-flight requests against on mutate.
  */
-function useInlineBookingDetail(bookingId: string | null) {
+function useBookingDetailQuery(bookingId: string | null) {
   const { accessToken, activeClinicId } = useAuth();
 
   return useQuery({
-    queryKey: ['whatsapp-inline-booking-detail', activeClinicId, bookingId],
+    queryKey: whatsappKeys.booking(activeClinicId ?? '', bookingId ?? ''),
     queryFn: () =>
-      apiClient<{ data: InlineBookingDetail }>(`/api/v1/whatsapp/bookings/${bookingId}`, {
+      apiClient<{ data: BookingDetailCardBooking }>(`/api/v1/whatsapp/bookings/${bookingId}`, {
         token: accessToken!,
       }),
     enabled: !!accessToken && !!activeClinicId && !!bookingId,
@@ -85,21 +70,6 @@ function useInlineOfferableSlots(enabled: boolean) {
     enabled: enabled && !!accessToken && !!activeClinicId,
     select: (response) => response.data,
   });
-}
-
-function formatBookingSlot(
-  slotDate: string | null,
-  slotStartMinutes: number | null,
-): string {
-  if (!slotDate || slotStartMinutes == null) return 'No slot selected yet';
-  const date = new Date(slotDate);
-  const dateLabel = date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
-  const startHour = Math.floor(slotStartMinutes / 60);
-  const startMinute = slotStartMinutes % 60;
-  const period = startHour >= 12 ? 'PM' : 'AM';
-  const displayHour = ((startHour + 11) % 12) + 1;
-  const timeLabel = `${displayHour}:${String(startMinute).padStart(2, '0')} ${period}`;
-  return `${dateLabel}, ${timeLabel}`;
 }
 
 type SheetMode = 'none' | 'cancelBooking' | 'moveBooking' | 'bookingDetail';
@@ -128,7 +98,7 @@ export function WhatsAppThreadScreen({ threadId }: WhatsAppThreadScreenProps) {
 
   const listRef = useRef<FlatList<WhatsAppMessageView>>(null);
 
-  const bookingDetailQuery = useInlineBookingDetail(
+  const bookingDetailQuery = useBookingDetailQuery(
     sheetMode === 'bookingDetail' ? selectedBookingId : null,
   );
   const slotsQuery = useInlineOfferableSlots(sheetMode === 'moveBooking');
@@ -425,25 +395,18 @@ export function WhatsAppThreadScreen({ threadId }: WhatsAppThreadScreenProps) {
         )}
       </BottomSheet>
 
-      {/* D-26 booking detail -- replaced by the dedicated `BookingDetailCard`
-          component in 07-16; this inline version only shows reference,
-          formatted slot and state. */}
+      {/* D-26/WHA-03: `confirm_booking` opens this sheet, which renders the
+          dedicated `BookingDetailCard` (D-08/D-09) -- reference, slot,
+          state, the unconditional "Check in manually..." helper text, and
+          (for a CONFIRMED booking) staff-only Move/Cancel affordances with
+          their own 409 SLOT_TAKEN handling, all owned by the component. */}
       <BottomSheet visible={sheetMode === 'bookingDetail'} onDismiss={closeSheet} title="Booking">
         {bookingDetailQuery.isLoading ? (
           <ActivityIndicator size="small" />
         ) : bookingDetailQuery.isError || !bookingDetail ? (
           <Text variant="bodyMedium">Could not load this booking.</Text>
         ) : (
-          <View style={styles.bookingDetailBody}>
-            <Text style={styles.bookingDetailLabel}>Reference</Text>
-            <Text variant="titleMedium">{bookingDetail.reference}</Text>
-            <Text style={styles.bookingDetailLabel}>When</Text>
-            <Text variant="bodyMedium">
-              {formatBookingSlot(bookingDetail.slotDate, bookingDetail.slotStartMinutes)}
-            </Text>
-            <Text style={styles.bookingDetailLabel}>Status</Text>
-            <Text variant="bodyMedium">{BOOKING_STATE_LABELS[bookingDetail.state]}</Text>
-          </View>
+          <BookingDetailCard booking={bookingDetail} onMove={closeSheet} onCancel={closeSheet} />
         )}
       </BottomSheet>
     </View>
@@ -538,15 +501,5 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderBottomWidth: 1,
     borderBottomColor: '#D7CCC8',
-  },
-  bookingDetailBody: {
-    gap: 4,
-  },
-  bookingDetailLabel: {
-    fontSize: 12,
-    lineHeight: 16,
-    fontWeight: '500',
-    color: '#5D4037',
-    marginTop: 8,
   },
 });
