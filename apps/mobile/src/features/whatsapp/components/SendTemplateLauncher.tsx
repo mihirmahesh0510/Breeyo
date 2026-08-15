@@ -3,6 +3,7 @@ import { Button } from '@breeyo/ui';
 import { WA_TEMPLATE_STAFF_NAMES } from '@breeyo/types';
 import type { WaContextType, WaTemplateKey } from '@breeyo/types';
 import { TemplateSendSheet } from './TemplateSendSheet';
+import { useOwnerPreferenceQuery } from '../hooks/useOwnerPreference';
 
 /**
  * WHA-02 / D-18, Pitfall 8: the one reusable trigger component that owns a
@@ -58,16 +59,15 @@ export interface SendTemplateLauncherProps {
   label?: string;
   disabled?: boolean;
   /**
-   * Advisory-only signals (D-13: missing consent never blocks a send) that
-   * a caller MAY already have from its own context -- e.g. a thread screen
-   * that already fetched `WhatsAppThreadSummary.numberStatus`. There is no
-   * `GET`-shaped read endpoint in this API for a single owner's
-   * `remindersOptedOut`/consent state outside of a thread (only
-   * `WhatsAppThreadSummary.numberStatus` exists, and that requires already
-   * knowing a `threadId`), so this launcher cannot fetch these itself for a
-   * caller with no thread context, such as the pet profile. Omit them and
-   * the sheet renders with no warning -- exactly D-13's behavior for an
-   * owner this caller has no signal about.
+   * Advisory-only overrides (D-13: missing consent never blocks a send).
+   * This component fetches `owner.id`'s preference/consent state itself via
+   * `useOwnerPreferenceQuery` (`GET /whatsapp/owners/:ownerId/preference`,
+   * WHA-02) and derives these three props from the response, so a caller
+   * with no other signal -- e.g. the pet profile -- gets accurate warnings
+   * for free. A caller that already has FRESHER data from its own context
+   * (e.g. a thread screen that already fetched
+   * `WhatsAppThreadSummary.numberStatus`) may still pass an explicit value
+   * here, which takes precedence over the fetched one.
    */
   optedOut?: boolean;
   numberInvalid?: boolean;
@@ -91,6 +91,20 @@ export function SendTemplateLauncher({
 }: SendTemplateLauncherProps) {
   const [visible, setVisible] = useState(false);
 
+  // WHA-02: fetched only to fill in whichever of the three props above the
+  // caller didn't already supply -- see the prop doc comment for why an
+  // explicit prop always wins over this.
+  const preferenceQuery = useOwnerPreferenceQuery(owner.id);
+  const fetchedOptedOut = preferenceQuery.data?.remindersOptedOut;
+  const fetchedNumberInvalid =
+    preferenceQuery.data ? preferenceQuery.data.numberStatus === 'INVALID' : undefined;
+  const fetchedConsentWarning =
+    preferenceQuery.data ? !preferenceQuery.data.hasConsent : undefined;
+
+  const effectiveOptedOut = optedOut ?? fetchedOptedOut;
+  const effectiveNumberInvalid = numberInvalid ?? fetchedNumberInvalid;
+  const effectiveConsentWarning = consentWarning ?? fetchedConsentWarning;
+
   return (
     <>
       <Button
@@ -109,9 +123,9 @@ export function SendTemplateLauncher({
         contextType={contextType}
         contextId={contextId}
         prefilledVariables={prefilledVariables}
-        consentWarning={consentWarning}
-        optedOut={optedOut}
-        numberInvalid={numberInvalid}
+        consentWarning={effectiveConsentWarning}
+        optedOut={effectiveOptedOut}
+        numberInvalid={effectiveNumberInvalid}
         onSuccess={(messageId) => {
           setVisible(false);
           onSuccess?.(messageId);

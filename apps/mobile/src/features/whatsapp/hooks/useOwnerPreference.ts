@@ -1,9 +1,9 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
 import { apiClient } from '../../../lib/api';
 import { useAuth } from '../../../providers/AuthProvider';
 import { whatsappKeys } from './whatsapp-query-keys';
-import type { OwnerPreferenceInput } from '@breeyo/types';
+import type { OwnerPreferenceInput, WaNumberStatus } from '@breeyo/types';
 
 /**
  * WHA-05 / D-11: single global per-owner reminder opt-out toggle, used both
@@ -46,5 +46,37 @@ export function useSetOwnerPreference(threadId?: string) {
         }
       }, 300);
     },
+  });
+}
+
+interface OwnerPreferenceResponse {
+  data: {
+    remindersOptedOut: boolean;
+    numberStatus: WaNumberStatus;
+    hasConsent: boolean;
+  };
+}
+
+/**
+ * WHA-02: read-only counterpart to `useSetOwnerPreference` above, backing
+ * `GET /whatsapp/owners/:ownerId/preference`. Lets `SendTemplateLauncher`
+ * discover an owner's opt-out/invalid-number state and whether a consent
+ * record exists for itself, in one call, when its caller has no thread
+ * context to read `WhatsAppThreadSummary.numberStatus` from (e.g. the pet
+ * profile). Copies `useWhatsAppThread.ts`'s auth-guard/`select`-unwrapping
+ * shape.
+ */
+export function useOwnerPreferenceQuery(ownerId: string | undefined) {
+  const { accessToken, activeClinicId } = useAuth();
+
+  return useQuery({
+    queryKey: whatsappKeys.ownerPreference(activeClinicId ?? '', ownerId ?? ''),
+    queryFn: () =>
+      apiClient<OwnerPreferenceResponse>(`/api/v1/whatsapp/owners/${ownerId}/preference`, {
+        token: accessToken!,
+      }),
+    enabled: !!accessToken && !!activeClinicId && !!ownerId,
+    staleTime: 30_000,
+    select: (response) => response.data,
   });
 }

@@ -34,4 +34,7 @@ export const whatsappKeys = {
   slots: (clinicId: string, date: string) => ['whatsapp', clinicId, 'slots', date] as const,
 
   config: (clinicId: string) => ['whatsapp', clinicId, 'config'] as const,
+
+  ownerPreference: (clinicId: string, ownerId: string) =>
+    ['whatsapp', clinicId, 'owner-preference', ownerId] as const,
 };
