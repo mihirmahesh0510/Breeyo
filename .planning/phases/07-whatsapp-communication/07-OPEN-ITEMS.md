@@ -1,14 +1,37 @@
 # Phase 7 (WhatsApp Communication) — Open Items
 
 **Branch:** `breeyo/phase-07-whatsapp-communication` (not yet merged to `main`)
-**Status:** All 16 plans built, 5 gap-fixes applied and verified, full automated test suite green. Not yet merged — human verification and a merge decision are still open.
-**Last updated:** 2026-08-15
+**Status:** All 16 plans built, 5 gap-fixes applied and verified, full automated test suite green. Device verification now underway on a real Android emulator (see §1a) — one real bug found and fixed. PR opened for review.
+**Last updated:** 2026-08-15 (device verification session)
 
 This file tracks everything left hanging after the build + `--verify` pass, so nothing gets silently forgotten. It supplements (does not replace) the phase's own `07-CONTEXT.md`, `07-VALIDATION.md`, and per-plan `07-CONTEXT.md` decisions.
 
 ---
 
-## 1. Blocking: human device verification (not yet done)
+## 1a. Device verification session (2026-08-15) — partial pass, real bug found+fixed
+
+Ran against a real Android emulator (Breeyo_Pixel_7, API 34) set up in the same session, with a freshly signed-up Admin account and test patient. Not the full 37-step checklist — time-boxed to the highest-risk paths. Results:
+
+**Verified passing:**
+- WhatsApp nav entry visible for Admin (green FAB, bottom-left of every tab screen)
+- Inbox empty state matches exact UI-SPEC copy: "No WhatsApp messages yet" / "Send an invoice, reminder, booking update, or clinical document to start the first owner thread."
+- All 6 filter chips present and reachable: All, Invoices, Reminders, Bookings, Failed, Needs action
+- D-13 consent warning on the send sheet: "No WhatsApp consent on record for this owner yet. You can still send -- this is for audit visibility only." — exact copy, correctly non-blocking
+- **Send Template end-to-end**: sent a "Deworming due" template from a pet profile, confirmed via the threads API that a real thread was created with the correctly rendered message ("Hi Test Owner, Bruno is due for deworming on 15 Aug 2026. Reply to book a visit.")
+
+**Real bug found and fixed** (commit on this branch): `TemplateSendSheet.tsx` sent `waPhone: owner.mobile` — the raw 10-digit number — but `POST /whatsapp/send` requires E.164 with a leading `+`. Every template send from a pet profile was failing with a 400 before this fix (confirmed: 400 → 202 after the fix, using `formatPhoneWithPrefix` from `wizard-utils.ts`, no new helper added).
+
+**Not yet run** (remaining from the original 37): thread bubble alignment / auto-reply timing, FAIL/INVALID_NUMBER delivery modes, font scaling, Android back button chains, Clinician role-gating (nav entry hidden + route refuses), airplane-mode offline banner, Admin config screen (delay bounds, reminder defaults, Front Desk denial), the reminder-sweep trigger, the full booking flow (slot list → confirm → detail → cancel), stop-reminders / mark-invalid-number flows, and confirming `/ui-spike` is gone.
+
+**Two pre-existing bugs found blocking this session, fixed separately (not Phase 7 scope, own PR to `main`):**
+1. `usePetProfile`'s `select` assumed `{pet, owner, visits}` as siblings; the real API returns a flat pet object with `owner` nested and `visitHistory`. Crashed `PatientDetailScreen` for every pet. PR: `fix/patient-profile-visit-history-shape`.
+2. `PatientListScreen`/`OwnerDetailScreen` navigate to `/(app)/register-patient`, but the actual route is `/(app)/patient/register` — "Add Patient" hits an Unmatched Route screen. **Not yet fixed** — flagged here since it blocked testing (worked around by creating test patients via direct API calls), but it's Phase 3 scope, not touched in this session.
+
+Both crashes reinforce the pattern already noted in this doc: these screens had never been opened on a real device before.
+
+---
+
+## 1. Blocking: human device verification (partially done — see §1a)
 
 I have no physical device or simulator access. Two plans (`07-15`, `07-16`) each end in a blocking human-verify checkpoint; both are still open. Combined into one 37-step pass:
 
