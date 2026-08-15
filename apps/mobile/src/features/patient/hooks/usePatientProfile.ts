@@ -17,10 +17,9 @@ interface Visit {
 }
 
 interface PetProfileResponse {
-  data: {
-    pet: Pet;
+  data: Pet & {
     owner: Owner;
-    visits: Visit[];
+    visitHistory: Visit[];
   };
 }
 
@@ -52,7 +51,11 @@ export function usePetProfile(petId: string) {
       }),
     enabled: !!accessToken && !!petId,
     staleTime: 60_000,
-    select: (response) => response.data,
+    select: (response) => ({
+      pet: response.data,
+      owner: response.data.owner,
+      visits: response.data.visitHistory,
+    }),
   });
 }
 
