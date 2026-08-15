@@ -35,7 +35,8 @@
  * outbound send/requeue jobs `WhatsAppService`/`WA_JOB_OPTIONS` already use.
  */
 
-import type { Queue } from 'bullmq';
+import { Worker, type Queue } from 'bullmq';
+import type { Redis } from 'ioredis';
 import type { PrismaClient } from '@prisma/client';
 import {
   WA_ESCALATION,
@@ -112,6 +113,49 @@ export async function registerReminderSweep(queue: Queue): Promise<void> {
     WA_REMINDER_SWEEP_JOB,
     { pattern: WA_REMINDER_SWEEP_CRON, tz: WA_REMINDER_SWEEP_TZ },
     { name: 'reminder-sweep', data: {} },
+  );
+}
+
+/**
+ * WHA-01 fix: this queue's own dedicated worker deps — `ReminderSweepDeps`
+ * plus the `Redis` connection a BullMQ `Worker` needs. Kept separate from
+ * `ReminderSweepDeps` itself (rather than folding `redis` into it) because
+ * `runReminderSweep` has no use for a raw connection — only
+ * `createReminderSweepWorker` does.
+ */
+export interface ReminderSweepWorkerDeps extends ReminderSweepDeps {
+  redis: Redis;
+}
+
+/**
+ * The reminder sweep's OWN dedicated worker (WHA-01 fix), consuming the
+ * `whatsapp-reminder-sweep` queue `registerReminderSweep` schedules onto —
+ * never the `whatsapp-outbound` queue `createOutboundWorker` consumes.
+ * Before this existed, the scheduled sweep job had no worker of its own: it
+ * landed on `whatsapp-outbound`, whose `processOutboundJob` unconditionally
+ * reads `job.data.messageId` and does nothing useful with a `{}` payload, so
+ * `runReminderSweep` never actually ran.
+ *
+ * Follows the exact `outbound.worker.ts` / `simulator.worker.ts` test-guard
+ * pattern (Pitfall 7): `undefined` under `vitest`, a real BullMQ `Worker`
+ * otherwise. `concurrency: 1` is deliberate — only one sweep should ever run
+ * at a time (a second overlapping sweep would just duplicate discover/
+ * dispatch work the unique task key already makes redundant).
+ */
+export function createReminderSweepWorker(deps: ReminderSweepWorkerDeps): Worker | undefined {
+  if (process.env.NODE_ENV === 'test') {
+    return undefined;
+  }
+
+  return new Worker(
+    WA_REMINDER_SWEEP_JOB,
+    async () => {
+      await runReminderSweep(deps);
+    },
+    {
+      connection: deps.redis,
+      concurrency: 1,
+    },
   );
 }
 

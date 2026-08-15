@@ -36,7 +36,7 @@ import { createBookingInboundHandler } from './booking/booking-inbound.handler.j
 import { ReminderSourceRepository } from './reminders/reminder-source.repository.js';
 import { ReminderTaskRepository } from './reminders/reminder-task.repository.js';
 import { ReminderTaskService, createReminderReplyHandler } from './reminders/reminder-task.service.js';
-import { registerReminderSweep } from './reminders/reminder-sweep.job.js';
+import { registerReminderSweep, createReminderSweepWorker } from './reminders/reminder-sweep.job.js';
 import whatsappWebhookRoutes from './whatsapp.webhook.routes.js';
 import { PermissionService } from '../auth/permission.service.js';
 import { authenticate } from '../../middleware/authenticate.js';
@@ -62,7 +62,8 @@ export default async function whatsappRoutes(fastify: FastifyInstance): Promise<
   const bookingRepository = new BookingRepository(fastify.prisma);
   const reminderSourceRepository = new ReminderSourceRepository(fastify.prisma);
   const reminderTaskRepository = new ReminderTaskRepository(fastify.prisma);
-  void reminderSourceRepository; // Consumed by the sweep job (07-11), not the route surface itself.
+  // `reminderSourceRepository` is consumed by the reminder-sweep worker's
+  // deps below (WHA-01), not by the route surface itself.
 
   // ─── Queues, closed on Fastify's onClose hook ─────────────────────────────
   const queues = createWhatsAppQueues(fastify.redis);
@@ -126,16 +127,34 @@ export default async function whatsappRoutes(fastify: FastifyInstance): Promise<
     deliveryStatusService,
     inboundRouter,
   });
+  // WHA-01 fix: the reminder sweep's OWN dedicated worker, consuming
+  // `queues.reminderSweep` — never `queues.outbound`. Assembled from exactly
+  // what `runReminderSweep` needs (`ReminderSweepDeps`), all of which this
+  // file already constructs above for the route surface itself.
+  const reminderSweepWorker = createReminderSweepWorker({
+    prisma: fastify.prisma,
+    sourceRepo: reminderSourceRepository,
+    taskRepo: reminderTaskRepository,
+    taskService: reminderTaskService,
+    whatsAppService,
+    outboundQueue: queues.outbound,
+    redis: fastify.redis,
+  });
   fastify.addHook('onClose', async () => {
     await outboundWorker?.close();
     await simulatorWorker?.close();
+    await reminderSweepWorker?.close();
   });
 
   // ─── Reminder sweep scheduler (Pitfall 2: Redis-coordinated, once across
   // N ECS tasks) — registered only outside test, exactly like the existing
-  // midnight-archive/expiry-cron/overdue-invoices precedents at app.ts. ──────
+  // midnight-archive/expiry-cron/overdue-invoices precedents at app.ts.
+  // Scheduled onto `queues.reminderSweep`, its own dedicated queue — the
+  // WHA-01 fix: this previously scheduled onto `queues.outbound`, whose
+  // worker had no code path for a `{}`-payload job, so the sweep never
+  // actually ran. ────────────────────────────────────────────────────────
   if (!isTest) {
-    await registerReminderSweep(queues.outbound);
+    await registerReminderSweep(queues.reminderSweep);
   }
 
   // ─── Controller + routes ───────────────────────────────────────────────

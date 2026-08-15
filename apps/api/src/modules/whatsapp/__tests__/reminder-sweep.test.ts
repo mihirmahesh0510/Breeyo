@@ -1,7 +1,8 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   registerReminderSweep,
   runReminderSweep,
+  createReminderSweepWorker,
   WA_REMINDER_SWEEP_JOB,
 } from '../reminders/reminder-sweep.job.js';
 import { WA_ESCALATION } from '@breeyo/types';
@@ -13,6 +14,17 @@ import { WA_ESCALATION } from '@breeyo/types';
  * discover/upsert/dispatch/escalate/requeue orchestration, never a real
  * queue or database.
  */
+
+// `bullmq`'s `Worker` is mocked (matching `outbound.worker.test.ts`'s exact
+// style) so `createReminderSweepWorker`'s "otherwise" branch — and, crucially,
+// the processor function it hands to `Worker` — can be asserted with no live
+// Redis connection.
+vi.mock('bullmq', async () => {
+  const actual = await vi.importActual<typeof import('bullmq')>('bullmq');
+  return { ...actual, Worker: vi.fn().mockImplementation(() => ({ close: vi.fn() })) };
+});
+
+const { Worker } = await import('bullmq');
 
 const CLINIC_ID = 'clinic-1';
 const OWNER_ID = 'owner-1';
@@ -294,4 +306,74 @@ describe('runReminderSweep — idempotency and per-clinic isolation', () => {
       }),
     );
   });
+});
+
+describe('createReminderSweepWorker (WHA-01 fix, Pitfall 7) — gives the sweep its own worker', () => {
+  const originalNodeEnv = process.env.NODE_ENV;
+
+  afterEach(() => {
+    process.env.NODE_ENV = originalNodeEnv;
+    vi.clearAllMocks();
+  });
+
+  it("returns undefined when NODE_ENV is 'test'", () => {
+    process.env.NODE_ENV = 'test';
+    const deps = { ...createDeps(), redis: {} as any };
+
+    const worker = createReminderSweepWorker(deps as any);
+
+    expect(worker).toBeUndefined();
+    expect(Worker).not.toHaveBeenCalled();
+  });
+
+  it("constructs a Worker for the dedicated 'whatsapp-reminder-sweep' queue with concurrency 1 when NODE_ENV is not 'test'", () => {
+    process.env.NODE_ENV = 'production';
+    const deps = { ...createDeps(), redis: {} as any };
+
+    const worker = createReminderSweepWorker(deps as any);
+
+    expect(worker).toBeDefined();
+    expect(Worker).toHaveBeenCalledWith(
+      'whatsapp-reminder-sweep',
+      expect.any(Function),
+      expect.objectContaining({ connection: deps.redis, concurrency: 1 }),
+    );
+  });
+
+  it(
+    'the constructed processor actually reaches runReminderSweep through the real composition path — ' +
+      'this is the exact gap the fix closes: previously the scheduled sweep job landed on the ' +
+      "outbound queue's worker, which never called runReminderSweep at all",
+    async () => {
+      process.env.NODE_ENV = 'production';
+      const deps = { ...createDeps(), redis: {} as any };
+      const source = {
+        clinicId: CLINIC_ID,
+        ownerId: OWNER_ID,
+        petId: PET_ID,
+        kind: 'FOLLOW_UP',
+        sourceType: 'CONSULTATION',
+        sourceId: 'consult-1',
+        sourceLabel: null,
+        dueDate: new Date('2026-08-15'),
+      };
+      deps.sourceRepo.findFollowUpsDue.mockResolvedValue([source]);
+
+      createReminderSweepWorker(deps as any);
+
+      // Call the plain processor function BullMQ's `Worker` was constructed
+      // with — not a live `Worker` (which cannot run under NODE_ENV=test) —
+      // simulating exactly what happens when the scheduled job fires.
+      const [, processor] = (Worker as any).mock.calls[0];
+      await processor({ id: 'job-1', name: 'reminder-sweep', data: {} });
+
+      // Observable proof the sweep's discover/upsert phases actually ran,
+      // reached through createReminderSweepWorker's own processor — not
+      // through a direct runReminderSweep(deps) call, which was already true
+      // before this fix.
+      expect(deps.prisma.clinic.findMany).toHaveBeenCalledTimes(1);
+      expect(deps.sourceRepo.findFollowUpsDue).toHaveBeenCalledWith(CLINIC_ID, expect.anything());
+      expect(deps.taskService.upsertTasksForSource).toHaveBeenCalledWith(CLINIC_ID, source);
+    },
+  );
 });

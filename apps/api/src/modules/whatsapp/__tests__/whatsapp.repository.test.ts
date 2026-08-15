@@ -404,16 +404,18 @@ describe('whatsapp-queue (WHA-05)', () => {
     mockQueueInstances.length = 0;
   });
 
-  it("createWhatsAppQueues returns queues named 'whatsapp-outbound' and 'whatsapp-simulator'", () => {
+  it("createWhatsAppQueues returns queues named 'whatsapp-outbound', 'whatsapp-simulator' and 'whatsapp-reminder-sweep'", () => {
     const fakeRedis = {} as any;
     const queues = createWhatsAppQueues(fakeRedis);
 
     expect(mockQueueInstances.map((q) => q.name)).toEqual([
       'whatsapp-outbound',
       'whatsapp-simulator',
+      'whatsapp-reminder-sweep',
     ]);
     expect(queues.outbound).toBeDefined();
     expect(queues.simulator).toBeDefined();
+    expect(queues.reminderSweep).toBeDefined();
   });
 
   it('WA_JOB_OPTIONS matches the retry/backoff contract', () => {
@@ -431,10 +433,10 @@ describe('whatsapp-queue (WHA-05)', () => {
     // The mocked 'bullmq' module only exports Queue — if createWhatsAppQueues
     // imported/constructed a Worker, this module mock would throw at import
     // time (Worker is not exported), which is itself the enforcement.
-    expect(mockQueueInstances.length).toBe(2);
+    expect(mockQueueInstances.length).toBe(3);
   });
 
-  it('close() closes both underlying queues', async () => {
+  it('close() closes all underlying queues', async () => {
     const fakeRedis = {} as any;
     const queues = createWhatsAppQueues(fakeRedis);
     await queues.close();
