@@ -40,9 +40,25 @@ export const bookingParamsSchema = z.object({
   bookingId: z.string().uuid(),
 });
 
+/** D-11/D-12: path param for the owner-scoped preference (and, structurally,
+ * consent) actions — validated separately from the request body so a
+ * malformed id is a 400 before any owner lookup. */
+export const ownerParamsSchema = z.object({
+  ownerId: z.string().uuid(),
+});
+
+/** WHA-03: `?date=YYYY-MM-DD` for the slot-offer read, coerced straight to a
+ * `Date` so `SlotService.getOfferableSlots`'s `fromDate` option needs no
+ * second parse. Omitted entirely, `SlotService` defaults to IST-today. */
+export const slotsQuerySchema = z.object({
+  date: z.coerce.date().optional(),
+});
+
 export type ThreadParams = z.infer<typeof threadParamsSchema>;
 export type MessageParams = z.infer<typeof messageParamsSchema>;
 export type BookingParams = z.infer<typeof bookingParamsSchema>;
+export type OwnerParams = z.infer<typeof ownerParamsSchema>;
+export type SlotsQuery = z.infer<typeof slotsQuerySchema>;
 
 // ─── Re-exports from @breeyo/validators (single import surface for the
 // controller — see file header) ────────────────────────────────────────────

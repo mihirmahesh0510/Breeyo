@@ -28,6 +28,7 @@ import { createWhatsAppQueues } from './whatsapp-queue.js';
 import { createOutboundWorker } from './workers/outbound.worker.js';
 import { createSimulatorWorker } from './workers/simulator.worker.js';
 import { createWhatsAppController } from './whatsapp.controller.js';
+import { ClinicConfigService } from './clinic-config.service.js';
 import { BookingRepository } from './booking/booking.repository.js';
 import { BookingService } from './booking/booking.service.js';
 import { SlotService } from './booking/slot.service.js';
@@ -138,7 +139,19 @@ export default async function whatsappRoutes(fastify: FastifyInstance): Promise<
   }
 
   // ─── Controller + routes ───────────────────────────────────────────────
-  const controller = createWhatsAppController({ inboxService, whatsAppService });
+  const clinicConfigService = new ClinicConfigService(repository);
+
+  const controller = createWhatsAppController({
+    inboxService,
+    whatsAppService,
+    repository,
+    clinicConfigService,
+    bookingService,
+    bookingRepository,
+    slotService,
+    reminderTaskService,
+    prisma: fastify.prisma,
+  });
 
   const preHandler = [authenticate, tenantContext];
   const sendPreHandler = [authenticate, tenantContext, requirePermission('SEND_WHATSAPP')];
@@ -150,6 +163,53 @@ export default async function whatsappRoutes(fastify: FastifyInstance): Promise<
     '/whatsapp/messages/:messageId/retry',
     { preHandler: sendPreHandler, handler: controller.retryMessageHandler },
   );
+
+  // ─── Admin-only simulator config (D-14, D-16, D-20) — no clinic id in the
+  // path anywhere: `clinicId` comes only from the JWT, so one clinic can
+  // never read/write another's config row. ──────────────────────────────
+  fastify.get(
+    '/whatsapp/config',
+    {
+      preHandler: [authenticate, tenantContext, requirePermission('MANAGE_CLINIC_SETTINGS')],
+      handler: controller.getConfigHandler,
+    },
+  );
+  fastify.patch(
+    '/whatsapp/config',
+    {
+      preHandler: [authenticate, tenantContext, requirePermission('MANAGE_CLINIC_SETTINGS')],
+      handler: controller.updateConfigHandler,
+    },
+  );
+
+  // ─── Owner preference: opt-out + invalid-number marking (D-10, D-11) ────
+  // D-24: no `POST /whatsapp/owners/:ownerId/consent` route exists — consent
+  // capture is out of scope for Phase 7's UI (locked after 07-13-PLAN.md was
+  // written). `WhatsAppService.grantConsent`/`withdrawConsent` remain
+  // service methods with no HTTP caller.
+  fastify.patch(
+    '/whatsapp/owners/:ownerId/preference',
+    { preHandler: sendPreHandler, handler: controller.updateOwnerPreferenceHandler },
+  );
+
+  // ─── Staff-only booking transitions (D-09) ──────────────────────────────
+  fastify.post(
+    '/whatsapp/bookings/:bookingId/cancel',
+    { preHandler: sendPreHandler, handler: controller.cancelBookingHandler },
+  );
+  fastify.post(
+    '/whatsapp/bookings/:bookingId/move',
+    { preHandler: sendPreHandler, handler: controller.moveBookingHandler },
+  );
+  fastify.post(
+    '/whatsapp/threads/:threadId/resolve',
+    { preHandler: sendPreHandler, handler: controller.markResolvedHandler },
+  );
+
+  // ─── Booking / slot reads (mobile booking detail + move flow) ──────────
+  fastify.get('/whatsapp/bookings', { preHandler, handler: controller.listBookingsHandler });
+  fastify.get('/whatsapp/bookings/:bookingId', { preHandler, handler: controller.getBookingHandler });
+  fastify.get('/whatsapp/slots', { preHandler, handler: controller.getSlotsHandler });
 
   // ─── Webhook plugin (07-09) — encapsulated child registration so its
   // scoped raw-body content-type parser stays confined to the two webhook
