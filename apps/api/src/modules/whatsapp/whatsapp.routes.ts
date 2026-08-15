@@ -120,6 +120,11 @@ export default async function whatsappRoutes(fastify: FastifyInstance): Promise<
     repository,
     deliveryStatusService,
     simulatorQueue: queues.simulator,
+    // WHA-01/Anti-Pattern A5 fix: lets a terminal (non-retryable) send
+    // failure on an automated reminder message cap its `WhatsAppReminderTask`
+    // immediately via `capForNonRetryableFailure`, instead of leaving it
+    // `SENT` for a wasted escalation cycle.
+    reminderTaskService,
   });
   const simulatorWorker = createSimulatorWorker({
     prisma: fastify.prisma,

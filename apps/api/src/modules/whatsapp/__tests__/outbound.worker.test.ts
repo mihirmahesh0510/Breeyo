@@ -76,6 +76,10 @@ function createMockDeliveryStatusService() {
   return { apply: vi.fn().mockResolvedValue({ applied: true }) };
 }
 
+function createMockReminderTaskService() {
+  return { capForNonRetryableFailure: vi.fn().mockResolvedValue(undefined) };
+}
+
 function createDeps() {
   return {
     prisma: createMockPrisma(),
@@ -193,6 +197,67 @@ describe('processOutboundJob (WHA-04/05, D-16, Anti-Pattern A5)', () => {
 
     await expect(processOutboundJob(deps as any, { messageId: 'does-not-exist' })).resolves.toBeUndefined();
     expect(resolveProvider).not.toHaveBeenCalled();
+  });
+
+  it('on a terminal WaSendError for a message WITH a reminderTaskId, caps the reminder task via reminderTaskService.capForNonRetryableFailure (WHA-01, D-03/04, Anti-Pattern A5)', async () => {
+    const REMINDER_TASK_ID = 'reminder-task-1';
+    deps.prisma.whatsAppMessage.findUnique.mockResolvedValue(
+      buildMessage({ reminderTaskId: REMINDER_TASK_ID }),
+    );
+    const reminderTaskService = createMockReminderTaskService();
+    const sendTemplate = vi.fn().mockRejectedValue(
+      new WaSendError('NOT_ON_WHATSAPP', 'SIM_131026', false, 'Simulated: recipient is not on WhatsApp'),
+    );
+    (resolveProvider as any).mockResolvedValue({ sendTemplate });
+
+    await expect(
+      processOutboundJob({ ...deps, reminderTaskService } as any, { messageId: MESSAGE_ID }),
+    ).resolves.toBeUndefined();
+
+    // The existing funnel/D-16 behavior must still fire alongside the new call.
+    expect(deps.deliveryStatusService.apply).toHaveBeenCalledTimes(1);
+    expect(deps.repository.upsertOwnerPreference).toHaveBeenCalledWith(
+      CLINIC_ID,
+      OWNER_ID,
+      expect.objectContaining({ numberStatus: 'INVALID' }),
+    );
+
+    expect(reminderTaskService.capForNonRetryableFailure).toHaveBeenCalledTimes(1);
+    expect(reminderTaskService.capForNonRetryableFailure).toHaveBeenCalledWith(
+      CLINIC_ID,
+      REMINDER_TASK_ID,
+      'NOT_ON_WHATSAPP',
+    );
+  });
+
+  it('on a terminal WaSendError for a message with NO reminderTaskId, does not call reminderTaskService.capForNonRetryableFailure', async () => {
+    deps.prisma.whatsAppMessage.findUnique.mockResolvedValue(
+      buildMessage({ reminderTaskId: null }),
+    );
+    const reminderTaskService = createMockReminderTaskService();
+    const sendTemplate = vi.fn().mockRejectedValue(
+      new WaSendError('NOT_ON_WHATSAPP', 'SIM_131026', false, 'Simulated: recipient is not on WhatsApp'),
+    );
+    (resolveProvider as any).mockResolvedValue({ sendTemplate });
+
+    await expect(
+      processOutboundJob({ ...deps, reminderTaskService } as any, { messageId: MESSAGE_ID }),
+    ).resolves.toBeUndefined();
+
+    expect(reminderTaskService.capForNonRetryableFailure).not.toHaveBeenCalled();
+  });
+
+  it('on a terminal WaSendError with no reminderTaskService dep at all (back-compat, e.g. invoice/booking sends), does not throw', async () => {
+    deps.prisma.whatsAppMessage.findUnique.mockResolvedValue(
+      buildMessage({ reminderTaskId: 'reminder-task-1' }),
+    );
+    const sendTemplate = vi.fn().mockRejectedValue(
+      new WaSendError('NOT_ON_WHATSAPP', 'SIM_131026', false, 'Simulated: recipient is not on WhatsApp'),
+    );
+    (resolveProvider as any).mockResolvedValue({ sendTemplate });
+
+    // deps has no reminderTaskService at all.
+    await expect(processOutboundJob(deps as any, { messageId: MESSAGE_ID })).resolves.toBeUndefined();
   });
 });
 

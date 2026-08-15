@@ -15,11 +15,15 @@
  * Business escalation must never be conflated with technical retry
  * (Anti-Pattern A5): a non-retryable failure (an invalid number, an
  * unregistered template) records the failure through the funnel and returns
- * — it never rethrows, and it never touches `WhatsAppReminderTask` state,
- * which stays 07-11's responsibility. A retryable failure does the opposite:
- * it rethrows unmodified so BullMQ's `attempts`/backoff (already configured
- * on the queue via `WA_JOB_OPTIONS`) does the retrying, and the funnel is
- * never called for a merely-technical hiccup.
+ * — it never rethrows. When the failed message is an automated reminder send
+ * (`message.reminderTaskId` set) and `deps.reminderTaskService` is supplied,
+ * it ALSO calls `ReminderTaskService.capForNonRetryableFailure` so the task
+ * caps immediately instead of staying `SENT` for a wasted escalation cycle
+ * (WHA-01 fix — this was 07-11's stated responsibility but nothing ever
+ * called it). A retryable failure does the opposite: it rethrows unmodified
+ * so BullMQ's `attempts`/backoff (already configured on the queue via
+ * `WA_JOB_OPTIONS`) does the retrying, and neither the funnel nor the
+ * reminder task is touched for a merely-technical hiccup.
  *
  * `message.templateKey` selects the send shape (fix for the WHA-03/D-14
  * dispatch gap): a template-keyed message (reminders, invoices, the
@@ -54,6 +58,15 @@ export interface OutboundJobData {
   messageId: string;
 }
 
+/**
+ * The narrow slice of `ReminderTaskService` this worker needs — avoids
+ * importing the full service (and its own repository/prisma deps) just for
+ * one method.
+ */
+export interface ReminderTaskCapper {
+  capForNonRetryableFailure(clinicId: string, taskId: string, reason: string): Promise<void>;
+}
+
 export interface OutboundWorkerDeps {
   // The admin `PrismaClient` — matching every other WhatsApp collaborator
   // (`WhatsAppRepository`, `DeliveryStatusService`); this worker has no
@@ -64,6 +77,15 @@ export interface OutboundWorkerDeps {
   deliveryStatusService: DeliveryStatusService;
   /** For `resolveProvider`'s `ProviderRegistryDeps.simulatorQueue`. */
   simulatorQueue: import('bullmq').Queue;
+  /**
+   * WHA-01/Anti-Pattern A5 fix: optional so callers/tests with no reminder
+   * tasks in play (invoice/booking/staff-initiated sends have no
+   * `WhatsAppMessage.reminderTaskId`) don't need to supply it. When present
+   * AND the failed message carries a `reminderTaskId`, a terminal
+   * (non-retryable) send failure caps that task immediately instead of
+   * leaving it in `SENT` to be wastefully re-escalated.
+   */
+  reminderTaskService?: ReminderTaskCapper;
 }
 
 /**
@@ -152,9 +174,7 @@ async function dispatchSend(
     }
 
     // Terminal: a capability breach, an invalid number, an unregistered
-    // template. Recording it costs one funnel call, never a retry attempt,
-    // and never touches reminder-task escalation state (Anti-Pattern A5) —
-    // that stays 07-11's responsibility.
+    // template. Recording it costs one funnel call, never a retry attempt.
     const providerMessageId = localFailureProviderMessageId(message.id);
     await setProviderMessageId(deps.prisma, message.id, providerMessageId);
 
@@ -167,6 +187,21 @@ async function dispatchSend(
 
     if (err.code === 'NOT_ON_WHATSAPP') {
       await markNumberInvalid(deps.repository, message.clinicId, thread.ownerId as string);
+    }
+
+    // WHA-01/Anti-Pattern A5 fix: a non-retryable failure on an automated
+    // reminder send must cap the `WhatsAppReminderTask` immediately, WITHOUT
+    // consuming an escalation attempt, so a bad phone number cannot leave
+    // the task in `SENT` to be pointlessly re-escalated for a full cycle
+    // before eventually capping via the ordinary attempt-count path.
+    // `reminderTaskId` is null for invoice/booking/staff-initiated sends —
+    // those have no reminder task to cap.
+    if (message.reminderTaskId && deps.reminderTaskService) {
+      await deps.reminderTaskService.capForNonRetryableFailure(
+        message.clinicId,
+        message.reminderTaskId,
+        err.code,
+      );
     }
   }
 }
