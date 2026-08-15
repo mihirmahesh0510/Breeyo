@@ -5,6 +5,7 @@
   "main": "expo-router/entry",
   "scripts": {
     "dev": "expo start",
+    "android": "expo start --android --port 8090",
     "build": "echo 'mobile build handled by EAS'",
     "test": "vitest run",
     "test:watch": "vitest",
