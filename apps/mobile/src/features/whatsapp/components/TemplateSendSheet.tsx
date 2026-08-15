@@ -7,6 +7,7 @@ import { WA_TEMPLATE_STAFF_NAMES, WA_TEMPLATE_CATEGORIES } from '@breeyo/types';
 import type { WaContextType, WaTemplateKey } from '@breeyo/types';
 import { useSendTemplate } from '../hooks/useSendTemplate';
 import { WA_COLORS } from '../utils/whatsapp-format';
+import { formatPhoneWithPrefix } from '../../../lib/wizard-utils';
 
 /**
  * WHA-02 / D-10, D-13, D-18: the single context-send bottom sheet UI-SPEC
@@ -124,7 +125,7 @@ export function TemplateSendSheet({
     try {
       const result = await sendMutation.mutateAsync({
         ownerId: owner.id,
-        waPhone: owner.mobile,
+        waPhone: formatPhoneWithPrefix(owner.mobile),
         templateKey,
         variables: prefilledVariables,
         contextType,
