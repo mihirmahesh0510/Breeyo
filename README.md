@@ -91,6 +91,28 @@ pnpm --filter @breeyo/api test
 pnpm --filter @breeyo/ui test
 ```
 
+### Checking the app in the Android Emulator
+
+One-time setup is already done on this machine: Java (`openjdk@21`) and the Android SDK command-line tools were installed via Homebrew (`/usr/local/share/android-commandlinetools`), and a `Breeyo_Pixel_7` AVD (Android 14 / API 34) was created. `JAVA_HOME`/`ANDROID_HOME`/`PATH` are exported in `~/.zshrc`.
+
+To check the app after any phase, run:
+
+```bash
+pnpm preview:mobile
+```
+
+This boots the `Breeyo_Pixel_7` emulator if it isn't already running, starts Postgres/Redis (Docker) and the API dev server, then opens the app in the emulator via Expo Go. Press Ctrl+C to stop the API (the emulator keeps running so the next `preview:mobile` skips the boot).
+
+On a machine without this setup already done, set it up once with:
+
+```bash
+brew install openjdk@21
+brew install --cask android-commandlinetools
+yes | sdkmanager --licenses
+sdkmanager "platform-tools" "emulator" "platforms;android-34" "system-images;android-34;google_apis;x86_64"
+avdmanager create avd -n Breeyo_Pixel_7 -k "system-images;android-34;google_apis;x86_64" --device "pixel_7"
+```
+
 ### Packages
 
 **`@breeyo/ui`** -- Design system with 26 components following atomic design:
