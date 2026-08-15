@@ -22,6 +22,14 @@
  *     unit-testable in isolation from this controller.
  *   - `updateOwnerPreferenceHandler` — opt-out + invalid-number marking
  *     (D-10, D-11), 404 on a cross-tenant owner.
+ *   - `getOwnerPreferenceHandler` (added later, WHA-02) — the read-only
+ *     counterpart: lets a caller with no thread context (e.g. the pet
+ *     profile) discover an owner's opt-out/invalid-number state and whether
+ *     a consent record exists, in one request, so `SendTemplateLauncher` can
+ *     populate `TemplateSendSheet`'s `consentWarning`/`optedOut`/
+ *     `numberInvalid` props itself instead of requiring every caller to
+ *     supply them. Same permission gate and 404-on-cross-tenant-owner
+ *     behavior as the PATCH above; no write, no audit log.
  *   - `cancelBookingHandler`/`moveBookingHandler` — staff-only booking
  *     transitions (D-09): `request.user.id` is passed as the REQUIRED
  *     `actorUserId` argument `BookingService.cancelBooking`/`moveBooking`
@@ -301,6 +309,43 @@ export function createWhatsAppController(deps: WhatsAppControllerDeps) {
       }
 
       return reply.status(200).send({ data: result });
+    },
+
+    /**
+     * GET /whatsapp/owners/:ownerId/preference — read-only counterpart to
+     * the PATCH above (WHA-02). Returns the owner's global preference row
+     * (defaulted for an owner with none yet: `remindersOptedOut: false`,
+     * `numberStatus: 'UNKNOWN'`) plus a boolean-only consent signal — per
+     * D-13, this surfaces only whether a consent record is MISSING, never
+     * the `ConsentRecord`'s raw contents (purpose text, actor, IP). Same
+     * 404-on-cross-tenant-owner behavior as the PATCH handler.
+     */
+    async getOwnerPreferenceHandler(request: FastifyRequest, reply: FastifyReply) {
+      const params = ownerParamsSchema.safeParse(request.params);
+      if (!params.success) {
+        return validationError(reply, params.error.errors);
+      }
+
+      const clinicId = request.user.activeClinicId;
+      const { ownerId } = params.data;
+
+      const owner = await deps.prisma.petOwner.findFirst({ where: { id: ownerId, clinicId } });
+      if (!owner) {
+        return ownerNotFound(reply);
+      }
+
+      const [preference, consent] = await Promise.all([
+        deps.repository.getOwnerPreference(clinicId, ownerId),
+        deps.repository.getCurrentWhatsAppConsent(ownerId),
+      ]);
+
+      return reply.status(200).send({
+        data: {
+          remindersOptedOut: preference?.remindersOptedOut ?? false,
+          numberStatus: preference?.numberStatus ?? 'UNKNOWN',
+          hasConsent: !!consent,
+        },
+      });
     },
 
     // ─── Staff-only booking transitions (D-09) ────────────────────────────

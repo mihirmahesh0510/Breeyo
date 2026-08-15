@@ -215,6 +215,14 @@ export default async function whatsappRoutes(fastify: FastifyInstance): Promise<
     '/whatsapp/owners/:ownerId/preference',
     { preHandler: sendPreHandler, handler: controller.updateOwnerPreferenceHandler },
   );
+  // WHA-02: read-only counterpart, same permission gate — reading this state
+  // is not more sensitive than writing it. Lets `SendTemplateLauncher` fetch
+  // an owner's preference/consent state outside of thread context (e.g. from
+  // the pet profile), where no `WhatsAppThreadSummary` exists to read it from.
+  fastify.get(
+    '/whatsapp/owners/:ownerId/preference',
+    { preHandler: sendPreHandler, handler: controller.getOwnerPreferenceHandler },
+  );
 
   // ─── Staff-only booking transitions (D-09) ──────────────────────────────
   fastify.post(

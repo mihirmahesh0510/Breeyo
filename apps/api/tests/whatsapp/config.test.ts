@@ -324,4 +324,112 @@ describe('WhatsApp Clinic Config (WHA-05, D-14/D-16/D-20)', () => {
       expect(response.statusCode).toBe(401);
     });
   });
+
+  describe('GET /whatsapp/owners/:ownerId/preference (WHA-02)', () => {
+    it('defaults to remindersOptedOut false, numberStatus UNKNOWN, hasConsent false for an owner with no rows yet', async () => {
+      const { token, clinic } = await setupAuthenticatedUser('FrontDesk');
+      const owner = await createTestPetOwner(clinic.id);
+
+      const response = await app.inject({
+        method: 'GET',
+        url: `/api/v1/whatsapp/owners/${owner.id}/preference`,
+        headers: { authorization: `Bearer ${token}` },
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json().data).toEqual({
+        remindersOptedOut: false,
+        numberStatus: 'UNKNOWN',
+        hasConsent: false,
+      });
+    });
+
+    it('reflects a prior PATCH opt-out and INVALID number-status', async () => {
+      const { token, clinic } = await setupAuthenticatedUser('FrontDesk');
+      const owner = await createTestPetOwner(clinic.id);
+
+      await app.inject({
+        method: 'PATCH',
+        url: `/api/v1/whatsapp/owners/${owner.id}/preference`,
+        headers: { authorization: `Bearer ${token}` },
+        payload: { remindersOptedOut: true, source: 'STAFF', numberStatus: 'INVALID' },
+      });
+
+      const response = await app.inject({
+        method: 'GET',
+        url: `/api/v1/whatsapp/owners/${owner.id}/preference`,
+        headers: { authorization: `Bearer ${token}` },
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json().data).toEqual({
+        remindersOptedOut: true,
+        numberStatus: 'INVALID',
+        hasConsent: false,
+      });
+    });
+
+    it('reports hasConsent true once a ConsentRecord exists, but never leaks the record itself (D-13)', async () => {
+      const { token, clinic } = await setupAuthenticatedUser('FrontDesk');
+      const owner = await createTestPetOwner(clinic.id);
+
+      await prisma.consentRecord.create({
+        data: {
+          ownerId: owner.id,
+          consentType: 'whatsapp_communication',
+          purposeText: 'WhatsApp updates about my pet',
+        },
+      });
+
+      const response = await app.inject({
+        method: 'GET',
+        url: `/api/v1/whatsapp/owners/${owner.id}/preference`,
+        headers: { authorization: `Bearer ${token}` },
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json().data.hasConsent).toBe(true);
+      expect(response.json().data).not.toHaveProperty('purposeText');
+      expect(response.json().data).not.toHaveProperty('consentType');
+    });
+
+    it("for an owner in another clinic returns 404", async () => {
+      const { token } = await setupAuthenticatedUser('FrontDesk');
+      const { clinic: otherClinic } = await setupAuthenticatedUser('FrontDesk');
+      const otherOwner = await createTestPetOwner(otherClinic.id);
+
+      const response = await app.inject({
+        method: 'GET',
+        url: `/api/v1/whatsapp/owners/${otherOwner.id}/preference`,
+        headers: { authorization: `Bearer ${token}` },
+      });
+
+      expect(response.statusCode).toBe(404);
+    });
+
+    it('a role lacking SEND_WHATSAPP returns 403', async () => {
+      const { token, clinic } = await setupAuthenticatedUser('InventoryManager');
+      const owner = await createTestPetOwner(clinic.id);
+
+      const response = await app.inject({
+        method: 'GET',
+        url: `/api/v1/whatsapp/owners/${owner.id}/preference`,
+        headers: { authorization: `Bearer ${token}` },
+      });
+
+      expect(response.statusCode).toBe(403);
+    });
+
+    it('no Authorization header returns 401', async () => {
+      const { clinic } = await setupAuthenticatedUser('FrontDesk');
+      const owner = await createTestPetOwner(clinic.id);
+
+      const response = await app.inject({
+        method: 'GET',
+        url: `/api/v1/whatsapp/owners/${owner.id}/preference`,
+      });
+
+      expect(response.statusCode).toBe(401);
+    });
+  });
 });
