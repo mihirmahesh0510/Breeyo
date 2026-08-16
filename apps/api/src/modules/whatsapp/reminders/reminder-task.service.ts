@@ -30,7 +30,7 @@
  * enforces.
  */
 
-import type { PrismaClient } from '@prisma/client';
+import type { DbClient } from '../../../lib/prisma-rls.js';
 import {
   WA_ESCALATION,
   WA_REMINDER_LEAD_DAYS,
@@ -115,11 +115,13 @@ export class ReminderTaskService {
     // the D-04 `needsAction` flag/clear — never to send a message (see file
     // header).
     private readonly whatsappRepo: WhatsAppRepository,
-    // Raw admin client, matching `WhatsAppService`/`WhatsAppRepository`'s own
-    // constructors — used ONLY to resolve `PetOwner.mobile` for the thread
-    // lookup above; this service otherwise has no direct table access of its
-    // own beyond what `ReminderTaskRepository` exposes.
-    private readonly prisma: PrismaClient,
+    // D-30: widened from the admin `PrismaClient` to `DbClient` so a
+    // per-request caller can pass `request.db` (RLS-enforced) instead of the
+    // admin role. Used ONLY to resolve `PetOwner.mobile` for the thread
+    // lookup below (no `$transaction` usage), so the union's overload
+    // ambiguity (see `prisma-rls.ts`'s `DbClient` doc comment) does not
+    // apply here.
+    private readonly prisma: DbClient,
   ) {}
 
   /** D-01, D-02: creates/updates the ADVANCE and ON_DATE rows for one

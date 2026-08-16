@@ -7,17 +7,33 @@
  *
  * This file REPLACES the interim scaffolding plan 07-09 added directly to
  * `app.ts` (its own header comment called out this file as the eventual real
- * composition). Every collaborator below is constructed from `fastify.prisma`
- * (the admin-role client) — never `request.db` — matching every other
- * WhatsApp collaborator (`WhatsAppRepository`'s own header comment) and every
- * other Phase 3/4 module's route-plugin convention. Tenant isolation for this
- * module is the explicit `clinicId` parameter each repository/service method
- * takes, deliberately not FORCE RLS (07-RESEARCH § Pitfall 5: FORCE RLS
- * against the admin role returns zero rows, since the admin role is exactly
- * the role RLS is designed to bypass).
+ * composition).
+ *
+ * D-30: two construction paths now coexist, matching `patient.routes.ts`'s
+ * shape rather than a stale claim this file used to make (this header
+ * previously said every collaborator here matched `VaccinationRepository`'s
+ * admin-client convention — that repository has since moved to `request.db`
+ * on `main`, so the comparison no longer held):
+ *
+ *   1. The BullMQ workers, the inbound webhook router, and the
+ *      booking/reminder background handlers have no HTTP request and
+ *      therefore no `request.db` — they are genuinely admin-scoped, each
+ *      marked with a "D-30 exemption" comment below.
+ *   2. The HTTP controller's simple, single-clinic read/write handlers get
+ *      FRESH per-request instances built from `request.db` via the
+ *      `build*` factories below (the `patient.routes.ts` shape). The two
+ *      handlers that transitively call `WhatsAppService`/`BookingService`
+ *      keep the shared admin-scoped singletons (also exempted below) — both
+ *      classes call `prisma.$transaction(async (tx) => ...)` internally, and
+ *      `DbClient`'s union of `TenantPrismaClient | PrismaClient` has two
+ *      incompatible `$transaction` overloads a per-request field can't
+ *      resolve (see `prisma-rls.ts`'s `DbClient` doc comment); both are also
+ *      shared with the reminder-sweep worker and the inbound booking
+ *      handler, so they cannot be rebuilt per single clinicId anyway.
  */
 
 import type { FastifyInstance } from 'fastify';
+import type { TenantPrismaClient } from '../../lib/prisma-rls.js';
 import { WhatsAppRepository } from './whatsapp.repository.js';
 import { SendAuthorizationService } from './send-authorization.service.js';
 import { WhatsAppService } from './whatsapp.service.js';
@@ -54,10 +70,17 @@ export default async function whatsappRoutes(fastify: FastifyInstance): Promise<
   // own copy of this exact pattern (inventory.routes.ts's own header comment
   // documents the same bug, found via live E2E testing).
   if (!fastify.hasDecorator('permissionService')) {
-    fastify.decorate('permissionService', new PermissionService(fastify.prisma, fastify.redis));
+    fastify.decorate('permissionService', new PermissionService(fastify.prisma, fastify.redis)); // D-30 exemption
   }
 
-  // ─── Repositories (fastify.prisma — the admin role; see file header) ─────
+  // ─── Repositories, admin-scoped (see file header) — feed ONLY the BullMQ
+  // workers, the inbound webhook router, and the booking/reminder background
+  // handlers constructed below, none of which run inside an authenticated
+  // HTTP request.
+  // D-30 exemption: reminderSweepWorker's runReminderSweep processes every
+  // clinic in one pass (no single clinicId to scope a tenant client to), and
+  // the inbound router/booking/reminder handlers run from a webhook
+  // delivery or a queue job, neither of which has a `request.db`.
   const repository = new WhatsAppRepository(fastify.prisma);
   const bookingRepository = new BookingRepository(fastify.prisma);
   const reminderSourceRepository = new ReminderSourceRepository(fastify.prisma);
@@ -71,8 +94,17 @@ export default async function whatsappRoutes(fastify: FastifyInstance): Promise<
     await queues.close();
   });
 
-  // ─── Services ──────────────────────────────────────────────────────────
+  // ─── Services, admin-scoped (see file header) — feed the workers/inbound
+  // router/webhook path below, plus (for whatsAppService/bookingService
+  // only) the two controller handler pairs that need their shared,
+  // multi-context instance.
   const authz = new SendAuthorizationService(repository);
+  // D-30 exemption: WhatsAppService.sendTemplate/retryMessage call
+  // `prisma.$transaction(async (tx) => ...)` — a per-request `DbClient`
+  // union field can't resolve that overload (see file header) — and this
+  // single instance is shared by the HTTP send/retry handlers,
+  // BookingService (below), and reminder-sweep.job.ts's cross-clinic batch
+  // send, so it cannot be rebuilt per single clinicId either.
   const whatsAppService = new WhatsAppService(
     repository,
     authz,
@@ -80,10 +112,19 @@ export default async function whatsappRoutes(fastify: FastifyInstance): Promise<
     queues.outbound,
     fastify.io ?? null,
   );
-  const inboxService = new InboxService(fastify.prisma);
+  // D-30 exemption: feeds inboundRouter/outboundWorker/simulatorWorker below
+  // — none of which run inside an authenticated HTTP request.
   const deliveryStatusService = new DeliveryStatusService(repository, fastify.prisma, fastify.io ?? null);
 
+  // D-30 exemption: feeds bookingHandler (webhook-triggered) below. The
+  // controller's own `getSlotsHandler` uses `buildSlotService` instead (see
+  // the per-request builders, below the workers).
   const slotService = new SlotService(fastify.prisma);
+  // D-30 exemption: BookingService.confirmBooking/cancelBooking/moveBooking
+  // call `prisma.$transaction(async (tx) => ...)`, the same overload
+  // constraint as WhatsAppService above — and this instance is shared with
+  // bookingHandler (webhook-triggered inbound booking), so it cannot be
+  // rebuilt per single clinicId either.
   const bookingService = new BookingService({
     repository: bookingRepository,
     prisma: fastify.prisma,
@@ -92,6 +133,7 @@ export default async function whatsappRoutes(fastify: FastifyInstance): Promise<
 
   // The REAL BookingInboundHandler (07-10), replacing InboundRouterService's
   // no-op default.
+  // D-30 exemption: runs from a webhook delivery, which has no `request.db`.
   const bookingHandler = createBookingInboundHandler({
     prisma: fastify.prisma,
     repository,
@@ -100,11 +142,15 @@ export default async function whatsappRoutes(fastify: FastifyInstance): Promise<
     outboundQueue: queues.outbound,
   });
 
+  // D-30 exemption: shared with the reminder-sweep worker below (which
+  // sweeps every clinic in one pass) and the webhook-triggered
+  // reminderHandler just below it.
   const reminderTaskService = new ReminderTaskService(reminderTaskRepository, repository, fastify.prisma);
   // The REAL ReminderReplyHandler (07-11), replacing InboundRouterService's
   // no-op default.
   const reminderHandler = createReminderReplyHandler({ taskService: reminderTaskService });
 
+  // D-30 exemption: runs from a webhook delivery, which has no `request.db`.
   const inboundRouter = new InboundRouterService({
     repository,
     prisma: fastify.prisma,
@@ -114,6 +160,9 @@ export default async function whatsappRoutes(fastify: FastifyInstance): Promise<
   });
 
   // ─── Workers (self-guard on NODE_ENV === 'test', Pitfall 7) ───────────────
+  // D-30 exemption: BullMQ workers have no HTTP request context at all, so
+  // there is no `request.db` to build from — matching the existing
+  // `jobs/midnight-archive.ts` precedent for admin-scoped background work.
   const outboundWorker = createOutboundWorker({
     prisma: fastify.prisma,
     redis: fastify.redis,
@@ -126,6 +175,8 @@ export default async function whatsappRoutes(fastify: FastifyInstance): Promise<
     // `SENT` for a wasted escalation cycle.
     reminderTaskService,
   });
+  // D-30 exemption: same as outboundWorker above — no `request.db` inside a
+  // BullMQ worker.
   const simulatorWorker = createSimulatorWorker({
     prisma: fastify.prisma,
     redis: fastify.redis,
@@ -136,6 +187,9 @@ export default async function whatsappRoutes(fastify: FastifyInstance): Promise<
   // `queues.reminderSweep` — never `queues.outbound`. Assembled from exactly
   // what `runReminderSweep` needs (`ReminderSweepDeps`), all of which this
   // file already constructs above for the route surface itself.
+  // D-30 exemption: sweeps every clinic in one pass — there is no single
+  // clinicId to scope a tenant client to, and no `request.db` regardless
+  // since this runs from a BullMQ worker, not an HTTP request.
   const reminderSweepWorker = createReminderSweepWorker({
     prisma: fastify.prisma,
     sourceRepo: reminderSourceRepository,
@@ -162,19 +216,34 @@ export default async function whatsappRoutes(fastify: FastifyInstance): Promise<
     await registerReminderSweep(queues.reminderSweep);
   }
 
-  // ─── Controller + routes ───────────────────────────────────────────────
-  const clinicConfigService = new ClinicConfigService(repository);
+  // ─── Per-request builders (D-30) — fresh, RLS-scoped instances for the
+  // controller handlers that run inside an authenticated request, following
+  // `patient.routes.ts`'s `buildService = (db) => new XService(...)` shape.
+  // Kept separate from the admin-scoped instances above, which continue to
+  // feed only the workers/inbound router/webhook path.
+  const buildRepository = (db: TenantPrismaClient) => new WhatsAppRepository(db);
+  const buildInboxService = (db: TenantPrismaClient) => new InboxService(db);
+  const buildClinicConfigService = (db: TenantPrismaClient) =>
+    new ClinicConfigService(new WhatsAppRepository(db));
+  const buildBookingRepository = (db: TenantPrismaClient) => new BookingRepository(db);
+  const buildSlotService = (db: TenantPrismaClient) => new SlotService(db);
+  const buildReminderTaskService = (db: TenantPrismaClient) =>
+    new ReminderTaskService(new ReminderTaskRepository(db), new WhatsAppRepository(db), db);
 
+  // ─── Controller + routes ───────────────────────────────────────────────
   const controller = createWhatsAppController({
-    inboxService,
+    buildRepository,
+    buildInboxService,
+    buildClinicConfigService,
+    buildBookingRepository,
+    buildSlotService,
+    buildReminderTaskService,
+    // D-30 exemption: shared, admin-scoped singletons — see the header
+    // comment above and the exemption at whatsAppService's/bookingService's
+    // own construction — used only by sendTemplateHandler, retryMessageHandler,
+    // updateOwnerPreferenceHandler, cancelBookingHandler, and moveBookingHandler.
     whatsAppService,
-    repository,
-    clinicConfigService,
     bookingService,
-    bookingRepository,
-    slotService,
-    reminderTaskService,
-    prisma: fastify.prisma,
   });
 
   const preHandler = [authenticate, tenantContext];

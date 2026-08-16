@@ -126,6 +126,9 @@ export default async function whatsappWebhookRoutes(fastify: FastifyInstance): P
     },
   );
 
+  // D-30 exemption: this whole plugin runs before any JWT/tenantContext
+  // middleware (see file header — Meta's webhook carries no login session),
+  // so there is no `request.db` anywhere in this file to build from.
   const repository = new WhatsAppRepository(fastify.prisma);
   const deliveryStatusService = new DeliveryStatusService(repository, fastify.prisma, fastify.io ?? null);
   const inboundRouter = new InboundRouterService({
@@ -182,6 +185,8 @@ export default async function whatsappWebhookRoutes(fastify: FastifyInstance): P
           // byte-identical redelivery of a notification already recorded is
           // detected here, BEFORE calling `apply`, so it costs one lookup
           // rather than a second ledger row for the same underlying event.
+          // D-30 exemption: no `request.db` in this webhook plugin (see file
+          // header and the construction block above).
           if (await isDuplicateStatusDelivery(fastify.prisma, event)) {
             continue;
           }

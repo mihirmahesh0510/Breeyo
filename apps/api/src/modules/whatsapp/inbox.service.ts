@@ -26,7 +26,8 @@
  * (mirrors `vaccination.service.ts`'s 404-on-cross-tenant shape).
  */
 
-import type { PrismaClient, Prisma } from '@prisma/client';
+import type { Prisma } from '@prisma/client';
+import type { DbClient } from '../../lib/prisma-rls.js';
 import type {
   WhatsAppInbox,
   WhatsAppMessageView,
@@ -64,7 +65,11 @@ function tryNormalizePhone(search: string): string | null {
 }
 
 export class InboxService {
-  constructor(private readonly prisma: PrismaClient) {}
+  // D-30: widened from the admin `PrismaClient` to `DbClient` so a per-request
+  // caller can pass `request.db` (RLS-enforced) instead of the admin role.
+  // Read-only, no `$transaction` usage, so the union's overload ambiguity
+  // (see `prisma-rls.ts`'s `DbClient` doc comment) does not apply here.
+  constructor(private readonly prisma: DbClient) {}
 
   /**
    * The thread list: UI-SPEC's six filter chips, five-field search, and

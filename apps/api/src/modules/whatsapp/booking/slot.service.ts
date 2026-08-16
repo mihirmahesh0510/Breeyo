@@ -18,7 +18,7 @@
  * never crash the booking flow (Pitfall 15).
  */
 
-import type { PrismaClient } from '@prisma/client';
+import type { DbClient } from '../../../lib/prisma-rls.js';
 import { WA_CAPABILITY_LIMITS } from '@breeyo/types';
 import { workingHoursBodySchema, type WorkingHoursBody } from '../../clinic/clinic.schema.js';
 import { getTodayIST, addDaysIST, IST_TIMEZONE } from '../../../lib/ist-date.js';
@@ -170,7 +170,10 @@ export function generateSlotsForDay(
 }
 
 export class SlotService {
-  constructor(private readonly prisma: PrismaClient) {}
+  // D-30: widened from the admin `PrismaClient` to `DbClient` so a per-request
+  // caller can pass `request.db` (RLS-enforced) instead of the admin role.
+  // Read-only, no `$transaction` usage.
+  constructor(private readonly prisma: DbClient) {}
 
   /**
    * Loads the clinic, parses `workingHours` through the real Zod contract,

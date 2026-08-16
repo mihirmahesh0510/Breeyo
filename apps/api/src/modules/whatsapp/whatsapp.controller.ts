@@ -50,7 +50,7 @@
  */
 
 import type { FastifyRequest, FastifyReply } from 'fastify';
-import type { PrismaClient } from '@prisma/client';
+import type { TenantPrismaClient } from '../../lib/prisma-rls.js';
 import { writeAuditLog, AuditEvent } from '../../lib/audit-log.js';
 import type { InboxService } from './inbox.service.js';
 import type { WhatsAppService } from './whatsapp.service.js';
@@ -111,20 +111,30 @@ function bookingNotFound(reply: FastifyReply) {
  * never drift between them. */
 const clinicConfigUpdateSchema = clinicConfigSchema.partial();
 
+/**
+ * D-30: per-request factories rather than prebuilt instances, matching
+ * `patient.routes.ts`/`patient.controller.ts`'s shape — every handler below
+ * resolves its collaborators from `request.db` (the tenant-scoped,
+ * RLS-bound client) as its first statement, instead of sharing a
+ * plugin-scope admin client across every clinic.
+ *
+ * `whatsAppService`/`bookingService` are the exception: both are prebuilt,
+ * shared, admin-scoped singletons (see `whatsapp.routes.ts`'s construction
+ * comments) because each calls `prisma.$transaction(async (tx) => ...)`
+ * internally — a `DbClient` union field can't resolve that overload — and
+ * both are shared with background contexts (the reminder sweep, the inbound
+ * booking handler) that never have a single request's clinicId to scope a
+ * fresh instance to.
+ */
 export interface WhatsAppControllerDeps {
-  inboxService: InboxService;
+  buildRepository: (db: TenantPrismaClient) => WhatsAppRepository;
+  buildInboxService: (db: TenantPrismaClient) => InboxService;
+  buildClinicConfigService: (db: TenantPrismaClient) => ClinicConfigService;
+  buildBookingRepository: (db: TenantPrismaClient) => BookingRepository;
+  buildSlotService: (db: TenantPrismaClient) => SlotService;
+  buildReminderTaskService: (db: TenantPrismaClient) => ReminderTaskService;
   whatsAppService: WhatsAppService;
-  repository: WhatsAppRepository;
-  clinicConfigService: ClinicConfigService;
   bookingService: BookingService;
-  bookingRepository: BookingRepository;
-  slotService: SlotService;
-  reminderTaskService: ReminderTaskService;
-  // Raw admin PrismaClient — used only for owner/booking-list reads and
-  // direct audit-log writes this controller needs that no existing service
-  // method already covers (matching `reminder-task.service.ts`'s own
-  // narrowly-scoped `prisma` field).
-  prisma: PrismaClient;
 }
 
 export function createWhatsAppController(deps: WhatsAppControllerDeps) {
@@ -134,12 +144,14 @@ export function createWhatsAppController(deps: WhatsAppControllerDeps) {
      * chips, five-field search, cursor pagination capped at 50).
      */
     async listThreadsHandler(request: FastifyRequest, reply: FastifyReply) {
+      const inboxService = deps.buildInboxService(request.db);
+
       const query = inboxQuerySchema.safeParse(request.query);
       if (!query.success) {
         return validationError(reply, query.error.errors);
       }
 
-      const inbox = await deps.inboxService.listThreads(
+      const inbox = await inboxService.listThreads(
         request.user.activeClinicId,
         query.data,
       );
@@ -152,6 +164,8 @@ export function createWhatsAppController(deps: WhatsAppControllerDeps) {
      * messages in ascending order. Marks the thread read as a side effect.
      */
     async getThreadHandler(request: FastifyRequest, reply: FastifyReply) {
+      const inboxService = deps.buildInboxService(request.db);
+
       const params = threadParamsSchema.safeParse(request.params);
       if (!params.success) {
         return validationError(reply, params.error.errors);
@@ -166,7 +180,7 @@ export function createWhatsAppController(deps: WhatsAppControllerDeps) {
         return validationError(reply, query.error.errors);
       }
 
-      const thread = await deps.inboxService.getThread(
+      const thread = await inboxService.getThread(
         request.user.activeClinicId,
         params.data.threadId,
       );
@@ -222,7 +236,8 @@ export function createWhatsAppController(deps: WhatsAppControllerDeps) {
      * only from the JWT, so one clinic can never read/write another's row.
      */
     async getConfigHandler(request: FastifyRequest, reply: FastifyReply) {
-      const config = await deps.clinicConfigService.getConfig(request.user.activeClinicId);
+      const clinicConfigService = deps.buildClinicConfigService(request.db);
+      const config = await clinicConfigService.getConfig(request.user.activeClinicId);
       return reply.status(200).send({ data: config });
     },
 
@@ -233,12 +248,14 @@ export function createWhatsAppController(deps: WhatsAppControllerDeps) {
      * anywhere.
      */
     async updateConfigHandler(request: FastifyRequest, reply: FastifyReply) {
+      const clinicConfigService = deps.buildClinicConfigService(request.db);
+
       const body = clinicConfigUpdateSchema.safeParse(request.body);
       if (!body.success) {
         return validationError(reply, body.error.errors);
       }
 
-      const result = await deps.clinicConfigService.updateConfig(
+      const result = await clinicConfigService.updateConfig(
         request.user.activeClinicId,
         body.data,
       );
@@ -270,7 +287,7 @@ export function createWhatsAppController(deps: WhatsAppControllerDeps) {
       const actorUserId = request.user.id;
       const { ownerId } = params.data;
 
-      const owner = await deps.prisma.petOwner.findFirst({ where: { id: ownerId, clinicId } });
+      const owner = await request.db.petOwner.findFirst({ where: { id: ownerId, clinicId } });
       if (!owner) {
         return ownerNotFound(reply);
       }
@@ -301,7 +318,7 @@ export function createWhatsAppController(deps: WhatsAppControllerDeps) {
       // true) — marking a number invalid is a separate staff action even
       // when it arrives in the same request body.
       if (body.data.numberStatus === 'INVALID') {
-        await writeAuditLog(deps.prisma, AuditEvent.WHATSAPP_NUMBER_MARKED_INVALID, {
+        await writeAuditLog(request.db, AuditEvent.WHATSAPP_NUMBER_MARKED_INVALID, {
           userId: actorUserId,
           clinicId,
           metadata: { ownerId },
@@ -321,6 +338,8 @@ export function createWhatsAppController(deps: WhatsAppControllerDeps) {
      * 404-on-cross-tenant-owner behavior as the PATCH handler.
      */
     async getOwnerPreferenceHandler(request: FastifyRequest, reply: FastifyReply) {
+      const repository = deps.buildRepository(request.db);
+
       const params = ownerParamsSchema.safeParse(request.params);
       if (!params.success) {
         return validationError(reply, params.error.errors);
@@ -329,14 +348,14 @@ export function createWhatsAppController(deps: WhatsAppControllerDeps) {
       const clinicId = request.user.activeClinicId;
       const { ownerId } = params.data;
 
-      const owner = await deps.prisma.petOwner.findFirst({ where: { id: ownerId, clinicId } });
+      const owner = await request.db.petOwner.findFirst({ where: { id: ownerId, clinicId } });
       if (!owner) {
         return ownerNotFound(reply);
       }
 
       const [preference, consent] = await Promise.all([
-        deps.repository.getOwnerPreference(clinicId, ownerId),
-        deps.repository.getCurrentWhatsAppConsent(ownerId),
+        repository.getOwnerPreference(clinicId, ownerId),
+        repository.getCurrentWhatsAppConsent(ownerId),
       ]);
 
       return reply.status(200).send({
@@ -424,6 +443,9 @@ export function createWhatsAppController(deps: WhatsAppControllerDeps) {
      * `needsAction` is already false returns 200 with no further writes.
      */
     async markResolvedHandler(request: FastifyRequest, reply: FastifyReply) {
+      const repository = deps.buildRepository(request.db);
+      const reminderTaskService = deps.buildReminderTaskService(request.db);
+
       const params = threadParamsSchema.safeParse(request.params);
       if (!params.success) {
         return validationError(reply, params.error.errors);
@@ -433,7 +455,7 @@ export function createWhatsAppController(deps: WhatsAppControllerDeps) {
       const actorUserId = request.user.id;
       const { threadId } = params.data;
 
-      const thread = await deps.repository.findThreadById(clinicId, threadId);
+      const thread = await repository.findThreadById(clinicId, threadId);
       if (!thread) {
         return threadNotFound(reply);
       }
@@ -442,19 +464,19 @@ export function createWhatsAppController(deps: WhatsAppControllerDeps) {
         return reply.status(200).send({ data: { resolved: true } });
       }
 
-      const cappedTasks = await deps.prisma.whatsAppReminderTask.findMany({
+      const cappedTasks = await request.db.whatsAppReminderTask.findMany({
         where: { clinicId, ownerId: thread.ownerId as string, state: 'CAPPED_NEEDS_ACTION' },
       });
 
       for (const task of cappedTasks) {
-        await deps.reminderTaskService.acknowledgeTask(clinicId, task.id, actorUserId);
+        await reminderTaskService.acknowledgeTask(clinicId, task.id, actorUserId);
       }
 
       // Cleared explicitly (rather than relying solely on the last
       // `acknowledgeTask` call's own internal "any other capped task left?"
       // check) so this endpoint's own idempotent guarantee never depends on
       // iteration order across more than one capped task for the owner.
-      await deps.repository.clearNeedsAction(clinicId, threadId);
+      await repository.clearNeedsAction(clinicId, threadId);
 
       return reply.status(200).send({ data: { resolved: true } });
     },
@@ -463,7 +485,7 @@ export function createWhatsAppController(deps: WhatsAppControllerDeps) {
 
     /** GET /whatsapp/bookings — every booking request for the caller's clinic. */
     async listBookingsHandler(request: FastifyRequest, reply: FastifyReply) {
-      const bookings = await deps.prisma.whatsAppBookingRequest.findMany({
+      const bookings = await request.db.whatsAppBookingRequest.findMany({
         where: { clinicId: request.user.activeClinicId },
         orderBy: { createdAt: 'desc' },
       });
@@ -473,12 +495,14 @@ export function createWhatsAppController(deps: WhatsAppControllerDeps) {
 
     /** GET /whatsapp/bookings/:bookingId — 404 on a cross-tenant id, never a 403 (T-07-13-04). */
     async getBookingHandler(request: FastifyRequest, reply: FastifyReply) {
+      const bookingRepository = deps.buildBookingRepository(request.db);
+
       const params = bookingParamsSchema.safeParse(request.params);
       if (!params.success) {
         return validationError(reply, params.error.errors);
       }
 
-      const booking = await deps.bookingRepository.findBookingRequestById(
+      const booking = await bookingRepository.findBookingRequestById(
         request.user.activeClinicId,
         params.data.bookingId,
       );
@@ -491,12 +515,14 @@ export function createWhatsAppController(deps: WhatsAppControllerDeps) {
 
     /** GET /whatsapp/slots?date=YYYY-MM-DD — the offerable slots staff pick a new slot from when moving a booking. */
     async getSlotsHandler(request: FastifyRequest, reply: FastifyReply) {
+      const slotService = deps.buildSlotService(request.db);
+
       const query = slotsQuerySchema.safeParse(request.query);
       if (!query.success) {
         return validationError(reply, query.error.errors);
       }
 
-      const result = await deps.slotService.getOfferableSlots(request.user.activeClinicId, {
+      const result = await slotService.getOfferableSlots(request.user.activeClinicId, {
         fromDate: query.data.date,
       });
 
