@@ -13,7 +13,11 @@ export type StatusVariant =
   | 'paid'
   | 'unpaid'
   | 'overdue'
-  | 'processing';
+  | 'processing'
+  | 'expected'
+  | 'checkedIn'
+  | 'cancelled'
+  | 'completed';
 
 export interface StatusConfigEntry {
   defaultLabel: string;
@@ -59,6 +63,26 @@ export const STATUS_CONFIG: Record<StatusVariant, StatusConfigEntry> = {
   },
   processing: {
     defaultLabel: 'Processing...',
+    bgColor: 'surfaceVariant',
+    textColor: 'onSurfaceVariant',
+  },
+  expected: {
+    defaultLabel: 'Expected',
+    bgColor: 'secondaryContainer',
+    textColor: 'onSecondaryContainer',
+  },
+  checkedIn: {
+    defaultLabel: 'Checked in',
+    bgColor: 'primaryContainer',
+    textColor: 'onPrimaryContainer',
+  },
+  cancelled: {
+    defaultLabel: 'Cancelled',
+    bgColor: 'surfaceVariant',
+    textColor: 'onSurfaceVariant',
+  },
+  completed: {
+    defaultLabel: 'Completed',
     bgColor: 'surfaceVariant',
     textColor: 'onSurfaceVariant',
   },

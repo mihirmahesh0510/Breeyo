@@ -61,5 +61,116 @@
     "upcomingAppointments": "आगामी अपॉइंटमेंट",
     "recentVisits": "हाल की विज़िट",
     "noAppointments": "कोई आगामी अपॉइंटमेंट नहीं"
+  },
+  "scheduling": {
+    "actions": {
+      "bookAppointment": "Book Appointment",
+      "newAppointment": "New Appointment",
+      "confirmBooking": "Confirm Booking",
+      "discardBooking": "Discard Booking",
+      "moveAppointment": "Move Appointment",
+      "checkInNow": "Check In Now",
+      "editAvailability": "Edit Availability",
+      "blockTime": "Block Time",
+      "turnOnAlerts": "Turn On Alerts",
+      "tryAgain": "Try Again",
+      "keepAppointment": "Keep Appointment",
+      "cancelAppointment": "Cancel Appointment",
+      "keepInQueue": "Keep in Queue",
+      "markNoShow": "Mark No-show",
+      "bookAnyway": "Book Anyway",
+      "pickAnotherTime": "Pick Another Time",
+      "removeBlockedTime": "Remove",
+      "keepBlockedTime": "Keep Blocked Time"
+    },
+    "empty": {
+      "dayAgendaNoAppointments": {
+        "title": "No appointments today",
+        "body": "Tap Book Appointment to schedule one, or open Queue for walk-ins."
+      },
+      "weekGridNoAppointments": {
+        "title": "No appointments this week",
+        "body": "Click any open slot to book, or use New Appointment."
+      },
+      "filteredVetNoneBooked": {
+        "title": "No appointments for Dr. {{name}} on {{date}}",
+        "body": "Clear the vet filter to see the whole clinic."
+      },
+      "vetNotWorkingThisDay": {
+        "title": "Dr. {{name}} is not working on {{date}}",
+        "body": "Pick another date, or change this in Settings → Edit Availability."
+      },
+      "noOpenSlotsForService": {
+        "title": "No open slots for {{service}} on {{date}}",
+        "body": "Try another date, or choose a shorter service."
+      },
+      "availabilityNeverConfigured": {
+        "title": "No working hours set yet",
+        "body": "Set your weekly hours so staff can book appointments against your calendar."
+      },
+      "noBlockedPeriods": {
+        "title": "No blocked time on {{date}}",
+        "body": "Add lunch or a meeting so those slots aren't offered."
+      },
+      "moveRequestsInboxEmpty": {
+        "title": "No move requests",
+        "body": "Owners who ask to reschedule over WhatsApp will show up here."
+      }
+    },
+    "errors": {
+      "calendarFailedMobile": "Could not load the calendar. Pull down to try again.",
+      "calendarFailedWeb": "Could not load the calendar.",
+      "slotTaken": "That slot was just taken. Pick another time.",
+      "bookingHorizonExceeded": "Appointments can only be booked up to 90 days ahead. Pick an earlier date.",
+      "slotInBlockedPeriod": "{{reason}} is blocked from {{start}} to {{end}}. Pick another time.",
+      "vetClosedThatDay": "Dr. {{name}} is not working then. Pick another date or another vet.",
+      "blockedPeriodOverlaps": "This overlaps an existing blocked period. Adjust the times.",
+      "otherReasonMissingText": "Add a short reason.",
+      "invalidTimeRange": "End time must be after start time.",
+      "offlineMobile": "You are offline. Schedule may be outdated.",
+      "socketDisconnectedWeb": "Live updates paused. Reconnecting…"
+    },
+    "warnings": {
+      "doubleBooking": "Dr. {{name}} already has {{pet}} at {{time}}. You can still book this slot.",
+      "recurrenceTruncated": "Only {{n}} of {{total}} repeats fit within 90 days. The rest were not created.",
+      "pastSlot": "That time has already passed. Book a future slot."
+    },
+    "toasts": {
+      "bookingCreated": "{{pet}} booked for {{time}}, {{date}}",
+      "recurringSeriesCreated": "{{n}} appointments booked for {{pet}}",
+      "recurrenceTruncated": "Only {{n}} of {{total}} repeats fit within 90 days. The rest were not created.",
+      "appointmentMoved": "Moved to {{time}}, {{date}}",
+      "appointmentCancelled": "Appointment cancelled",
+      "checkedInFromCalendar": "{{pet}} checked in — Position #{{position}}",
+      "availabilitySaved": "Weekly hours saved",
+      "blockedPeriodAdded": "{{reason}} blocked, {{start}} to {{date}}"
+    },
+    "push": {
+      "startingSoon": {
+        "title": "Appointment in 15 min",
+        "body": "{{pet}} ({{owner}}) at {{time}} with Dr. {{name}}."
+      },
+      "ownerCancelled": {
+        "title": "Appointment cancelled",
+        "body": "{{owner}} cancelled {{pet}}'s {{time}} appointment on WhatsApp."
+      },
+      "moveRequested": {
+        "title": "Reschedule requested",
+        "body": "{{owner}} wants to move {{pet}}'s {{time}} appointment. Pick a new time."
+      },
+      "queueBacklog": {
+        "title": "{{n}} patients waiting",
+        "body": "The queue is backing up. Longest wait is {{minutes}} min."
+      }
+    },
+    "labels": {
+      "screenTitle": "Schedule",
+      "allVets": "All Vets",
+      "today": "Today",
+      "morning": "Morning",
+      "afternoon": "Afternoon",
+      "evening": "Evening",
+      "expectedAt": "Expected {{time}}"
+    }
   }
 }
