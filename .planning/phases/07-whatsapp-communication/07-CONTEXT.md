@@ -54,6 +54,20 @@ The clinic communicates with pet owners via WhatsApp for automated reminders (fo
 - `ConsentRecord.consentType` naming convention and where in the flow consent gets captured (registration vs. first WhatsApp send)
 - Template variable rendering and validation approach
 - Retry/backoff mechanics for provider-level delivery failures (distinct from the escalation-on-no-reply behavior in D-03/D-04)
+- Unstructured free-text inbound replies (not matching a recognized button/list payload) are logged as a plain inbound message in the thread for staff to read; they do NOT auto-flag "Needs action" — Beta has no NLP and this keeps the behavior simple and predictable
+- A reminder message already QUEUED or dispatched before an owner's STOP is processed still gets sent; only sends enqueued after the STOP is recorded are blocked — avoids clawing back a message already in flight
+- A reminder task blocked by owner opt-out is marked CANCELLED (not left PENDING) so the daily sweep doesn't retry it indefinitely — keeps D-03/D-04's bounded-escalation guarantee true even for opted-out owners
+- The booking module's `expireStaleRequests` function is wired into the daily reminder sweep so abandoned WhatsApp booking requests (`AWAITING_SLOT_CHOICE` with no reply) transition to `EXPIRED`; no new "Needs action" surfacing for stale bookings in Beta
+
+### Plan Review Follow-Up Decisions (post-07-PLAN review, 2026-08-15)
+- **D-21:** The WhatsApp booking conversation asks the owner which pet the appointment is for as part of the flow (a list-message step for multi-pet owners), rather than deferring pet identification to in-person check-in. Booking records must carry a `petId` like every other Phase 7 flow.
+- **D-22:** `SEND_WHATSAPP` stays the single permission gate for all WhatsApp-related actions in Beta — booking cancel, booking move, owner opt-out toggling, and consent grant/withdrawal are gated by the same permission as sending, granted to Admin, Clinician, and Front Desk (unchanged from D-20). No tighter permission scope for these administrative actions in Beta.
+- **D-23:** Paid-invoice WhatsApp sends use the same `invoice_delivery` template but omit the payment link/CTA — `payment_link` becomes an optional template variable, rendered only when the invoice is unpaid. No separate paid-invoice template.
+- **D-24:** WhatsApp consent capture is out of scope for Phase 7's UI — no screen or quick-reply in this phase triggers a `ConsentRecord` grant. The consent lookup and warn-but-allow behavior (D-13) stays as spec'd, but actually populating a `whatsapp_communication` `ConsentRecord` is deferred to a future phase or an external/manual process. Every Phase 7 send will show the missing-consent warning until that exists — a known, accepted Beta limitation, not a bug to fix in this phase.
+- **D-25:** Cancelling or moving a confirmed WhatsApp booking immediately releases its `WhatsAppSlotHold`, making the slot available again to new WhatsApp booking requests the same day.
+- **D-26:** The `confirm_booking` `ConversationActionCard` is a live, tappable action (not a read-only receipt) — tapping it opens the full booking detail, consistent with how the Move/Cancel cards behave, even though D-06 means there's no approval step to perform.
+- **D-27:** The simulator's deterministic failure/delayed-delivery/invalid-number toggle (D-16) is sticky per-clinic — it stays in the selected mode until an Admin manually reverts it in the Config screen. No auto-revert-after-next-send behavior in Beta. (Accepted risk: a demo can silently keep failing if staff forgets to revert it — flagged during review, user chose to keep it sticky anyway.)
+- **D-28:** When an unanswered ADVANCE-touch escalation resend would land on the same day as the independent ON_DATE touch's first send (vaccine/deworming reminders, where the 3-day escalation interval coincides with the 3-day lead time), the escalation resend is suppressed — the owner receives at most one reminder message per source/kind per day.
 
 </decisions>
 

@@ -161,6 +161,13 @@ export async function createTestConsultation(
      * claiming it was.
      */
     finalizedAt: Date | null;
+    /**
+     * WHA-01 / D-01: the follow-up reminder sweep reads this straight off the
+     * consultation row (Phase 4 D-09), so Phase 7 fixtures need to be able to
+     * set it directly rather than only through the finalize-consultation flow.
+     */
+    followUpDate: Date | null;
+    followUpReason: string;
   }> = {},
 ) {
   return prisma.consultation.create({
@@ -172,6 +179,8 @@ export async function createTestConsultation(
       status: overrides.status || 'draft',
       assessment: overrides.assessment,
       finalizedAt: overrides.finalizedAt ?? null,
+      followUpDate: overrides.followUpDate,
+      followUpReason: overrides.followUpReason,
     },
   });
 }
@@ -223,6 +232,269 @@ export async function createTestPrescription(
       route: overrides.route || 'oral',
       frequency: overrides.frequency || 'BID',
       duration: overrides.duration || '5 days',
+    },
+  });
+}
+
+export async function createTestVaccinationRecord(
+  clinicId: string,
+  petId: string,
+  overrides: Partial<{
+    consultationId: string;
+    vaccineName: string;
+    batchNumber: string;
+    manufacturer: string;
+    expiryDate: Date;
+    administeredAt: Date;
+    administeredBy: string;
+    /** WHA-01 / D-02 source: the reminder sweep reads this to schedule the
+     * fixed 3-days-before + on-due-date two-touch pattern. */
+    nextDueDate: Date | null;
+  }> = {},
+) {
+  return prisma.vaccinationRecord.create({
+    data: {
+      clinicId,
+      petId,
+      consultationId: overrides.consultationId,
+      vaccineName: overrides.vaccineName || `Test Vaccine ${randomUUID().slice(0, 6)}`,
+      batchNumber: overrides.batchNumber,
+      manufacturer: overrides.manufacturer,
+      expiryDate: overrides.expiryDate,
+      administeredAt: overrides.administeredAt || new Date(),
+      // `administered_by` has no FK constraint at the DB level (schema.prisma
+      // models it as a bare UUID column, not a relation) -- a random UUID is
+      // fine when the caller doesn't need it to resolve to a real user.
+      administeredBy: overrides.administeredBy || randomUUID(),
+      nextDueDate: overrides.nextDueDate,
+    },
+  });
+}
+
+export async function createTestDewormingRecord(
+  clinicId: string,
+  petId: string,
+  overrides: Partial<{
+    consultationId: string;
+    drugName: string;
+    administeredAt: Date;
+    administeredBy: string;
+    /** WHA-01 / D-02 source, same shape as VaccinationRecord.nextDueDate. */
+    nextDueDate: Date | null;
+  }> = {},
+) {
+  return prisma.dewormingRecord.create({
+    data: {
+      clinicId,
+      petId,
+      consultationId: overrides.consultationId,
+      drugName: overrides.drugName || `Test Dewormer ${randomUUID().slice(0, 6)}`,
+      administeredAt: overrides.administeredAt || new Date(),
+      administeredBy: overrides.administeredBy || randomUUID(),
+      nextDueDate: overrides.nextDueDate,
+    },
+  });
+}
+
+// ─── Phase 7 WhatsApp communication factories (plan 07-04) ──────────────
+//
+// WHA-01/02/03/05. `clinicId` is always the first argument, matching every
+// other factory in this file; owner/pet/thread ids follow the same order the
+// underlying Prisma model's foreign keys appear in schema.prisma.
+
+export async function createTestWhatsAppThread(
+  clinicId: string,
+  ownerId: string,
+  overrides: Partial<{
+    waPhone: string;
+    resolvedWaId: string;
+    numberStatus: 'VALID' | 'INVALID';
+    needsAction: boolean;
+    needsActionReason: string;
+    lastMessageAt: Date;
+    lastMessagePreview: string;
+    lastContextType: 'NONE' | 'INVOICE' | 'PET' | 'REMINDER' | 'BOOKING' | 'DOCUMENT';
+    serviceWindowExpiresAt: Date;
+  }> = {},
+) {
+  return prisma.whatsAppThread.create({
+    data: {
+      clinicId,
+      ownerId,
+      // [clinicId, waPhone] is unique -- keep the random suffix.
+      waPhone: overrides.waPhone || `+91${Math.floor(7000000000 + Math.random() * 2999999999)}`,
+      resolvedWaId: overrides.resolvedWaId,
+      numberStatus: overrides.numberStatus || 'VALID',
+      needsAction: overrides.needsAction ?? false,
+      needsActionReason: overrides.needsActionReason,
+      lastMessageAt: overrides.lastMessageAt,
+      lastMessagePreview: overrides.lastMessagePreview,
+      lastContextType: overrides.lastContextType || 'NONE',
+      serviceWindowExpiresAt: overrides.serviceWindowExpiresAt,
+    },
+  });
+}
+
+export async function createTestWhatsAppMessage(
+  clinicId: string,
+  threadId: string,
+  overrides: Partial<{
+    direction: 'OUTBOUND' | 'INBOUND';
+    channel: 'SIMULATOR' | 'CLOUD_API';
+    providerMessageId: string;
+    templateKey: string;
+    templateCategory: string;
+    body: string;
+    status: 'QUEUED' | 'SENT' | 'DELIVERED' | 'READ' | 'FAILED' | 'REPLIED';
+    contextType: 'NONE' | 'INVOICE' | 'PET' | 'REMINDER' | 'BOOKING' | 'DOCUMENT';
+    contextId: string;
+    sentByUserId: string;
+    reminderTaskId: string;
+    bookingRequestId: string;
+  }> = {},
+) {
+  return prisma.whatsAppMessage.create({
+    data: {
+      clinicId,
+      threadId,
+      direction: overrides.direction || 'OUTBOUND',
+      channel: overrides.channel || 'SIMULATOR',
+      providerMessageId: overrides.providerMessageId,
+      templateKey: overrides.templateKey,
+      templateCategory: overrides.templateCategory,
+      body: overrides.body || 'Test message body',
+      // Defaults to QUEUED (WHA-05 Pattern 2): a send persists the row before
+      // any dispatch, so a fixture that skipped straight to SENT would hide
+      // bugs in that ordering.
+      status: overrides.status || 'QUEUED',
+      contextType: overrides.contextType || 'NONE',
+      contextId: overrides.contextId,
+      sentByUserId: overrides.sentByUserId,
+      reminderTaskId: overrides.reminderTaskId,
+      bookingRequestId: overrides.bookingRequestId,
+    },
+  });
+}
+
+export async function createTestWhatsAppReminderTask(
+  clinicId: string,
+  ownerId: string,
+  petId: string,
+  overrides: Partial<{
+    kind: 'FOLLOW_UP' | 'VACCINE_DUE' | 'DEWORMING_DUE';
+    touch: 'ADVANCE' | 'ON_DATE';
+    sourceType: string;
+    sourceId: string;
+    sourceLabel: string;
+    dueDate: Date;
+    scheduledFor: Date;
+    state: 'PENDING' | 'SENT' | 'REPLIED' | 'CAPPED_NEEDS_ACTION' | 'CANCELLED';
+    attemptCount: number;
+  }> = {},
+) {
+  const dueDate = overrides.dueDate || new Date();
+  return prisma.whatsAppReminderTask.create({
+    data: {
+      clinicId,
+      ownerId,
+      petId,
+      kind: overrides.kind || 'FOLLOW_UP',
+      touch: overrides.touch || 'ADVANCE',
+      sourceType: overrides.sourceType || 'CONSULTATION',
+      sourceId: overrides.sourceId || randomUUID(),
+      sourceLabel: overrides.sourceLabel,
+      dueDate,
+      scheduledFor: overrides.scheduledFor || dueDate,
+      state: overrides.state || 'PENDING',
+      attemptCount: overrides.attemptCount ?? 0,
+    },
+  });
+}
+
+export async function createTestWhatsAppBookingRequest(
+  clinicId: string,
+  threadId: string,
+  ownerId: string,
+  petId: string,
+  overrides: Partial<{
+    reference: string;
+    state: 'AWAITING_SLOT_CHOICE' | 'CONFIRMED' | 'CANCELLED' | 'MOVED' | 'EXPIRED';
+    slotDate: Date;
+    slotStartMinutes: number;
+    slotDurationMinutes: number;
+    confirmedAt: Date;
+    cancelledAt: Date;
+    cancelReason: string;
+    actedByUserId: string;
+  }> = {},
+) {
+  return prisma.whatsAppBookingRequest.create({
+    data: {
+      clinicId,
+      threadId,
+      ownerId,
+      petId, // D-21: booking flow always carries a petId
+      reference: overrides.reference || `BK-TEST-${randomUUID().slice(0, 8)}`,
+      state: overrides.state || 'AWAITING_SLOT_CHOICE',
+      slotDate: overrides.slotDate,
+      slotStartMinutes: overrides.slotStartMinutes,
+      slotDurationMinutes: overrides.slotDurationMinutes,
+      confirmedAt: overrides.confirmedAt,
+      cancelledAt: overrides.cancelledAt,
+      cancelReason: overrides.cancelReason,
+      actedByUserId: overrides.actedByUserId,
+    },
+  });
+}
+
+/**
+ * D-07/D-08: a confirmed booking's slot hold is what makes the slot
+ * unavailable to other WhatsApp booking requests for that clinic/day.
+ */
+export async function createTestWhatsAppSlotHold(
+  clinicId: string,
+  bookingRequestId: string,
+  overrides: Partial<{
+    slotDate: Date;
+    slotStartMinutes: number;
+  }> = {},
+) {
+  return prisma.whatsAppSlotHold.create({
+    data: {
+      clinicId,
+      bookingRequestId,
+      slotDate: overrides.slotDate || new Date(),
+      slotStartMinutes: overrides.slotStartMinutes ?? 540, // 09:00 IST default
+    },
+  });
+}
+
+export async function createTestWhatsAppClinicConfig(
+  clinicId: string,
+  overrides: Partial<{
+    provider: 'SIMULATOR' | 'CLOUD_API';
+    deliveryMode: 'NORMAL' | 'DELAYED' | 'FAIL' | 'INVALID_NUMBER';
+    autoReplyEnabled: boolean;
+    autoReplyDelaySeconds: number;
+    allowFreeformOutsideWindow: boolean;
+    slotDurationMinutes: number;
+    escalationMaxAttempts: number;
+    escalationIntervalDays: number;
+  }> = {},
+) {
+  return prisma.whatsAppClinicConfig.create({
+    data: {
+      clinicId,
+      // D-14/D-16 Beta defaults: simulator, normal delivery, auto-reply on
+      // with a 10s delay so demo threads feel alive without staff input.
+      provider: overrides.provider || 'SIMULATOR',
+      deliveryMode: overrides.deliveryMode || 'NORMAL',
+      autoReplyEnabled: overrides.autoReplyEnabled ?? true,
+      autoReplyDelaySeconds: overrides.autoReplyDelaySeconds ?? 10,
+      allowFreeformOutsideWindow: overrides.allowFreeformOutsideWindow ?? false,
+      slotDurationMinutes: overrides.slotDurationMinutes ?? 30,
+      escalationMaxAttempts: overrides.escalationMaxAttempts ?? 2,
+      escalationIntervalDays: overrides.escalationIntervalDays ?? 3,
     },
   });
 }
@@ -612,6 +884,20 @@ export async function cleanupTestData() {
     await tx.userPermissionOverride.deleteMany();
     await tx.clinicMemberRole.deleteMany();
     await tx.clinicMember.deleteMany();
+
+    // Phase 7 WhatsApp tables (plan 07-04) must go BEFORE the Phase 3/4 block
+    // below: WhatsAppMessage/ReminderTask/BookingRequest/SlotHold reference
+    // threads, pets and owners, so leaving them behind makes
+    // `tx.pet.deleteMany()` / `tx.petOwner.deleteMany()` fail on an FK
+    // violation once any WhatsApp fixture exists.
+    await tx.whatsAppMessageStatusEvent.deleteMany();
+    await tx.whatsAppMessage.deleteMany();
+    await tx.whatsAppSlotHold.deleteMany();
+    await tx.whatsAppBookingRequest.deleteMany();
+    await tx.whatsAppReminderTask.deleteMany();
+    await tx.whatsAppThread.deleteMany();
+    await tx.whatsAppOwnerPreference.deleteMany();
+    await tx.whatsAppClinicConfig.deleteMany();
 
     // Phase 3/4 tables (patient, queue, EMR & clinical records) — these were
     // added after this helper was written, and must be cleared before

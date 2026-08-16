@@ -11,3 +11,4 @@ export * from './vaccination.js';
 export * from './attachment.js';
 export * from './billing.js';
 export * from './inventory.js';
+export * from './whatsapp.js';

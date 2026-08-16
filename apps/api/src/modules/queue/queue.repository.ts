@@ -1,5 +1,6 @@
 import type { QueueEntryStatus } from '@prisma/client';
 import type { DbClient } from '../../lib/prisma-rls.js';
+import { getTodayIST } from '../../lib/ist-date.js';
 
 const PET_OWNER_INCLUDE = {
   pet: {
@@ -14,15 +15,13 @@ export class QueueRepository {
 
   /**
    * Gets start of today in IST (Asia/Kolkata, UTC+5:30).
+   *
+   * Delegates to the shared `apps/api/src/lib/ist-date.ts` module (WHA-01)
+   * rather than duplicating the arithmetic — kept as a static method so the
+   * existing `queue.service.ts` call sites keep compiling unchanged.
    */
   static getTodayIST(date?: Date): Date {
-    const now = date ?? new Date();
-    // Convert to IST string, then parse back to get midnight IST
-    const istString = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
-    // istString is "YYYY-MM-DD"
-    const [year, month, day] = istString.split('-').map(Number);
-    // Create UTC date that represents midnight IST (IST = UTC + 5:30)
-    return new Date(Date.UTC(year, month - 1, day, -5, -30, 0, 0));
+    return getTodayIST(date);
   }
 
   /**
