@@ -48,6 +48,19 @@ A vet or front desk can schedule future appointments for a patient against a rea
 - **D-26:** Push notifications for Beta are **staff-only** — sent to clinic staff devices via the existing Expo push setup (`apps/api/src/modules/notifications/push.service.ts`). No owner-facing push in v1 (no owner mobile app/PWA exists; Phase 9's owner portal is a browser magic-link, not push-capable). Design the push-sending code generically enough that adding an owner recipient later is a new token registration, not a rebuild.
 - **D-27:** Staff push notification triggers: (1) an upcoming appointment starting soon, (2) an owner replied MOVE/CANCEL via WhatsApp (D-16), (3) the queue is backing up (e.g. N patients waiting). These are in addition to existing in-app Socket.IO real-time updates, which already cover the app-open case.
 
+### Plan Review Follow-ups (2026-08-16)
+
+Gaps surfaced during `--review` of the 15 finalized plans, resolved with the user before build:
+
+- **D-28:** When staff or an owner cancels/reschedules an appointment whose `EXPECTED` queue entry already exists on the board, that entry is removed immediately — it never reaches `NO_SHOW` via the grace-window sweep. Cancel/reschedule paths must reach into the queue to clear it.
+- **D-29:** Web calendar notifications are foreground-tab-only for Beta (no service worker, no background/closed-tab delivery) and may show patient/owner names on-screen — this trade-off is accepted. Staff working off-tab rely on the in-app queue/calendar view, not push, per D-26's staff-only push scope.
+- **D-30:** Weekly availability template edits and blocked-period creation both compute and display an affected-appointment count with a confirm step before applying, matching the existing date-override (D-01) warning flow — not silent like the original plans had them.
+- **D-31:** Recurring series (D-22): an occurrence landing on a day the vet is unavailable is skipped at booking time (staff is told which occurrences were skipped, not a hard rejection of the whole series); moving one occurrence detaches it from the series; "Cancel All" only cancels remaining future `SCHEDULED` occurrences, never ones already `CHECKED_IN`/`COMPLETED`.
+- **D-32:** Multi-pet appointments (D-21) use a single shared service/duration for the entire visit; cancellation is all-or-nothing across every pet in the appointment — no per-pet service selection or per-pet cancel in Beta.
+- **D-33:** Owner WhatsApp KEEP/MOVE/CANCEL replies (D-16) all get an acknowledgment: KEEP and CANCEL confirm the action took effect; MOVE confirms staff will follow up with a new time. A CANCEL arriving after the patient has already been checked in gets a reply explaining the visit has already started and to contact the clinic directly.
+- **D-34:** Double-booking (D-14) is serialized server-side per slot so a second concurrent booking attempt always sees the double-book warning rather than silently succeeding unwarned; when two appointments legitimately share the same time (warning accepted by staff), queue priority at check-in goes to whichever patient checks in first.
+- **D-35:** Web calendar login (D-25) has no role restriction beyond existing authentication — any staff role that can use the mobile app can also log into the web calendar; existing per-action RBAC/permission checks still apply unchanged.
+
 ### Claude's Discretion
 - Exact booking-horizon cap value (D-07) — recommended: 90 days
 - Exact no-show grace-window duration (D-09) — recommended: 15-30 minutes
