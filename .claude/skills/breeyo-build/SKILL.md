@@ -64,8 +64,12 @@ Three modes: review phase plans, build phase code, verify phase implementation.
 - Verify against VALIDATION.md acceptance criteria
 - Verify every REQ-ID for this phase has passing tests
 
-**Step 9:** Invoke superpowers:finishing-a-development-branch
-- Present merge/PR options
+**Step 9:** Push the phase branch through the no-mistakes gate instead of a manual PR
+- From the phase worktree: `git push no-mistakes breeyo/phase-NN-brief-name`
+- This runs review → test → docs → lint in a disposable worktree (test/lint commands come from `.no-mistakes.yaml` on `main`), then — only once every check is green — forwards the branch to `origin` and opens a clean PR automatically
+- Attach with `no-mistakes` (TUI) to watch the run and act on findings: auto-fix ones apply themselves, ask-user ones need your call (approve / fix / skip)
+- If a finding needs a real code change, make it in the worktree and re-push through the gate — don't hand-patch around the gate
+- Report the PR URL once the gate opens it; fall back to superpowers:finishing-a-development-branch only if the gate itself is unavailable
 
 ### Mode 3: `breeyo-build --verify`
 
