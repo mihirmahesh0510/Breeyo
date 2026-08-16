@@ -10,4 +10,9 @@ export const SOCKET_EVENTS = {
   // a QR scan without polling.
   INVOICE_UPDATED: 'invoice:updated',
   PAYMENT_RECEIVED: 'payment:received',
+  // Phase 7 WhatsApp communication (WHA-05). Realtime inbox/thread updates
+  // into the clinic:{id} room, mirroring the queue realtime pattern above.
+  WHATSAPP_MESSAGE_CREATED: 'whatsapp:message-created',
+  WHATSAPP_MESSAGE_STATUS_CHANGED: 'whatsapp:message-status-changed',
+  WHATSAPP_THREAD_UPDATED: 'whatsapp:thread-updated',
 } as const;

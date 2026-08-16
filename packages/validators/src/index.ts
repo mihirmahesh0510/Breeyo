@@ -7,3 +7,4 @@ export * from './vitals.js';
 export * from './prescription.js';
 export * from './billing.js';
 export * from './inventory.js';
+export * from './whatsapp.js';

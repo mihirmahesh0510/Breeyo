@@ -20,3 +20,4 @@ export * from './adjustment-reasons.js';
 export * from './stock-movement-types.js';
 export * from './barcode-formats.js';
 export * from './hsn-codes.js';
+export * from './whatsapp.constants.js';

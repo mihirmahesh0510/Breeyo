@@ -89,6 +89,16 @@ export async function buildApp(
   await app.register(socketPlugin);
   await app.register(import('./modules/queue/queue.routes.js'), { prefix: '/api/v1' });
 
+  // Phase 7 (07-12): the WhatsApp module's full composition root -- repositories,
+  // services, the inbound router (with the real booking/reminder handlers),
+  // queues, test-guarded workers, the reminder-sweep scheduler, the read/action
+  // routes, and the webhook plugin (mounted internally as an encapsulated
+  // child). Registered after socketPlugin because DeliveryStatusService
+  // broadcasts via app.io. Replaces 07-09's interim scaffolding, which
+  // constructed this same dependency graph directly in this file before this
+  // plan landed.
+  await app.register(import('./modules/whatsapp/whatsapp.routes.js'), { prefix: '/api/v1' });
+
   // Phase 4: EMR & Clinical Records
   await app.register(import('./modules/emr/emr.routes.js'), { prefix: '/api/v1' });
   await app.register(import('./modules/drug/drug.routes.js'), { prefix: '/api/v1' });

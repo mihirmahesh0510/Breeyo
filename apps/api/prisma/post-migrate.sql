@@ -803,3 +803,11 @@ DROP POLICY IF EXISTS billing_audit_log_delete ON billing_audit_log;
 --   consent_records           -- DPDP consent is owner-scoped and has no clinic_id column;
 --                                it must survive a clinic relationship ending.
 --   _prisma_migrations        -- migration bookkeeping, not application data.
+--   whatsapp_*                -- (Phase 7, plan 07-01) Eight tables, all carrying clinic_id.
+--                                Deliberately NOT given ENABLE/FORCE ROW LEVEL SECURITY: every
+--                                WhatsApp repository is constructed with fastify.prisma (the
+--                                table owner), and FORCE RLS applies policies to the owner too,
+--                                which would make every WhatsApp query return zero rows
+--                                (RESEARCH Pitfall 5). Tenant isolation for these tables is
+--                                enforced by the explicit-clinicId repository pattern instead.
+--                                Section 1's blanket GRANT above already covers them.

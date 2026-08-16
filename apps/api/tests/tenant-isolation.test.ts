@@ -12,6 +12,9 @@ import {
   createTestConsultation,
   createTestServiceCatalogEntry,
   createTestPrescription,
+  createTestWhatsAppThread,
+  createTestWhatsAppMessage,
+  createTestWhatsAppReminderTask,
   prisma,
 } from './helpers/factories.js';
 import { getBasePrisma, createTenantClient } from '../src/lib/prisma-rls.js';
@@ -839,6 +842,87 @@ describe('Tenant Isolation', () => {
         where: { itemId: itemB.id, clinicId: clinicA.id },
       });
       expect(foreignMovements).toHaveLength(0);
+    });
+
+    // ----------------------------------------------------------------
+    // WhatsApp (Phase 7, plan 07-12). `whatsapp_*` tables are deliberately
+    // NOT given RLS policies (prisma/post-migrate.sql section 9: FORCE RLS
+    // against the admin role every WhatsApp repository is built from would
+    // return zero rows -- RESEARCH Pitfall 5). Tenant isolation for these
+    // tables lives ENTIRELY in the explicit-clinicId application layer, so
+    // proving it means going through the HTTP API, not a tenant Prisma
+    // client -- there is no RLS policy here for that client to demonstrate.
+    // ----------------------------------------------------------------
+    it('whatsapp_threads and whatsapp_messages created by clinic A are invisible to clinic B through the API', async () => {
+      const ownerA = await createTestPetOwner(clinicA.id, { name: 'WA Owner A Secret' });
+      const threadA = await createTestWhatsAppThread(clinicA.id, ownerA.id, { lastMessageAt: new Date() });
+      await createTestWhatsAppMessage(clinicA.id, threadA.id, { body: 'WA Message A Secret' });
+
+      // Clinic B's own list never contains clinic A's thread or its data.
+      const listB = await app.inject({
+        method: 'GET',
+        url: '/api/v1/whatsapp/threads',
+        headers: authFor(tokenB),
+      });
+      expect(listB.statusCode).toBe(200);
+      const idsB = listB.json().data.threads.map((t: { id: string }) => t.id);
+      expect(idsB).not.toContain(threadA.id);
+      expect(JSON.stringify(listB.json())).not.toContain('WA Owner A Secret');
+
+      // Clinic B cannot fetch clinic A's thread by id -- 404, never 403 or a
+      // body field disclosing that the thread exists.
+      const detailB = await app.inject({
+        method: 'GET',
+        url: `/api/v1/whatsapp/threads/${threadA.id}`,
+        headers: authFor(tokenB),
+      });
+      expect(detailB.statusCode).toBe(404);
+      expect(detailB.json().error.code).toBe('THREAD_NOT_FOUND');
+      expect(JSON.stringify(detailB.json())).not.toContain('WA Message A Secret');
+
+      // Clinic A still reaches its own thread -- the route is not simply broken.
+      const detailA = await app.inject({
+        method: 'GET',
+        url: `/api/v1/whatsapp/threads/${threadA.id}`,
+        headers: authFor(tokenA),
+      });
+      expect(detailA.statusCode).toBe(200);
+      expect(JSON.stringify(detailA.json())).toContain('WA Message A Secret');
+    });
+
+    it("whatsapp_reminder_tasks created for clinic A never surface in clinic B's inbox", async () => {
+      const ownerA = await createTestPetOwner(clinicA.id);
+      const petA = await createTestPet(clinicA.id, ownerA.id, { name: 'WA Pet A Secret' });
+      const threadA = await createTestWhatsAppThread(clinicA.id, ownerA.id, {
+        needsAction: true,
+        needsActionReason: 'NO_REPLY_AFTER_MAX_ATTEMPTS',
+        lastMessageAt: new Date(),
+      });
+      await createTestWhatsAppReminderTask(clinicA.id, ownerA.id, petA.id, {
+        state: 'CAPPED_NEEDS_ACTION',
+        sourceLabel: 'WA Reminder A Secret',
+      });
+
+      // Clinic B's "Needs action" filter never surfaces clinic A's thread.
+      const needsActionB = await app.inject({
+        method: 'GET',
+        url: '/api/v1/whatsapp/threads?filter=needs_action',
+        headers: authFor(tokenB),
+      });
+      expect(needsActionB.statusCode).toBe(200);
+      const idsB = needsActionB.json().data.threads.map((t: { id: string }) => t.id);
+      expect(idsB).not.toContain(threadA.id);
+      expect(JSON.stringify(needsActionB.json())).not.toContain('WA Pet A Secret');
+
+      // Clinic A's own "Needs action" filter DOES surface it -- proving the
+      // filter itself works and the isolation above is real, not a broken route.
+      const needsActionA = await app.inject({
+        method: 'GET',
+        url: '/api/v1/whatsapp/threads?filter=needs_action',
+        headers: authFor(tokenA),
+      });
+      const idsA = needsActionA.json().data.threads.map((t: { id: string }) => t.id);
+      expect(idsA).toContain(threadA.id);
     });
 
     it('static helper preserved -- QueueRepository.getTodayIST() stays callable without an instance', () => {
