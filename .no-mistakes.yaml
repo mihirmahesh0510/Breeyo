@@ -1,0 +1,19 @@
+# no-mistakes per-repo config.
+# commands.* and agent are read only from the default branch (allow_repo_commands
+# stays false, the secure default), so a phase branch can't redefine what gets
+# executed here — only a change landed on main can.
+
+commands:
+  # Turborepo's affected-since-filter: run tests/lint only for packages that
+  # changed since main plus their dependents. This matches this gate's own
+  # framing of the test step as targeted validation of the change, not a full
+  # CI-parity regression run — and it avoids hammering the shared dev Postgres
+  # the way a full `pnpm test` across every worktree already has (see
+  # .planning/phases/07-whatsapp-communication/07-OPEN-ITEMS.md, section 4).
+  test: |
+    ROOT="$(git rev-parse --show-toplevel)"
+    if [ ! -f "$ROOT/.env" ]; then
+      cp /Users/mihirmahesh/Documents/Projects/Breeyo/.env "$ROOT/.env"
+    fi
+    pnpm turbo run test --filter="...[main]"
+  lint: pnpm turbo run lint --filter="...[main]"
