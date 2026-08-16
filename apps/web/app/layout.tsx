@@ -1,3 +1,5 @@
+import '@breeyo/ui/src/theme/portal.css';
+
 export const metadata = {
   title: 'Breeyo - Veterinary Practice Management',
   description: 'Owner portal for veterinary clinics',
