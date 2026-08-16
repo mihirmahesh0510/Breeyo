@@ -4,7 +4,7 @@ import { Text, FAB, ActivityIndicator } from 'react-native-paper';
 import { useRouter } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { showToast } from '@breeyo/ui';
-import { QueueStatus } from '@breeyo/types/constants/queue-status';
+import { QueueStatus } from '@breeyo/types';
 import { useAuth } from '../../../providers/AuthProvider';
 import { ResumeBanner } from '../components/ResumeBanner';
 import {

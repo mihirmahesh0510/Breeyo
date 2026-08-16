@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { Text, Chip, Switch, Button } from 'react-native-paper';
-import { VISIT_REASONS } from '@breeyo/types/constants/visit-reasons';
+import { VISIT_REASONS } from '@breeyo/types';
 import { BottomSheet } from '@breeyo/ui';
 
 interface VisitReasonPickerProps {

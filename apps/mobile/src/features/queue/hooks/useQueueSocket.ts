@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { io, type Socket } from 'socket.io-client';
 import { useQueryClient } from '@tanstack/react-query';
-import { SOCKET_EVENTS } from '@breeyo/types/constants/socket-events';
+import { SOCKET_EVENTS } from '@breeyo/types';
 import * as Haptics from 'expo-haptics';
 import { useQueueUIStore } from '../store/queueUIStore';
 import { useAuth } from '../../../providers/AuthProvider';

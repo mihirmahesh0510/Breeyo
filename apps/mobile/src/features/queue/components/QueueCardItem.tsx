@@ -3,8 +3,7 @@ import { View, StyleSheet, Pressable } from 'react-native';
 import { Text } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { StatusBadge } from '@breeyo/ui';
-import { SPECIES_ICONS } from '@breeyo/types/constants/species';
-import { QUEUE_STATUS_LABELS, type QueueStatus } from '@breeyo/types/constants/queue-status';
+import { SPECIES_ICONS, QUEUE_STATUS_LABELS, type QueueStatus } from '@breeyo/types';
 import type { QueueEntryWithPet } from '@breeyo/types';
 
 interface QueueCardItemProps {

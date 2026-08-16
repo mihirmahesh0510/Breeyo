@@ -1,7 +1,7 @@
 import React, { useMemo, useCallback } from 'react';
 import { SectionList, View, StyleSheet } from 'react-native';
 import { EmptyState } from '@breeyo/ui';
-import { QueueStatus, isValidTransition } from '@breeyo/types/constants/queue-status';
+import { QueueStatus, isValidTransition } from '@breeyo/types';
 import type { QueueBoard as QueueBoardType, QueueEntryWithPet } from '@breeyo/types';
 import { QueueCardItem } from './QueueCardItem';
 import { QueueSectionHeader } from './QueueSectionHeader';

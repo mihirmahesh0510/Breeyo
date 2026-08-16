@@ -4,7 +4,7 @@ import { Text, TextInput, Button, ActivityIndicator } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { BottomSheet } from '@breeyo/ui';
-import { SPECIES_ICONS } from '@breeyo/types/constants/species';
+import { SPECIES_ICONS } from '@breeyo/types';
 import type { OwnerWithPets, Pet } from '@breeyo/types';
 import { useLookupOwner } from '../../patient/hooks/usePatientRegister';
 import { useCheckIn } from '../hooks/useCheckIn';
