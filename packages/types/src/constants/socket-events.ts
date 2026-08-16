@@ -15,4 +15,10 @@ export const SOCKET_EVENTS = {
   WHATSAPP_MESSAGE_CREATED: 'whatsapp:message-created',
   WHATSAPP_MESSAGE_STATUS_CHANGED: 'whatsapp:message-status-changed',
   WHATSAPP_THREAD_UPDATED: 'whatsapp:thread-updated',
+  // Phase 8 scheduling & calendar. Mirrors the queue realtime pattern above for
+  // appointment lifecycle changes and availability edits.
+  APPOINTMENT_CREATED: 'appointment:created',
+  APPOINTMENT_UPDATED: 'appointment:updated',
+  APPOINTMENT_CANCELLED: 'appointment:cancelled',
+  AVAILABILITY_UPDATED: 'availability:updated',
 } as const;

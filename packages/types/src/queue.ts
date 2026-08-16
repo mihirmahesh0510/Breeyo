@@ -15,6 +15,8 @@ export interface QueueEntry {
   completedAt: Date | null;
   archivedAt: Date | null;
   updatedAt: Date;
+  queuePriorityAt: Date;
+  appointmentId: string | null;
 }
 
 export interface QueueEntryWithPet extends QueueEntry {
@@ -31,6 +33,7 @@ export interface QueueEntryWithPet extends QueueEntry {
 }
 
 export interface QueueBoard {
+  expected: QueueEntryWithPet[];
   inConsult: QueueEntryWithPet[];
   waiting: QueueEntryWithPet[];
   done: QueueEntryWithPet[];
