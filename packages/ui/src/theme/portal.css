@@ -30,6 +30,13 @@
   --color-success: #2E7D32;
   --color-warning: #E65100;
 
+  /* Vet identity (D-23) */
+  --vet-hue-1: #1565C0;
+  --vet-hue-2: #6A1B9A;
+  --vet-hue-3: #00695C;
+  --vet-hue-4: #AD1457;
+  --vet-hue-5: #4E342E;
+
   /* Spacing */
   --spacing-xxs: 2px;
   --spacing-xs: 4px;

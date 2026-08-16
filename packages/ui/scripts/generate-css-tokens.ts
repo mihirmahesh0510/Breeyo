@@ -1,6 +1,7 @@
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { colors } from '../src/theme/colors';
+import { vetColors } from '../src/theme/vetColors';
 import { spacing } from '../src/theme/spacing';
 import { typography } from '../src/theme/typography';
 import { borderRadius } from '../src/theme/borderRadius';
@@ -25,6 +26,12 @@ function generateCssTokens(): string {
   for (const [key, value] of Object.entries(colors)) {
     lines.push(`  --color-${toKebabCase(key)}: ${value};`);
   }
+
+  lines.push('');
+
+  // Vet identity (D-23)
+  lines.push('  /* Vet identity (D-23) */');
+  vetColors.forEach((hex, i) => lines.push(`  --vet-hue-${i + 1}: ${hex};`));
 
   lines.push('');
 
