@@ -18,18 +18,34 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
 
 export type ConnectionState = 'connected' | 'reconnecting';
 
+interface AppointmentCancelledPayload {
+  appointmentId: string;
+  cancelledIds: string[];
+}
+
 /**
  * Subscribes to the four scheduling realtime events in the clinic's
  * Socket.IO room and calls `onEvent` (the page's own `refetch`) for each.
- * Returns the connection state for the header's "Live updates paused"
- * caption strip (SCH-04 / UI-SPEC § Error states).
+ * `onAppointmentCancelled`, if given, also receives the cancelled
+ * appointment's id directly from `AppointmentService.cancelAppointment`'s
+ * broadcast payload (`appointment.service.ts`'s `{ appointmentId,
+ * cancelledIds }`) -- this is what lets `AppointmentDrawer` show its
+ * "cancelled elsewhere" inline notice for the exact record a staff member
+ * has open, not just a generic "something changed" refetch. Returns the
+ * connection state for the header's "Live updates paused" caption strip
+ * (SCH-04 / UI-SPEC § Error states).
  */
-export function useScheduleSocket(onEvent: () => void): ConnectionState {
+export function useScheduleSocket(
+  onEvent: () => void,
+  onAppointmentCancelled?: (appointmentId: string) => void,
+): ConnectionState {
   const { accessToken, activeClinicId } = useAuth();
   const socketRef = useRef<Socket | null>(null);
   const [connectionState, setConnectionState] = useState<ConnectionState>('connected');
   const onEventRef = useRef(onEvent);
   onEventRef.current = onEvent;
+  const onCancelledRef = useRef(onAppointmentCancelled);
+  onCancelledRef.current = onAppointmentCancelled;
 
   useEffect(() => {
     if (!accessToken || !activeClinicId) return;
@@ -47,7 +63,12 @@ export function useScheduleSocket(onEvent: () => void): ConnectionState {
 
     socket.on(SOCKET_EVENTS.APPOINTMENT_CREATED, notify);
     socket.on(SOCKET_EVENTS.APPOINTMENT_UPDATED, notify);
-    socket.on(SOCKET_EVENTS.APPOINTMENT_CANCELLED, notify);
+    socket.on(SOCKET_EVENTS.APPOINTMENT_CANCELLED, (payload: AppointmentCancelledPayload) => {
+      notify();
+      if (payload?.appointmentId) {
+        onCancelledRef.current?.(payload.appointmentId);
+      }
+    });
     socket.on(SOCKET_EVENTS.AVAILABILITY_UPDATED, notify);
 
     socket.on('connect', () => {

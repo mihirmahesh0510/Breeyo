@@ -11,6 +11,9 @@ import { buildWeekRange, computeRowBounds } from '../../src/lib/week-grid';
 import { WeekGridHeader } from './WeekGridHeader';
 import { WeekGrid } from './WeekGrid';
 import { VetLegend } from './VetLegend';
+import { AppointmentDrawer } from './AppointmentDrawer';
+import { BookAppointmentDrawer } from './BookAppointmentDrawer';
+import { NotificationOptInStrip } from './NotificationOptInStrip';
 import type { AppointmentWithDetails } from '@breeyo/types';
 import styles from './schedule.module.css';
 
@@ -27,6 +30,8 @@ export default function SchedulePage() {
   const [selectedVetId, setSelectedVetId] = useState<string | null>(null);
   const [openAppointment, setOpenAppointment] = useState<AppointmentWithDetails | null>(null);
   const [bookingPrefill, setBookingPrefill] = useState<{ dayIndex: number; startMinutes: number } | null>(null);
+  const [showBookingDrawer, setShowBookingDrawer] = useState(false);
+  const [cancelledElsewhereId, setCancelledElsewhereId] = useState<string | null>(null);
 
   const { from, to, days } = useMemo(() => buildWeekRange(anchor), [anchor]);
 
@@ -44,7 +49,14 @@ export default function SchedulePage() {
     availabilityResult.refetch();
   }, [scheduleResult, availabilityResult]);
 
-  const connectionState = useScheduleSocket(handleRealtimeEvent);
+  // T-08-72 aside: the "cancelled elsewhere" inline notice (UI-SPEC § Real-
+  // time sync) does NOT auto-close the drawer -- it only disables the
+  // action buttons, so a staff member mid-read never loses context.
+  const handleAppointmentCancelledElsewhere = useCallback((appointmentId: string) => {
+    setCancelledElsewhereId(appointmentId);
+  }, []);
+
+  const connectionState = useScheduleSocket(handleRealtimeEvent, handleAppointmentCancelledElsewhere);
 
   if (!ready) {
     return null;
@@ -68,10 +80,12 @@ export default function SchedulePage() {
 
   function openBookingForCell(dayIndex: number, startMinutes: number) {
     setBookingPrefill({ dayIndex, startMinutes });
+    setShowBookingDrawer(true);
   }
 
   function openNewAppointment() {
     setBookingPrefill({ dayIndex: 0, startMinutes: bounds.startMinutes });
+    setShowBookingDrawer(true);
   }
 
   return (
@@ -82,6 +96,8 @@ export default function SchedulePage() {
           New Appointment
         </button>
       </div>
+
+      <NotificationOptInStrip connectionState={connectionState} appointments={appointments} />
 
       <VetLegend vets={vets} selectedVetId={selectedVetId} onSelect={setSelectedVetId} />
 
@@ -120,6 +136,37 @@ export default function SchedulePage() {
           ) : null}
         </>
       )}
+
+      <AppointmentDrawer
+        appointment={openAppointment}
+        onClose={() => {
+          setOpenAppointment(null);
+          setCancelledElsewhereId(null);
+        }}
+        onMove={() => {
+          // D-31: reschedule re-opens the booking drawer prefilled to this
+          // appointment's own current day/time, letting the shared date-and-
+          // slot steps do the re-pick. The original appointment closes first
+          // so the two drawers never stack.
+          if (!openAppointment) return;
+          const scheduledFor = new Date(openAppointment.scheduledFor);
+          const dayIndex = days.findIndex((d) => d.toDateString() === scheduledFor.toDateString());
+          setOpenAppointment(null);
+          setBookingPrefill({ dayIndex: Math.max(0, dayIndex), startMinutes: bounds.startMinutes });
+          setShowBookingDrawer(true);
+        }}
+        cancelledElsewhere={openAppointment != null && openAppointment.id === cancelledElsewhereId}
+      />
+
+      <BookAppointmentDrawer
+        visible={showBookingDrawer}
+        onDismiss={() => setShowBookingDrawer(false)}
+        defaultVetId={selectedVetId}
+        defaultDayIndex={bookingPrefill?.dayIndex ?? 0}
+        defaultStartMinutes={bookingPrefill?.startMinutes ?? bounds.startMinutes}
+        days={days}
+        vets={vets}
+      />
     </main>
   );
 }
