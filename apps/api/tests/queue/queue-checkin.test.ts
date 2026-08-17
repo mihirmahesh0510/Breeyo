@@ -177,6 +177,30 @@ describe('Queue Check-in (QUE-01)', () => {
     expect(body.error.code).toBe('ALREADY_IN_QUEUE');
   });
 
+  it('rejects check-in when the pet has an EXPECTED entry today (D-08, D-13)', async () => {
+    const patient = await createTestPatient(app, token);
+    const petId = patient.pet.id;
+
+    // Simulates what plan 08-09's sweep will do: create an EXPECTED row
+    // ahead of the patient's arrival, stamped with the slot time.
+    await prisma.queueEntry.create({
+      data: {
+        clinicId,
+        petId,
+        checkedInBy: userId,
+        status: 'EXPECTED',
+        position: 0,
+        isEmergency: false,
+        queuePriorityAt: new Date(),
+      },
+    });
+
+    const res = await checkIn(token, { petId });
+
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error.code).toBe('ALREADY_IN_QUEUE');
+  });
+
   it('allows re-check-in if pet was already DONE today with confirmation flag (D-40)', async () => {
     const patient = await createTestPatient(app, token);
     const petId = patient.pet.id;

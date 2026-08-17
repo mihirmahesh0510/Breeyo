@@ -1,6 +1,8 @@
 import type { QueueEntryStatus } from '@prisma/client';
 import type { DbClient } from '../../lib/prisma-rls.js';
-import { getTodayIST } from '../../lib/ist-date.js';
+import { getTodayIST, istDayBounds } from '../../lib/ist-date.js';
+import { ACTIVE_QUEUE_STATUSES, CLOSED_QUEUE_STATUSES } from '@breeyo/types';
+import type { CreateEntryParams } from './queue.types.js';
 
 const PET_OWNER_INCLUDE = {
   pet: {
@@ -25,7 +27,11 @@ export class QueueRepository {
   }
 
   /**
-   * Finds an active queue entry (WAITING or IN_CONSULT) for a pet today.
+   * Finds an active queue entry (EXPECTED, WAITING or IN_CONSULT) for a pet
+   * today. Including EXPECTED is deliberate (D-13): a scheduled patient
+   * already has a board entry, so a second walk-in check-in for the same
+   * pet is a duplicate -- the correct staff action is to check the existing
+   * EXPECTED entry in, not create a second row.
    */
   async findTodayActiveEntryForPet(clinicId: string, petId: string, today: Date) {
     return this.prisma.queueEntry.findFirst({
@@ -33,7 +39,7 @@ export class QueueRepository {
         clinicId,
         petId,
         checkedInAt: { gte: today },
-        status: { in: ['WAITING', 'IN_CONSULT'] },
+        status: { in: ACTIVE_QUEUE_STATUSES as unknown as QueueEntryStatus[] },
         archivedAt: null,
       },
     });
@@ -85,28 +91,7 @@ export class QueueRepository {
   /**
    * Creates a new queue entry with pet and owner included in the response.
    */
-  async createEntry(data: {
-    clinicId: string;
-    petId: string;
-    checkedInBy: string;
-    status: QueueEntryStatus;
-    position: number;
-    isEmergency: boolean;
-    visitReason?: string;
-    // Phase 8 (D-08, D-10): the sort key an EXPECTED-status sweep row
-    // (plan 08-09) and this organic walk-in share, so ordering is a single
-    // `queuePriorityAt` orderBy instead of a raw-SQL coalesce. For a
-    // walk-in, priority time and physical check-in time are the same
-    // instant -- callers pass `new Date()` explicitly rather than relying
-    // on a schema default (there is none; the column is NOT NULL,
-    // backfilled from checkedInAt for pre-existing rows by the migration).
-    // A sweep-created EXPECTED row instead passes appointment.scheduledFor.
-    queuePriorityAt?: Date;
-    // Phase 8 (D-08): links a sweep-created EXPECTED row back to the
-    // appointment it came from, so plan 08-09's handoff pass (and D-28's
-    // cancel/reschedule cleanup) can find it again.
-    appointmentId?: string | null;
-  }) {
+  async createEntry(data: CreateEntryParams) {
     return this.prisma.queueEntry.create({
       data: {
         clinicId: data.clinicId,
@@ -167,12 +152,33 @@ export class QueueRepository {
 
   /**
    * Returns the queue board: entries grouped by status.
+   * - expected: scheduled patients for today who haven't checked in yet (D-08, D-13)
    * - inConsult: currently being seen (no date filter, only non-archived)
-   * - waiting: checked in today, ordered by emergency first then FIFO
+   * - waiting: checked in today, ordered by emergency first, then queue
+   *   priority time (D-10), then FIFO check-in time as a tiebreak (D-34)
    * - done: completed today
    */
   async getQueueBoard(clinicId: string, today: Date) {
-    const [inConsult, waiting, done] = await Promise.all([
+    // D-08/D-13: the EXPECTED group is scoped to the same IST calendar day
+    // as the rest of the board, filtered on queuePriorityAt (the slot time)
+    // rather than checkedInAt -- an EXPECTED row's checkedInAt is still its
+    // sweep-creation instant, not a meaningful "which day" signal.
+    const { start, end } = istDayBounds(today);
+
+    const [expected, inConsult, waiting, done] = await Promise.all([
+      this.prisma.queueEntry.findMany({
+        where: {
+          clinicId,
+          status: 'EXPECTED',
+          queuePriorityAt: { gte: start, lt: end },
+          archivedAt: null,
+        },
+        include: PET_OWNER_INCLUDE,
+        orderBy: [
+          { isEmergency: 'desc' },
+          { queuePriorityAt: 'asc' },
+        ],
+      }),
       this.prisma.queueEntry.findMany({
         where: {
           clinicId,
@@ -204,7 +210,7 @@ export class QueueRepository {
       this.prisma.queueEntry.findMany({
         where: {
           clinicId,
-          status: { in: ['DONE', 'NO_SHOW'] },
+          status: { in: CLOSED_QUEUE_STATUSES as unknown as QueueEntryStatus[] },
           checkedInAt: { gte: today },
           archivedAt: null,
         },
@@ -213,7 +219,7 @@ export class QueueRepository {
       }),
     ]);
 
-    return { inConsult, waiting, done };
+    return { expected, inConsult, waiting, done };
   }
 
   /**
@@ -246,6 +252,10 @@ export class QueueRepository {
    * Omit clinicId for the global midnight sweep; pass it to scope an
    * authenticated request to a single clinic.
    * D-39: IN_CONSULT entries persist past midnight.
+   * D-09: EXPECTED is deliberately NOT in this list. An unresolved EXPECTED
+   * entry means the no-show sweep hasn't yet flipped it to NO_SHOW;
+   * archiving it here would strand the underlying appointment in
+   * SCHEDULED forever with no visible queue trace.
    */
   async archiveEntries(beforeDate: Date, clinicId?: string) {
     return this.prisma.queueEntry.updateMany({
@@ -257,5 +267,25 @@ export class QueueRepository {
       },
       data: { archivedAt: new Date() },
     });
+  }
+
+  /**
+   * D-28: deletes a stale EXPECTED queue entry for an appointment that was
+   * just cancelled or rescheduled, so the board updates immediately instead
+   * of waiting for the grace-window sweep to flip it to NO_SHOW. Deliberately
+   * scoped to `status: 'EXPECTED'` -- a queue entry that has already
+   * progressed to WAITING/IN_CONSULT means the patient physically arrived
+   * through some other path, and an appointment-side cancel must never
+   * touch that row.
+   */
+  async deleteExpectedEntryForAppointment(clinicId: string, appointmentId: string): Promise<number> {
+    const result = await this.prisma.queueEntry.deleteMany({
+      where: {
+        clinicId,
+        appointmentId,
+        status: 'EXPECTED',
+      },
+    });
+    return result.count;
   }
 }

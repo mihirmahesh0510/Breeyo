@@ -144,6 +144,13 @@ export class QueueService {
       // what makes D-10 hold for an early check-in (D-11). "Fixing" it to
       // the arrival time here would silently delete the ordering feature.
       updateData.checkedInAt = new Date();
+
+      // The entry entered the board as EXPECTED with position 0 (Task 3);
+      // now that it is physically in the walk-in line, give it a real
+      // position at the back of today's WAITING queue.
+      const today = QueueRepository.getTodayIST();
+      const waitingCount = await this.repository.countWaiting(entry.clinicId, today);
+      updateData.position = waitingCount + 1;
     }
 
     if (parsed.status === QueueStatus.DONE || parsed.status === QueueStatus.NO_SHOW) {
@@ -210,6 +217,9 @@ export class QueueService {
     }));
 
     return {
+      // D-08/D-13: passed through untransformed -- an EXPECTED entry hasn't
+      // checked in yet, so it has no computed position or estimated wait.
+      expected: board.expected,
       inConsult: board.inConsult,
       waiting: waitingWithEstimates,
       done: board.done,
@@ -224,6 +234,26 @@ export class QueueService {
    */
   async archiveOldEntries(clinicId: string) {
     return this.repository.archiveEntries(QueueRepository.getTodayIST(), clinicId);
+  }
+
+  /**
+   * D-28: removes a stale EXPECTED queue entry for an appointment that was
+   * just cancelled or rescheduled, so the board updates immediately instead
+   * of waiting for the grace-window sweep to flip it to NO_SHOW. Called by
+   * plan 08-07's cancel/reschedule handlers and plan 08-11's wiring. A
+   * queue entry that has already progressed past EXPECTED (the patient
+   * physically arrived through some other path) is never touched -- when
+   * the repository deletes nothing, this does nothing further, no error.
+   */
+  async removeExpectedEntryForAppointment(clinicId: string, appointmentId: string): Promise<void> {
+    const deletedCount = await this.repository.deleteExpectedEntryForAppointment(clinicId, appointmentId);
+
+    if (deletedCount > 0) {
+      this.broadcast(clinicId, SOCKET_EVENTS.QUEUE_UPDATED, {
+        appointmentId,
+        timestamp: Date.now(),
+      });
+    }
   }
 
   /**
