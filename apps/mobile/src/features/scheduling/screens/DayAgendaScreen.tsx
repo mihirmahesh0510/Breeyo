@@ -15,6 +15,8 @@ import { DateNavigator } from '../components/DateNavigator';
 import { VetFilterBar } from '../components/VetFilterBar';
 import { AppointmentRow } from '../components/AppointmentRow';
 import { NowIndicator } from '../components/NowIndicator';
+import { BookAppointmentSheet } from '../components/BookAppointmentSheet';
+import { AppointmentQuickSheet } from '../components/AppointmentQuickSheet';
 import { QueueSectionHeader } from '../../queue/components/QueueSectionHeader';
 
 const IST_TIME_ZONE = 'Asia/Kolkata';
@@ -283,6 +285,19 @@ export function DayAgendaScreen() {
         color="#FFFFFF"
         customSize={56}
         testID="book-appointment-fab"
+      />
+
+      <BookAppointmentSheet
+        visible={bookSheetVisible}
+        onDismiss={() => setBookSheetVisible(false)}
+        defaultVetId={vetFilter}
+        defaultDate={selectedDate}
+      />
+
+      <AppointmentQuickSheet
+        visible={quickSheetAppointment != null}
+        appointment={quickSheetAppointment}
+        onDismiss={() => setQuickSheetAppointment(null)}
       />
     </View>
   );
