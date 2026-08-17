@@ -202,21 +202,23 @@ export class BookingService {
 
       return { outcome: 'CONFIRMED', booking: confirmed };
     } catch (err) {
+      // D-12 compensation: the real appointment was already created above
+      // (its own availability check passed), but the hold-then-confirm
+      // transaction failed -- for ANY reason, not just the P2002 SLOT_TAKEN
+      // race -- so it must be cancelled rather than left orphaned behind a
+      // booking that never reached CONFIRMED.
+      if (createdAppointmentId && this.deps.appointmentService) {
+        await this.deps.appointmentService.cancelAppointment({
+          clinicId,
+          userId: booking.actedByUserId as string | null ?? (booking.ownerId as string),
+          appointmentId: createdAppointmentId,
+          scope: 'ONE',
+          reason: 'WhatsApp slot lost the confirmation race',
+        } as never);
+      }
+
       // P2002 = unique violation => another request took this slot first (D-07).
       if (isPrismaError(err, 'P2002')) {
-        // D-12 compensation: the real appointment was already created above
-        // (its own availability check passed), but the slot-hold race lost
-        // — cancel it rather than leaving an orphaned Appointment behind an
-        // AWAITING_SLOT_CHOICE booking.
-        if (createdAppointmentId && this.deps.appointmentService) {
-          await this.deps.appointmentService.cancelAppointment({
-            clinicId,
-            userId: booking.actedByUserId as string | null ?? (booking.ownerId as string),
-            appointmentId: createdAppointmentId,
-            scope: 'ONE',
-            reason: 'WhatsApp slot lost the confirmation race',
-          } as never);
-        }
         return { outcome: 'SLOT_TAKEN' };
       }
       throw err;

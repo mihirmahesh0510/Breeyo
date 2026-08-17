@@ -150,19 +150,27 @@ export class PushTriggerService {
       return;
     }
 
-    const recipientUserIds = await this.resolveStaffRecipients(clinicId);
-    const event: NotificationEvent = {
-      type: NotificationType.QUEUE_CHANGE,
-      module: NotificationModule.SCHEDULING,
-      clinicId,
-      recipientUserIds,
-      title: PUSH_COPY.queueBacklog.title(waitingCount),
-      body: PUSH_COPY.queueBacklog.body(longestWaitMinutes),
-      sendPush: true,
-      data: { deepLink: '/queue' },
-    };
+    try {
+      const recipientUserIds = await this.resolveStaffRecipients(clinicId);
+      const event: NotificationEvent = {
+        type: NotificationType.QUEUE_CHANGE,
+        module: NotificationModule.SCHEDULING,
+        clinicId,
+        recipientUserIds,
+        title: PUSH_COPY.queueBacklog.title(waitingCount),
+        body: PUSH_COPY.queueBacklog.body(longestWaitMinutes),
+        sendPush: true,
+        data: { deepLink: '/queue' },
+      };
 
-    await this.bus.emit(event);
+      await this.bus.emit(event);
+    } catch (err) {
+      // Recipient resolution or emit failed after the debounce key was
+      // already set -- release it so the next check-in retries instead of
+      // silently losing the alert for the rest of the debounce window.
+      await this.redis.del(key);
+      throw err;
+    }
   }
 
   /**

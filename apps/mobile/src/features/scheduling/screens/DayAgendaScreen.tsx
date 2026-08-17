@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, StyleSheet, Alert, SectionList } from 'react-native';
 import { Text, FAB, ActivityIndicator } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -82,12 +82,19 @@ export function DayAgendaScreen() {
 
   // `/schedule?appointmentId=...` (plan 08-08's ExpectedActionSheet "View
   // Appointment") opens the quick sheet on that appointment once it's in
-  // the loaded day's data.
+  // the loaded day's data. `consumedAppointmentIdRef` guards against a
+  // refetch (window refocus, reconnect, an unrelated socket-driven cache
+  // invalidation) giving `appointments` a new array reference and re-firing
+  // this effect after the sheet the user opened from this param was already
+  // dismissed -- it is only consumed once per distinct `appointmentId`.
+  const consumedAppointmentIdRef = useRef<string | null>(null);
   useEffect(() => {
     if (!params.appointmentId || !appointments) return;
+    if (consumedAppointmentIdRef.current === params.appointmentId) return;
     const match = appointments.find((a) => a.id === params.appointmentId);
     if (match) {
       setQuickSheetAppointment(match);
+      consumedAppointmentIdRef.current = params.appointmentId;
     }
   }, [params.appointmentId, appointments]);
 

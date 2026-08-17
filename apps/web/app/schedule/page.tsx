@@ -3,7 +3,7 @@
 // D-25 -- the first real screen in `apps/web`. The auth guard hook below
 // runs FIRST, before any data hook, so no calendar chrome -- not even the
 // loading skeleton -- ever renders to an unauthenticated visitor (T-08-72).
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRequireAuth } from '../../src/lib/useRequireAuth';
 import { useWeekSchedule, useResolvedAvailabilityWeek, useClinicVets } from '../../src/lib/useSchedule';
 import { useScheduleSocket } from '../../src/lib/useScheduleSocket';
@@ -57,6 +57,18 @@ export default function SchedulePage() {
   }, []);
 
   const connectionState = useScheduleSocket(handleRealtimeEvent, handleAppointmentCancelledElsewhere);
+
+  // A realtime refetch (another staff member's reschedule/check-in) must
+  // keep an open drawer's snapshot in sync -- otherwise a subsequent "Check
+  // In Now"/"Move Appointment" action from the drawer acts on stale
+  // time/status and only surfaces the conflict as an opaque server error.
+  useEffect(() => {
+    setOpenAppointment((current) => {
+      if (!current) return current;
+      const fresh = (scheduleResult.data ?? []).find((a) => a.id === current.id);
+      return fresh ?? current;
+    });
+  }, [scheduleResult.data]);
 
   if (!ready) {
     return null;

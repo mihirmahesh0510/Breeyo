@@ -17,7 +17,7 @@ import { AvailabilityService } from './availability.service.js';
 import { PatientRepository } from '../patient/patient.repository.js';
 import { assertAppointmentTransition } from './appointment.state.js';
 import { AuditEvent, writeAuditLog } from '../../lib/audit-log.js';
-import { getTodayIST, addDaysIST, istMinutesOfDay } from '../../lib/ist-date.js';
+import { getTodayIST, addDaysIST, istMinutesOfDay, istDateOnly } from '../../lib/ist-date.js';
 import type {
   CreateAppointmentParams,
   RescheduleAppointmentParams,
@@ -39,6 +39,18 @@ type Db = PrismaClient | Prisma.TransactionClient;
  * mobile/web's request bodies are validated against everywhere else.
  */
 const createAppointmentServiceSchema = createAppointmentSchema.partial({ serviceCatalogId: true });
+
+/**
+ * D-34's advisory lock must serialize every booking attempt that
+ * `validateSlot`'s minute-range overlap check could conflict with, not just
+ * ones at the exact same instant -- keying on `vetId` + IST calendar date
+ * (rather than the exact `scheduledFor` timestamp) means any two overlapping
+ * slot requests for the same vet on the same day always hash to the same
+ * lock key and are serialized against each other.
+ */
+function vetDayLockKey(vetId: string, scheduledFor: Date): string {
+  return `${vetId}|${istDateOnly(scheduledFor).toISOString()}`;
+}
 
 function domainError(message: string, statusCode: number, code: string): Error & { statusCode: number; code: string } {
   const error = new Error(message) as Error & { statusCode: number; code: string };
@@ -214,7 +226,7 @@ export class AppointmentService {
 
       for (let index = 0; index < survivingDates.length; index += 1) {
         const scheduledFor = survivingDates[index];
-        const lockKey = `${parsed.vetId}|${scheduledFor.toISOString()}`;
+        const lockKey = vetDayLockKey(parsed.vetId, scheduledFor);
         // `pg_advisory_xact_lock` returns `void` -- `$queryRaw` tries to
         // deserialize every column of its result set into a Prisma scalar
         // type and fails outright on `void` (`P2010: Failed to deserialize
@@ -498,7 +510,7 @@ export class AppointmentService {
     // under READ COMMITTED and both commit, double-booking despite
     // `allowDoubleBook: false`.
     const { updated, warnings } = await this.prisma.$transaction(async (tx) => {
-      const lockKey = `${newVetId}|${parsed.scheduledFor.toISOString()}`;
+      const lockKey = vetDayLockKey(newVetId, parsed.scheduledFor);
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`;
 
       const slotWarnings = await this.validateSlot({
@@ -588,6 +600,13 @@ export class AppointmentService {
       if (occurrence.id === anchor.id) {
         continue;
       }
+      // D-31: same guard as `cancelAppointment`'s SERIES scope -- a member
+      // already CHECKED_IN/CANCELLED/COMPLETED/NO_SHOW is left untouched, no
+      // matter its date, so a series-wide reschedule never desynchronizes a
+      // live or closed occurrence from the queue.
+      if (occurrence.status !== AppointmentStatus.SCHEDULED) {
+        continue;
+      }
       if (occurrence.scheduledFor.getTime() < now.getTime()) {
         continue;
       }
@@ -600,7 +619,7 @@ export class AppointmentService {
         // conflict is skipped and reported, exactly as before, instead of
         // rolling back every other occurrence already moved in this pass.
         await this.prisma.$transaction(async (tx) => {
-          const lockKey = `${vetId}|${newDate.toISOString()}`;
+          const lockKey = vetDayLockKey(vetId, newDate);
           await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`;
 
           const occurrenceWarnings = await this.validateSlot({
