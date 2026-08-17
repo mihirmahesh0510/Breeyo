@@ -18,8 +18,8 @@ export default async function queueRoutes(fastify: FastifyInstance) {
   // wiring, resolved the same way: construct a fresh, cheap `NotificationBus`
   // (a thin BullMQ producer wrapper, no state to duplicate) at plugin scope
   // rather than depending on a decoration plugin isolation makes unreachable.
-  // `PushTriggerService` itself is built from the admin-scoped `fastify.prisma`
-  // (matching `scheduling.routes.ts`'s own construction) -- it only resolves
+  // D-30 exemption: `PushTriggerService` itself is built from the admin-scoped
+  // `fastify.prisma` (matching `scheduling.routes.ts`'s own construction) -- it only resolves
   // clinic staff recipients by an explicit `clinicId` filter, so it needs no
   // per-request tenant scoping, and stays a plugin-scope singleton just like
   // `fastify.io` below.

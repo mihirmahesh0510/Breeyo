@@ -45,9 +45,13 @@ export default async function schedulingRoutes(fastify: FastifyInstance): Promis
   }
 
   // ─── Availability + appointment repositories/services ─────────────────────
+  // D-30 exemption: see file header -- plans 08-05/08-07 deliberately left
+  // these five scheduling tables without DB-level RLS, so fastify.prisma is
+  // injected directly here, not request.db.
   const availabilityRepository = new AvailabilityRepository(fastify.prisma);
   const availabilityService = new AvailabilityService(availabilityRepository, fastify.prisma, fastify.io);
 
+  // D-30 exemption: same reasoning as above.
   const appointmentRepository = new AppointmentRepository(fastify.prisma);
 
   // ─── D-27 push triggers ─────────────────────────────────────────────────
@@ -70,9 +74,12 @@ export default async function schedulingRoutes(fastify: FastifyInstance): Promis
     await notificationBus.close();
   });
 
+  // D-30 exemption: resolves clinic staff recipients by an explicit clinicId
+  // filter, matching queue.routes.ts's own construction -- no per-request
+  // tenant scoping needed.
   const pushTriggers = new PushTriggerService(notificationBus, fastify.prisma, fastify.redis);
 
-  // D-28: a SECOND, independent `QueueRepository`/`QueueService` pair, built
+  // D-30 exemption: a SECOND, independent `QueueRepository`/`QueueService` pair, built
   // the same way `queue.routes.ts` builds its own (raw `fastify.prisma` +
   // `fastify.io`) rather than importing that module's per-request instance --
   // there is no shared state to duplicate, both are stateless aside from the
@@ -98,6 +105,9 @@ export default async function schedulingRoutes(fastify: FastifyInstance): Promis
     const { WhatsAppRepository } = await import('../whatsapp/whatsapp.repository.js');
     const { AppointmentReminderService: RealAppointmentReminderService } = await import('./reminder.service.js');
 
+    // D-30 exemption: same reasoning as the file header/availabilityRepository
+    // above -- no DB-level RLS on these tables, so fastify.prisma is injected
+    // directly.
     const reminderTaskRepository = new ReminderTaskRepository(fastify.prisma);
     const whatsAppRepositoryForReminders = new WhatsAppRepository(fastify.prisma);
     reminderService = new RealAppointmentReminderService(
@@ -112,6 +122,8 @@ export default async function schedulingRoutes(fastify: FastifyInstance): Promis
     );
   }
 
+  // D-30 exemption: same reasoning as the file header -- no DB-level RLS on
+  // these tables, so fastify.prisma is injected directly.
   const appointmentService = new AppointmentService(
     appointmentRepository,
     availabilityService,
@@ -151,6 +163,8 @@ export default async function schedulingRoutes(fastify: FastifyInstance): Promis
     },
   );
 
+  // D-30 exemption: same reasoning as the file header -- no DB-level RLS on
+  // these tables, so fastify.prisma is injected directly.
   const queueHandoffService = new QueueHandoffService(
     appointmentRepository,
     queueRepository,
@@ -167,7 +181,9 @@ export default async function schedulingRoutes(fastify: FastifyInstance): Promis
   // `BookingService`'s D-12 optional deps are not updated to consume this
   // instance yet. Recorded as a known, explicit gap in 08-11-SUMMARY.md for
   // a future plan to close -- constructing it here without wiring it in is
-  // a deliberate, disclosed scope boundary, not an oversight. ─────────────
+  // a deliberate, disclosed scope boundary, not an oversight. D-30 exemption:
+  // this whole block only builds background-bridge collaborators, none of
+  // which run inside an authenticated HTTP request. ─────────────
   let ownerActionService: OwnerActionService | null = null;
   if (reminderService) {
     try {
@@ -189,6 +205,8 @@ export default async function schedulingRoutes(fastify: FastifyInstance): Promis
       });
 
       const ownerReplySender: OwnerReplySender = {
+        // D-30 exemption: runs from the owner-action bridge above, not
+        // inside an HTTP request -- no request.db exists here either.
         async send(clinicId: string, ownerId: string, body: string): Promise<void> {
           const thread = await fastify.prisma.whatsAppThread.findFirst({ where: { clinicId, ownerId } });
           if (!thread) {
@@ -214,6 +232,7 @@ export default async function schedulingRoutes(fastify: FastifyInstance): Promis
         },
       };
 
+      // D-30 exemption: same reasoning as ownerReplySender.send above.
       ownerActionService = new RealOwnerActionService(
         appointmentRepository,
         appointmentService,
