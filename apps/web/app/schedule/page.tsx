@@ -31,6 +31,7 @@ export default function SchedulePage() {
   const [openAppointment, setOpenAppointment] = useState<AppointmentWithDetails | null>(null);
   const [bookingPrefill, setBookingPrefill] = useState<{ dayIndex: number; startMinutes: number } | null>(null);
   const [showBookingDrawer, setShowBookingDrawer] = useState(false);
+  const [reschedulingAppointment, setReschedulingAppointment] = useState<AppointmentWithDetails | null>(null);
   const [cancelledElsewhereId, setCancelledElsewhereId] = useState<string | null>(null);
 
   const { from, to, days } = useMemo(() => buildWeekRange(anchor), [anchor]);
@@ -102,11 +103,13 @@ export default function SchedulePage() {
   const isEmpty = !isLoading && !hasError && appointments.length === 0;
 
   function openBookingForCell(dayIndex: number, startMinutes: number) {
+    setReschedulingAppointment(null);
     setBookingPrefill({ dayIndex, startMinutes });
     setShowBookingDrawer(true);
   }
 
   function openNewAppointment() {
+    setReschedulingAppointment(null);
     setBookingPrefill({ dayIndex: 0, startMinutes: bounds.startMinutes });
     setShowBookingDrawer(true);
   }
@@ -170,11 +173,14 @@ export default function SchedulePage() {
           // D-31: reschedule re-opens the booking drawer prefilled to this
           // appointment's own current day/time, letting the shared date-and-
           // slot steps do the re-pick. The original appointment closes first
-          // so the two drawers never stack.
+          // so the two drawers never stack. `reschedulingAppointment` routes
+          // the drawer's submit through the PATCH reschedule endpoint
+          // instead of POSTing a duplicate appointment.
           if (!openAppointment) return;
           const scheduledFor = new Date(openAppointment.scheduledFor);
           const dayIndex = days.findIndex((d) => d.toDateString() === scheduledFor.toDateString());
           setOpenAppointment(null);
+          setReschedulingAppointment(openAppointment);
           setBookingPrefill({ dayIndex: Math.max(0, dayIndex), startMinutes: bounds.startMinutes });
           setShowBookingDrawer(true);
         }}
@@ -183,12 +189,16 @@ export default function SchedulePage() {
 
       <BookAppointmentDrawer
         visible={showBookingDrawer}
-        onDismiss={() => setShowBookingDrawer(false)}
+        onDismiss={() => {
+          setShowBookingDrawer(false);
+          setReschedulingAppointment(null);
+        }}
         defaultVetId={selectedVetId}
         defaultDayIndex={bookingPrefill?.dayIndex ?? 0}
         defaultStartMinutes={bookingPrefill?.startMinutes ?? bounds.startMinutes}
         days={days}
         vets={vets}
+        reschedulingAppointment={reschedulingAppointment}
       />
     </main>
   );

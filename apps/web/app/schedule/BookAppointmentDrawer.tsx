@@ -19,8 +19,9 @@ import {
 import type { SlotOption, ServiceCatalog } from '@breeyo/types';
 import { apiClient, ApiClientError } from '../../src/lib/api';
 import { useAuth, handleUnauthorized } from '../../src/lib/AuthProvider';
-import { useOfferableSlots, useCreateAppointment } from '../../src/lib/useSchedule';
+import { useOfferableSlots, useCreateAppointment, useRescheduleAppointment } from '../../src/lib/useSchedule';
 import type { ClinicVet } from '../../src/lib/useSchedule';
+import type { AppointmentWithDetails } from '@breeyo/types';
 import styles from './schedule.module.css';
 
 const IST_TIME_ZONE = 'Asia/Kolkata';
@@ -161,6 +162,15 @@ export interface BookAppointmentDrawerProps {
   defaultStartMinutes: number;
   days: Date[];
   vets: ClinicVet[];
+  /**
+   * Set when this drawer is opened from AppointmentDrawer's "Move
+   * Appointment" action rather than "New Appointment". Skips the
+   * owner/pet/service/vet steps (already fixed by the existing appointment)
+   * and routes Confirm through `useRescheduleAppointment` (PATCH) instead of
+   * `useCreateAppointment` (POST), matching mobile's `AppointmentQuickSheet`
+   * move flow.
+   */
+  reschedulingAppointment?: AppointmentWithDetails | null;
 }
 
 export function BookAppointmentDrawer({
@@ -170,8 +180,10 @@ export function BookAppointmentDrawer({
   defaultDayIndex,
   days,
   vets,
+  reschedulingAppointment = null,
 }: BookAppointmentDrawerProps) {
   const defaultDate = days[defaultDayIndex] ?? new Date();
+  const isRescheduling = !!reschedulingAppointment;
 
   const [mobileDisplay, setMobileDisplay] = useState('');
   const [selectedPetIds, setSelectedPetIds] = useState<Set<string>>(new Set());
@@ -198,6 +210,21 @@ export function BookAppointmentDrawer({
     selectedServiceId ?? undefined,
   );
   const createAppointment = useCreateAppointment();
+  const rescheduleAppointment = useRescheduleAppointment();
+
+  // Prefill from the appointment being moved -- runs after the `!visible`
+  // reset effect below re-applies the plain "new appointment" defaults, so
+  // every reopen (including a second Move on a different appointment while
+  // the drawer stays mounted) starts from that appointment's own vet/service/
+  // date rather than whatever was left over from the previous session.
+  useEffect(() => {
+    if (visible && reschedulingAppointment) {
+      setSelectedVetId(reschedulingAppointment.vetId);
+      setSelectedServiceId(reschedulingAppointment.serviceCatalogId);
+      setSelectedDate(new Date(reschedulingAppointment.scheduledFor));
+      setSelectedSlot(null);
+    }
+  }, [visible, reschedulingAppointment]);
 
   useEffect(() => {
     if (!visible) {
@@ -268,19 +295,46 @@ export function BookAppointmentDrawer({
     [selectedDate, recurrenceInterval, occurrences],
   );
 
-  const primaryPetName = ownerData?.pets.find((pet) => selectedPetIds.has(pet.id))?.name ?? 'Appointment';
+  const primaryPetName =
+    ownerData?.pets.find((pet) => selectedPetIds.has(pet.id))?.name ??
+    reschedulingAppointment?.pets[0]?.pet.name ??
+    'Appointment';
   const selectedVetName = vets.find((v) => v.id === selectedVetId)?.name ?? '';
   const showDoubleBookWarning = (selectedSlot?.isDoubleBooked ?? false) || serverDoubleBookError;
 
-  const canConfirm = !!ownerData && selectedPetIds.size > 0 && !!selectedServiceId && !!selectedVetId && !!selectedSlot;
+  const canConfirm = isRescheduling
+    ? !!selectedSlot
+    : !!ownerData && selectedPetIds.size > 0 && !!selectedServiceId && !!selectedVetId && !!selectedSlot;
 
   const submitBooking = useCallback(
     async (options: { allowDoubleBook: boolean }) => {
-      if (!ownerData || !selectedServiceId || !selectedVetId || !selectedSlot) return;
+      if (!selectedSlot) return;
 
       const isoDate = istDateKey(selectedDate);
       const hhmm = minutesToHHMM(selectedSlot.startMinutes);
       const scheduledFor = `${isoDate}T${hhmm}:00+05:30`;
+
+      if (reschedulingAppointment) {
+        try {
+          await rescheduleAppointment.mutate({
+            appointmentId: reschedulingAppointment.id,
+            scheduledFor,
+            allowDoubleBook: options.allowDoubleBook,
+          });
+          onDismiss();
+        } catch (error) {
+          if (error instanceof ApiClientError) {
+            if (error.code === 'SLOT_DOUBLE_BOOKED') {
+              setServerDoubleBookError(true);
+              return;
+            }
+            setServerErrorMessage(error.message);
+          }
+        }
+        return;
+      }
+
+      if (!ownerData || !selectedServiceId || !selectedVetId) return;
       const requestedOccurrences = occurrences;
 
       try {
@@ -317,6 +371,8 @@ export function BookAppointmentDrawer({
       }
     },
     [
+      reschedulingAppointment,
+      rescheduleAppointment,
       ownerData,
       selectedServiceId,
       selectedVetId,
@@ -342,94 +398,105 @@ export function BookAppointmentDrawer({
     return null;
   }
 
-  const showVetStep = !!selectedServiceId;
-  const showMultiVetChooser = showVetStep && vets.length > 1;
+  const showOwnerStep = !isRescheduling;
+  const showVetStep = isRescheduling || !!selectedServiceId;
+  const showMultiVetChooser = !isRescheduling && showVetStep && vets.length > 1;
   const showDateStep = showVetStep && !!selectedVetId;
   const showSlotStep = showDateStep;
-  const showRepeatStep = !!selectedSlot;
+  const showRepeatStep = !isRescheduling && !!selectedSlot;
 
   return (
     <>
       <div className={styles.drawerOverlay} onClick={onDismiss} />
-      <div className={styles.drawerPanel} role="dialog" aria-modal="true" aria-label="Book Appointment">
+      <div
+        className={styles.drawerPanel}
+        role="dialog"
+        aria-modal="true"
+        aria-label={isRescheduling ? 'Move Appointment' : 'Book Appointment'}
+      >
         <div className={styles.drawerHeader}>
-          <h2 className={styles.drawerTitle}>Book Appointment</h2>
+          <h2 className={styles.drawerTitle}>{isRescheduling ? 'Move Appointment' : 'Book Appointment'}</h2>
           <button type="button" className={styles.drawerCloseButton} onClick={onDismiss} aria-label="Close">
             ×
           </button>
         </div>
 
         <div className={styles.drawerBody}>
-          {/* Step 1: owner lookup (D-19) */}
-          <div className={styles.formField}>
-            <label className={styles.formLabel} htmlFor="booking-mobile">
-              Mobile Number
-            </label>
-            <input
-              id="booking-mobile"
-              className={styles.textInput}
-              type="tel"
-              inputMode="numeric"
-              maxLength={11}
-              placeholder="Enter 10-digit mobile number"
-              value={mobileDisplay}
-              onChange={(event) => setMobileDisplay(formatMobile(event.target.value))}
-            />
-          </div>
-
-          {isLooking ? <p className={styles.helperCaption}>Looking up patient…</p> : null}
-
-          {ownerNotFound ? (
-            <p className={styles.helperCaption}>
-              No records found for this number. Register the patient from the mobile app, then look them up again here.
-            </p>
-          ) : null}
-
-          {/* Step 2: multi-pet select (D-21) */}
-          {ownerData ? (
+          {showOwnerStep ? (
             <>
-              <p className={styles.sectionTitle}>{ownerData.name}</p>
-              <p className={styles.helperCaption}>Select at least one pet</p>
-              {ownerData.pets.map((pet) => {
-                const selected = selectedPetIds.has(pet.id);
-                return (
-                  <button
-                    key={pet.id}
-                    type="button"
-                    className={styles.petCheckboxRow}
-                    onClick={() => togglePet(pet.id)}
-                    aria-pressed={selected}
-                    aria-label={`${selected ? 'Deselect' : 'Select'} ${pet.name}`}
-                  >
-                    <input type="checkbox" checked={selected} readOnly />
-                    {pet.name}
-                  </button>
-                );
-              })}
-            </>
-          ) : null}
+              {/* Step 1: owner lookup (D-19) */}
+              <div className={styles.formField}>
+                <label className={styles.formLabel} htmlFor="booking-mobile">
+                  Mobile Number
+                </label>
+                <input
+                  id="booking-mobile"
+                  className={styles.textInput}
+                  type="tel"
+                  inputMode="numeric"
+                  maxLength={11}
+                  placeholder="Enter 10-digit mobile number"
+                  value={mobileDisplay}
+                  onChange={(event) => setMobileDisplay(formatMobile(event.target.value))}
+                />
+              </div>
 
-          {/* Step 3: service (D-02) */}
-          {ownerData && selectedPetIds.size > 0 ? (
-            <>
-              <p className={styles.sectionTitle}>Service</p>
-              {services.map((service) => {
-                const selected = selectedServiceId === service.id;
-                return (
-                  <button
-                    key={service.id}
-                    type="button"
-                    className={styles.serviceRow}
-                    onClick={() => setSelectedServiceId(service.id)}
-                    aria-pressed={selected}
-                  >
-                    <span>
-                      {service.name} · {service.durationMinutes} min
-                    </span>
-                    {selected ? <span aria-hidden="true">✓</span> : null}
-                  </button>
-                );
-              })}
+              {isLooking ? <p className={styles.helperCaption}>Looking up patient…</p> : null}
+
+              {ownerNotFound ? (
+                <p className={styles.helperCaption}>
+                  No records found for this number. Register the patient from the mobile app, then look them up again
+                  here.
+                </p>
+              ) : null}
+
+              {/* Step 2: multi-pet select (D-21) */}
+              {ownerData ? (
+                <>
+                  <p className={styles.sectionTitle}>{ownerData.name}</p>
+                  <p className={styles.helperCaption}>Select at least one pet</p>
+                  {ownerData.pets.map((pet) => {
+                    const selected = selectedPetIds.has(pet.id);
+                    return (
+                      <button
+                        key={pet.id}
+                        type="button"
+                        className={styles.petCheckboxRow}
+                        onClick={() => togglePet(pet.id)}
+                        aria-pressed={selected}
+                        aria-label={`${selected ? 'Deselect' : 'Select'} ${pet.name}`}
+                      >
+                        <input type="checkbox" checked={selected} readOnly />
+                        {pet.name}
+                      </button>
+                    );
+                  })}
+                </>
+              ) : null}
+
+              {/* Step 3: service (D-02) */}
+              {ownerData && selectedPetIds.size > 0 ? (
+                <>
+                  <p className={styles.sectionTitle}>Service</p>
+                  {services.map((service) => {
+                    const selected = selectedServiceId === service.id;
+                    return (
+                      <button
+                        key={service.id}
+                        type="button"
+                        className={styles.serviceRow}
+                        onClick={() => setSelectedServiceId(service.id)}
+                        aria-pressed={selected}
+                      >
+                        <span>
+                          {service.name} · {service.durationMinutes} min
+                        </span>
+                        {selected ? <span aria-hidden="true">✓</span> : null}
+                      </button>
+                    );
+                  })}
+                </>
+              ) : null}
             </>
           ) : null}
 
@@ -603,16 +670,21 @@ export function BookAppointmentDrawer({
 
         {/* Step 8: confirm */}
         <div className={styles.drawerFooter}>
-          <button type="button" className={styles.buttonText} onClick={onDismiss} disabled={createAppointment.isPending}>
-            Discard Booking
+          <button
+            type="button"
+            className={styles.buttonText}
+            onClick={onDismiss}
+            disabled={isRescheduling ? rescheduleAppointment.isPending : createAppointment.isPending}
+          >
+            {isRescheduling ? 'Discard Move' : 'Discard Booking'}
           </button>
           <button
             type="button"
             className={styles.buttonFilled}
             onClick={handleConfirm}
-            disabled={!canConfirm || createAppointment.isPending}
+            disabled={!canConfirm || (isRescheduling ? rescheduleAppointment.isPending : createAppointment.isPending)}
           >
-            Confirm Booking
+            {isRescheduling ? 'Confirm Move' : 'Confirm Booking'}
           </button>
         </div>
       </div>
