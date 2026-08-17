@@ -179,4 +179,54 @@ describe('Real inbound WhatsApp webhook -> OwnerActionService (08-11 wiring fix)
     });
     expect(outbound?.body).toContain("Thanks for confirming");
   });
+
+  it(
+    'a real appointment:cancel:<uuid> button-reply webhook also deletes the already-created EXPECTED queue ' +
+      'entry for that appointment (D-28 fix: this file\'s AppointmentService previously had no ' +
+      'onRescheduled/onCancelled hooks, so an owner CANCEL via WhatsApp never ran the queue module\'s ' +
+      'removeExpectedEntryForAppointment, leaving a stale card on the board until the grace-window sweep ' +
+      'eventually flipped it to NO_SHOW)',
+    async () => {
+      const { clinic, owner, pet, appointment, waFrom } = await setupClinicOwnerAppointment();
+      process.env.WHATSAPP_WEBHOOK_CLINIC_ID = clinic.id;
+
+      // Simulates the 08-09 sweep having already created this appointment's
+      // EXPECTED queue card ahead of the owner's WhatsApp reply, exactly the
+      // scenario the disclosed gap describes.
+      const expectedEntry = await prisma.queueEntry.create({
+        data: {
+          clinicId: clinic.id,
+          petId: pet.id,
+          checkedInBy: owner.id,
+          status: 'EXPECTED',
+          position: 0,
+          queuePriorityAt: appointment.scheduledFor,
+          appointmentId: appointment.id,
+        },
+      });
+
+      const raw = buttonReplyWebhookBody({
+        from: waFrom,
+        providerMessageId: `wamid.${randomUUID()}`,
+        payloadId: `appointment:cancel:${appointment.id}`,
+        title: 'Cancel',
+      });
+
+      const response = await request(app.server)
+        .post('/api/v1/whatsapp/webhook')
+        .set('content-type', 'application/json')
+        .set('x-hub-signature-256', sign(raw))
+        .send(raw);
+
+      expect(response.status).toBe(200);
+
+      const updated = await prisma.appointment.findUniqueOrThrow({ where: { id: appointment.id } });
+      expect(updated.status).toBe('CANCELLED');
+
+      // The D-28 assertion: the EXPECTED queue card must be gone immediately,
+      // not left stranded until the grace-window sweep flips it to NO_SHOW.
+      const remaining = await prisma.queueEntry.findUnique({ where: { id: expectedEntry.id } });
+      expect(remaining).toBeNull();
+    },
+  );
 });

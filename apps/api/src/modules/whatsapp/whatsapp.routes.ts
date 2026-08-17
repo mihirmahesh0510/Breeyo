@@ -87,6 +87,8 @@ import { AppointmentService } from '../scheduling/appointment.service.js';
 import { PushTriggerService } from '../scheduling/push-trigger.service.js';
 import { AppointmentReminderService } from '../scheduling/reminder.service.js';
 import { OwnerActionService, createAppointmentActionHandler, type OwnerReplySender } from '../scheduling/owner-action.service.js';
+import { QueueRepository } from '../queue/queue.repository.js';
+import { QueueService } from '../queue/queue.service.js';
 
 export default async function whatsappRoutes(fastify: FastifyInstance): Promise<void> {
   const isTest = process.env.NODE_ENV === 'test';
@@ -156,11 +158,75 @@ export default async function whatsappRoutes(fastify: FastifyInstance): Promise<
   const availabilityRepository = new AvailabilityRepository(fastify.prisma);
   const availabilityService = new AvailabilityService(availabilityRepository, fastify.prisma, fastify.io ?? null);
   const appointmentRepository = new AppointmentRepository(fastify.prisma);
+
+  // D-28 fix: a SECOND, independent `QueueRepository`/`QueueService` pair,
+  // built the exact same way `scheduling.routes.ts` builds its own (raw
+  // `fastify.prisma` + `fastify.io`) — this file's `appointmentService`
+  // instance needs its own `onRescheduled`/`onCancelled` hooks below so an
+  // owner-initiated WhatsApp CANCEL/reschedule ALSO cleans up an already-
+  // created `EXPECTED` queue card, not only the scheduling-module HTTP
+  // endpoints. There is no shared state to duplicate here (both are
+  // stateless aside from the `io` reference).
+  const queueRepository = new QueueRepository(fastify.prisma);
+  const queueService = new QueueService(queueRepository, fastify.io ?? null);
+
+  // D-17/D-18: the appointment ADVANCE/ON_DATE reminder-discovery source,
+  // reusing this file's own `repository`/`reminderTaskRepository` instances
+  // rather than constructing new ones — there is already exactly one of
+  // each in this composition root. Passed to `createReminderSweepWorker`
+  // below (closing 08-11-SUMMARY.md's Known Gap #3), to `OwnerActionService`
+  // (its own CANCEL branch needs `cancelPendingForAppointment`), and now
+  // (D-28 fix) to `appointmentService`'s own `onRescheduled`/`onCancelled`
+  // hooks below — moved up ahead of that construction so both hooks can
+  // reference it directly instead of via a forward closure reference.
+  const appointmentReminderService = new AppointmentReminderService(
+    reminderTaskRepository,
+    repository,
+    appointmentRepository,
+  );
+
   const appointmentService = new AppointmentService(
     appointmentRepository,
     availabilityService,
     fastify.prisma,
     fastify.io ?? null,
+    // onRescheduled/onCancelled — D-28 fix, mirroring `scheduling.routes.ts`'s
+    // identical hook shape exactly: D-28 queue cleanup (unconditional) +
+    // D-10 reminder cancellation (also unconditional here, since unlike
+    // `scheduling.routes.ts` this file's `appointmentReminderService` is not
+    // behind a Phase-7-availability guard — it is already constructed
+    // unconditionally above), each independently try/caught so one failing
+    // never blocks the other or the underlying reschedule/cancel.
+    async (appointmentId: string, clinicId: string) => {
+      try {
+        await queueService.removeExpectedEntryForAppointment(clinicId, appointmentId);
+      } catch (err) {
+        fastify.log.error({ err, appointmentId, clinicId }, 'whatsapp: queue EXPECTED cleanup failed on reschedule');
+      }
+      try {
+        await appointmentReminderService.cancelPendingForAppointment(appointmentId, clinicId);
+      } catch (err) {
+        fastify.log.error({ err, appointmentId, clinicId }, 'whatsapp: reminder cancellation failed on reschedule');
+      }
+    },
+    // onCancelled — identical shape to onRescheduled above. This is the hook
+    // `OwnerActionService.handleOwnerAction`'s CANCEL branch actually
+    // exercises (via `appointmentService.cancelAppointment`), which is the
+    // gap this fix closes: previously this file's `appointmentService` had
+    // no hooks at all, so an owner-initiated WhatsApp CANCEL never removed
+    // the appointment's `EXPECTED` queue card.
+    async (appointmentId: string, clinicId: string) => {
+      try {
+        await queueService.removeExpectedEntryForAppointment(clinicId, appointmentId);
+      } catch (err) {
+        fastify.log.error({ err, appointmentId, clinicId }, 'whatsapp: queue EXPECTED cleanup failed on cancel');
+      }
+      try {
+        await appointmentReminderService.cancelPendingForAppointment(appointmentId, clinicId);
+      } catch (err) {
+        fastify.log.error({ err, appointmentId, clinicId }, 'whatsapp: reminder cancellation failed on cancel');
+      }
+    },
   );
 
   // A second, independent `NotificationBus` — `scheduling.routes.ts` builds
@@ -172,19 +238,6 @@ export default async function whatsappRoutes(fastify: FastifyInstance): Promise<
     await schedulingNotificationBus.close();
   });
   const pushTriggers = new PushTriggerService(schedulingNotificationBus, fastify.prisma, fastify.redis);
-
-  // D-17/D-18: the appointment ADVANCE/ON_DATE reminder-discovery source,
-  // reusing this file's own `repository`/`reminderTaskRepository` instances
-  // rather than constructing new ones — there is already exactly one of
-  // each in this composition root. Passed to `createReminderSweepWorker`
-  // below (closing 08-11-SUMMARY.md's Known Gap #3) and to
-  // `OwnerActionService` (its own CANCEL branch needs
-  // `cancelPendingForAppointment`).
-  const appointmentReminderService = new AppointmentReminderService(
-    reminderTaskRepository,
-    repository,
-    appointmentRepository,
-  );
 
   // D-15, D-16, D-33: the owner KEEP/MOVE/CANCEL bridge. `ownerReplySender`
   // adapts `OwnerReplySender` onto THIS file's own existing send path
