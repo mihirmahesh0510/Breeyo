@@ -1,0 +1,496 @@
+/* D-25: the web week grid. Every value below is a var(--...) reference into
+   packages/ui/src/theme/portal.css -- no hard-coded hex, no ad hoc spacing,
+   no font stack outside the documented UI-SPEC exceptions (the 56px time
+   gutter and the 44px minimum interactive target). */
+
+.page {
+  min-height: 100vh;
+  background: var(--color-background);
+  padding: var(--spacing-xl);
+  font-family: var(--font-family);
+  color: var(--color-on-surface);
+}
+
+.headerRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+  margin-bottom: var(--spacing-lg);
+}
+
+.title {
+  font-size: var(--font-size-heading2);
+  line-height: var(--line-height-heading2);
+  font-weight: var(--font-weight-heading2);
+  color: var(--color-on-surface);
+  margin: 0;
+}
+
+.newAppointmentButton {
+  min-height: 44px;
+  padding: var(--spacing-sm) var(--spacing-md);
+  font-size: var(--font-size-subheading);
+  font-weight: var(--font-weight-subheading);
+  font-family: var(--font-family);
+  color: var(--color-on-primary);
+  background: var(--color-primary);
+  border: none;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+
+.newAppointmentButton:disabled {
+  background: var(--color-surface-disabled);
+  color: var(--color-on-surface-disabled);
+  cursor: default;
+}
+
+/* ---- Vet legend ---- */
+
+.legendRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-md);
+  margin-bottom: var(--spacing-md);
+}
+
+.legendItem {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  min-height: 44px;
+  padding: 0 var(--spacing-sm);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
+  cursor: pointer;
+  font-family: var(--font-family);
+  font-size: var(--font-size-caption);
+  color: var(--color-on-surface);
+}
+
+.legendItemSelected {
+  border-color: var(--color-outline-variant);
+  background: var(--color-surface-variant);
+}
+
+.legendDot {
+  width: var(--spacing-sm);
+  height: var(--spacing-sm);
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* ---- Grid scroll shell ---- */
+
+.gridScrollContainer {
+  overflow-x: auto;
+  border: 1px solid var(--color-outline-variant);
+  border-radius: var(--radius-md);
+}
+
+.gridInner {
+  min-width: 728px; /* 56px gutter + 7 * 96px minimum day columns */
+}
+
+/* ---- Sticky day-header band ---- */
+
+/* Shared once here so the literal column template isn't repeated between
+   the sticky header band and the grid body below -- both apply this class
+   alongside their own layout rules. */
+.gridColumns {
+  grid-template-columns: 56px repeat(7, minmax(96px, 1fr));
+}
+
+.headerBand {
+  display: grid;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--color-surface-variant);
+  height: var(--spacing-3xl); /* 48px */
+}
+
+.headerGutterCell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.weekNavButton {
+  min-width: 44px;
+  min-height: 44px;
+  border: none;
+  background: transparent;
+  color: var(--color-on-surface);
+  font-size: var(--font-size-subheading);
+  cursor: pointer;
+}
+
+.dayHeaderCell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--font-size-subheading);
+  font-weight: var(--font-weight-subheading);
+  color: var(--color-on-surface);
+  border-bottom: 2px solid transparent;
+}
+
+.dayHeaderToday {
+  border-bottom-color: var(--color-primary);
+}
+
+.dayHeaderTodayNumber {
+  color: var(--color-primary);
+}
+
+.thisWeekButton {
+  min-height: 44px;
+  padding: 0 var(--spacing-sm);
+  border: 1px solid var(--color-outline);
+  background: var(--color-surface);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-caption);
+  color: var(--color-on-surface);
+  cursor: pointer;
+}
+
+.reconnectStrip {
+  grid-column: 1 / -1;
+  background: var(--color-surface-variant);
+  color: var(--color-on-surface-variant);
+  font-size: var(--font-size-caption);
+  padding: var(--spacing-xs) var(--spacing-md);
+  text-align: center;
+}
+
+/* ---- The grid body ---- */
+
+.grid {
+  display: grid;
+  grid-auto-rows: 64px;
+  position: relative;
+}
+
+.timeGutterCell {
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  padding: 0 var(--spacing-xs);
+  font-size: var(--font-size-caption);
+  color: var(--color-on-surface-variant);
+  background: var(--color-surface-variant);
+  border-top: 1px solid var(--color-outline-variant);
+}
+
+.timeGutterCellHalf {
+  border-top: 1px solid var(--color-surface-variant);
+}
+
+.cell {
+  position: relative;
+  border-top: 1px solid var(--color-outline-variant);
+  border-left: 1px solid var(--color-surface-variant);
+  background: var(--color-background);
+}
+
+.cellHalf {
+  border-top: 1px solid var(--color-surface-variant);
+}
+
+.cellBookable:hover {
+  background: var(--color-surface-variant);
+  cursor: pointer;
+}
+
+.cellBookable:hover .cellPlusGlyph {
+  opacity: 1;
+}
+
+.cellPlusGlyph {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-on-surface-variant);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.cellDisabled {
+  background: var(--color-surface-variant);
+  cursor: not-allowed;
+}
+
+.cellFocused {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
+}
+
+/* ---- Now line ---- */
+
+.nowLine {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--color-primary);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.nowDot {
+  position: absolute;
+  left: -4px;
+  top: -3px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-primary);
+}
+
+/* ---- Appointment block ---- */
+
+.block {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--color-surface);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-xs);
+  box-shadow: 0 var(--elevation-level1) var(--elevation-level2) rgba(0, 0, 0, 0.08);
+  overflow: hidden;
+  cursor: pointer;
+  text-align: left;
+  border: none;
+  font-family: var(--font-family);
+}
+
+.block:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
+}
+
+.blockVetRail {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+}
+
+.blockCancelled {
+  opacity: 0.5;
+}
+
+.blockContent {
+  margin-left: var(--spacing-xs);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.blockTopRow {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  justify-content: space-between;
+}
+
+.blockTime {
+  font-size: var(--font-size-caption);
+  color: var(--color-on-surface-variant);
+  white-space: nowrap;
+}
+
+.blockRecurrenceIcon {
+  color: var(--color-outline);
+  flex-shrink: 0;
+}
+
+.blockPetName {
+  font-size: var(--font-size-subheading);
+  font-weight: var(--font-weight-subheading);
+  color: var(--color-on-surface);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.blockPetNameCancelled {
+  text-decoration: line-through;
+}
+
+.blockOwnerName {
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-body);
+  color: var(--color-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.blockServiceLine {
+  font-size: var(--font-size-caption);
+  color: var(--color-on-surface-variant);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.blockMultiPetCaption {
+  font-size: var(--font-size-caption);
+  color: var(--color-on-surface-variant);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.blockBottomRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-xs);
+}
+
+.vetInitialsChip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 var(--spacing-xs);
+  border-radius: var(--radius-full);
+  background: var(--color-surface-variant);
+  color: var(--color-on-surface-variant);
+  font-size: var(--font-size-caption);
+  border: 1px solid var(--color-outline-variant);
+}
+
+.statusBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px var(--spacing-sm);
+  border-radius: var(--radius-full);
+  font-size: var(--font-size-caption);
+  white-space: nowrap;
+}
+
+.statusCheckedIn {
+  background: var(--color-primary-container);
+  color: var(--color-on-primary-container);
+}
+
+.statusCompleted {
+  background: var(--color-surface-variant);
+  color: var(--color-on-surface-variant);
+}
+
+.statusCancelled {
+  background: var(--color-surface-variant);
+  color: var(--color-on-surface-variant);
+}
+
+.statusNoShow {
+  background: var(--color-error-container);
+  color: var(--color-on-error-container);
+}
+
+.overflowChip {
+  position: absolute;
+  bottom: var(--spacing-xs);
+  right: var(--spacing-xs);
+  min-width: 20px;
+  height: 20px;
+  padding: 0 var(--spacing-xs);
+  border-radius: var(--radius-full);
+  background: var(--color-outline);
+  color: var(--color-on-primary);
+  font-size: var(--font-size-caption);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  cursor: pointer;
+}
+
+/* ---- Vet hue classes (D-23): permitted only on the 4px left rail, the 8px
+   legend dot and the vet-initials chip border -- never a fill/background/
+   text colour. Cycles after 5, matching packages/ui/src/theme/vetColors.ts's
+   deterministic index assignment (duplicated here as CSS since apps/web
+   cannot import @breeyo/ui components -- see 08-14-SUMMARY.md). ---- */
+
+.vetHue0 { background: var(--vet-hue-1); border-color: var(--vet-hue-1); }
+.vetHue1 { background: var(--vet-hue-2); border-color: var(--vet-hue-2); }
+.vetHue2 { background: var(--vet-hue-3); border-color: var(--vet-hue-3); }
+.vetHue3 { background: var(--vet-hue-4); border-color: var(--vet-hue-4); }
+.vetHue4 { background: var(--vet-hue-5); border-color: var(--vet-hue-5); }
+
+/* ---- Skeleton / empty / error states ---- */
+
+.skeletonBlock {
+  position: absolute;
+  background: var(--color-surface-variant);
+  border-radius: var(--radius-md);
+  animation: shimmer var(--duration-skeleton-shimmer) ease-in-out infinite;
+}
+
+@keyframes shimmer {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 0.3; }
+}
+
+.centeredState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-xl);
+  text-align: center;
+}
+
+.centeredStateHeading {
+  font-size: var(--font-size-heading2);
+  line-height: var(--line-height-heading2);
+  font-weight: var(--font-weight-heading2);
+  color: var(--color-on-surface);
+  margin: 0;
+}
+
+.centeredStateBody {
+  font-size: var(--font-size-body);
+  color: var(--color-on-surface-variant);
+  margin: 0;
+}
+
+.tryAgainButton {
+  min-height: 44px;
+  padding: 0 var(--spacing-md);
+  border: 1px solid var(--color-outline);
+  background: var(--color-surface);
+  border-radius: var(--radius-md);
+  color: var(--color-on-surface);
+  font-size: var(--font-size-subheading);
+  cursor: pointer;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeletonBlock {
+    animation: none;
+    transition: opacity var(--duration-micro-feedback) linear;
+  }
+
+  .block,
+  .cellPlusGlyph {
+    transition: opacity var(--duration-micro-feedback) linear;
+    transform: none !important;
+  }
+}
