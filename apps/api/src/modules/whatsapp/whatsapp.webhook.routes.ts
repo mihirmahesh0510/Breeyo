@@ -59,19 +59,42 @@
  * later phase adds once more than one clinic actually onboards onto the real
  * API. If it is unset, those events are logged and dropped rather than
  * guessed at — never mis-attributed to the wrong clinic.
+ *
+ * ## `inboundRouter`/`deliveryStatusService` are injected, not built here
+ *
+ * Fix (closing a gap disclosed in 08-11-SUMMARY.md's owner-action-bridge
+ * writeup): this plugin used to construct its OWN bare `InboundRouterService`
+ * (`repository`/`prisma`/`deliveryStatusService` only), with none of
+ * `bookingHandler`/`reminderHandler`/`appointmentActionHandler` injected —
+ * meaning a REAL Meta Cloud API delivery could never dispatch a `BOOK`
+ * keyword, a reminder reply, or an `appointment:keep|move|cancel:<uuid>`
+ * payload to anything but the no-op defaults, unlike the simulator path
+ * (`simulator.worker.ts`), which already routed through
+ * `whatsapp.routes.ts`'s own fully-wired instance. Invisible until now
+ * because `WHATSAPP_PROVIDER` stays `simulator` deploy-wide in Beta (this
+ * route carries no live traffic yet) and no prior test posted a
+ * TEXT/BUTTON_REPLY/LIST_REPLY event to this route over HTTP (only STATUS
+ * events, in `webhook-idempotency.test.ts`). `whatsapp.routes.ts` now passes
+ * its own `inboundRouter`/`deliveryStatusService` in as plugin options
+ * instead.
  */
 
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { PrismaClient } from '@prisma/client';
-import { WhatsAppRepository } from './whatsapp.repository.js';
-import { DeliveryStatusService } from './delivery-status.service.js';
-import { InboundRouterService } from './inbound-router.service.js';
+import type { DeliveryStatusService } from './delivery-status.service.js';
+import type { InboundRouterService } from './inbound-router.service.js';
 import {
   handleVerification,
   parseMetaWebhook,
   verifyMetaSignature,
 } from './providers/cloud-api/cloud-api.webhook.js';
 import type { WaInboundEvent } from './providers/wa-provider.port.js';
+
+export interface WhatsAppWebhookRoutesOptions {
+  /** `whatsapp.routes.ts`'s own fully-wired instances — see the file header. */
+  inboundRouter: InboundRouterService;
+  deliveryStatusService: DeliveryStatusService;
+}
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -107,7 +130,10 @@ async function isDuplicateStatusDelivery(
   return existing !== null;
 }
 
-export default async function whatsappWebhookRoutes(fastify: FastifyInstance): Promise<void> {
+export default async function whatsappWebhookRoutes(
+  fastify: FastifyInstance,
+  opts: WhatsAppWebhookRoutesOptions,
+): Promise<void> {
   const isTest = process.env.NODE_ENV === 'test';
 
   // Scoped to THIS plugin instance only (see file header) — capturing the
@@ -128,14 +154,10 @@ export default async function whatsappWebhookRoutes(fastify: FastifyInstance): P
 
   // D-30 exemption: this whole plugin runs before any JWT/tenantContext
   // middleware (see file header — Meta's webhook carries no login session),
-  // so there is no `request.db` anywhere in this file to build from.
-  const repository = new WhatsAppRepository(fastify.prisma);
-  const deliveryStatusService = new DeliveryStatusService(repository, fastify.prisma, fastify.io ?? null);
-  const inboundRouter = new InboundRouterService({
-    repository,
-    prisma: fastify.prisma,
-    deliveryStatusService,
-  });
+  // so there is no `request.db` anywhere in this file to build from. Reuses
+  // `whatsapp.routes.ts`'s own fully-wired instances (see file header)
+  // rather than building bare-bones ones of its own.
+  const { inboundRouter, deliveryStatusService } = opts;
 
   fastify.get(
     '/whatsapp/webhook',
