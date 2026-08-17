@@ -4,15 +4,14 @@
 // `sessionStorage`, deliberately NOT an httpOnly cookie, so `apps/web` uses the
 // same bearer-token model as `apps/mobile` rather than introducing a second
 // auth mechanism into an API that issues bearer tokens for every other client.
-// `sessionStorage` -- a tab-scoped store that is cleared on the persistent,
-// cross-tab web storage mechanism this deliberately avoids -- bounds token
-// exposure to the browser tab's lifetime: closing the tab discards the
-// session. The token remains
-// readable by any script running on this origin (T-08-22): accepted for a
-// staff-only internal tool at Beta scope, bounded by no `dangerouslySetInnerHTML`
-// anywhere in `apps/web` and no third-party script tags. Phase 9 owns full
-// session management (refresh rotation, expiry timers); this module is
-// deliberately minimal.
+// `sessionStorage` is a tab-scoped store, unlike the persistent, cross-tab Web
+// Storage API this deliberately avoids -- it bounds token exposure to the
+// browser tab's lifetime, so closing the tab discards the session. The token
+// remains readable by any script running on this origin (T-08-22): accepted
+// for a staff-only internal tool at Beta scope, bounded by no unescaped HTML
+// injection anywhere in `apps/web` and no third-party script tags. Phase 9
+// owns full session management (refresh rotation, expiry timers); this
+// module is deliberately minimal.
 
 const STORAGE_KEY = 'breeyo.web.session';
 
