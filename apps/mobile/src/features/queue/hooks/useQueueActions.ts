@@ -3,6 +3,7 @@ import * as Haptics from 'expo-haptics';
 import { apiClient } from '../../../lib/api';
 import { useAuth } from '../../../providers/AuthProvider';
 import type { QueueBoard, QueueEntryWithPet, QueueStatus } from '@breeyo/types';
+import { applyOptimisticStatusChange } from '../lib/queue-optimistic';
 
 interface StatusUpdateParams {
   entryId: string;
@@ -32,33 +33,7 @@ export function useUpdateQueueStatus() {
       if (previous) {
         queryClient.setQueryData<QueueBoard>(queryKey, (old) => {
           if (!old) return old;
-          const allEntries = [
-            ...old.inConsult,
-            ...old.waiting,
-            ...old.done,
-          ];
-          const entry = allEntries.find((e) => e.id === entryId);
-          if (!entry) return old;
-
-          const updated = { ...entry, status: status as string } as QueueEntryWithPet;
-          const removeEntry = (list: QueueEntryWithPet[]) =>
-            list.filter((e) => e.id !== entryId);
-
-          const newBoard: QueueBoard = {
-            inConsult: removeEntry(old.inConsult),
-            waiting: removeEntry(old.waiting),
-            done: removeEntry(old.done),
-          };
-
-          if (status === 'IN_CONSULT') {
-            newBoard.inConsult.push(updated);
-          } else if (status === 'WAITING') {
-            newBoard.waiting.push(updated);
-          } else {
-            newBoard.done.push(updated);
-          }
-
-          return newBoard;
+          return applyOptimisticStatusChange(old, entryId, status);
         });
       }
       return { previous, queryKey };
