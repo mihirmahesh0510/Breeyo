@@ -93,6 +93,19 @@ export class QueueRepository {
     position: number;
     isEmergency: boolean;
     visitReason?: string;
+    // Phase 8 (D-08, D-10): the sort key an EXPECTED-status sweep row
+    // (plan 08-09) and this organic walk-in share, so ordering is a single
+    // `queuePriorityAt` orderBy instead of a raw-SQL coalesce. For a
+    // walk-in, priority time and physical check-in time are the same
+    // instant -- callers pass `new Date()` explicitly rather than relying
+    // on a schema default (there is none; the column is NOT NULL,
+    // backfilled from checkedInAt for pre-existing rows by the migration).
+    // A sweep-created EXPECTED row instead passes appointment.scheduledFor.
+    queuePriorityAt?: Date;
+    // Phase 8 (D-08): links a sweep-created EXPECTED row back to the
+    // appointment it came from, so plan 08-09's handoff pass (and D-28's
+    // cancel/reschedule cleanup) can find it again.
+    appointmentId?: string | null;
   }) {
     return this.prisma.queueEntry.create({
       data: {
@@ -102,15 +115,9 @@ export class QueueRepository {
         status: data.status,
         position: data.position,
         isEmergency: data.isEmergency,
-        // Phase 8 (D-08, D-10): the sort key an EXPECTED-status sweep row
-        // (plan 08-09) and this organic walk-in share, so ordering is a
-        // single `queuePriorityAt` orderBy instead of a raw-SQL coalesce.
-        // For a walk-in, priority time and physical check-in time are the
-        // same instant. No schema default exists for this column (it is
-        // backfilled from checkedInAt for pre-existing rows by the
-        // migration), so every create must supply it explicitly.
-        queuePriorityAt: new Date(),
+        queuePriorityAt: data.queuePriorityAt ?? new Date(),
         ...(data.visitReason && { visitReason: data.visitReason }),
+        ...(data.appointmentId !== undefined && { appointmentId: data.appointmentId }),
       },
       include: PET_OWNER_INCLUDE,
     });
@@ -138,7 +145,8 @@ export class QueueRepository {
   }
 
   /**
-   * Finds the next WAITING entry: emergency first, then FIFO by check-in time.
+   * Finds the next WAITING entry: emergency first, then by queue priority
+   * time (D-10), then FIFO by check-in time as a tiebreak (D-34).
    */
   async findNextWaiting(clinicId: string, today: Date) {
     return this.prisma.queueEntry.findFirst({
@@ -150,6 +158,7 @@ export class QueueRepository {
       },
       orderBy: [
         { isEmergency: 'desc' },
+        { queuePriorityAt: 'asc' },
         { checkedInAt: 'asc' },
       ],
       include: PET_OWNER_INCLUDE,
@@ -181,8 +190,14 @@ export class QueueRepository {
           archivedAt: null,
         },
         include: PET_OWNER_INCLUDE,
+        // D-10: queue priority time (an EXPECTED patient's slot time, or a
+        // walk-in's check-in time) is the primary sort key after emergency,
+        // so call-next and this board branch can never disagree; D-34:
+        // checkedInAt is the tiebreak when two entries share an identical
+        // queuePriorityAt (double-booked slots).
         orderBy: [
           { isEmergency: 'desc' },
+          { queuePriorityAt: 'asc' },
           { checkedInAt: 'asc' },
         ],
       }),

@@ -85,6 +85,9 @@ export class QueueService {
       position: waitingCount + 1,
       isEmergency: parsed.isEmergency,
       visitReason: parsed.visitReason,
+      // D-08/D-10: for an organic walk-in, priority time and physical
+      // check-in time are the same instant.
+      queuePriorityAt: new Date(),
     });
 
     // Broadcast to clinic room
@@ -130,6 +133,17 @@ export class QueueService {
     if (parsed.status === QueueStatus.IN_CONSULT) {
       updateData.treatingVetId = params.userId;
       updateData.calledAt = new Date();
+    }
+
+    if (parsed.status === QueueStatus.WAITING) {
+      // D-10/D-11: the only edge into WAITING is EXPECTED -> WAITING (a
+      // sweep-created row whose checkedInAt is still its creation instant,
+      // not the patient's physical arrival time), so stamp checkedInAt with
+      // the real arrival instant here. Do NOT touch queuePriorityAt: it
+      // stays pinned to the slot time set at creation, which is exactly
+      // what makes D-10 hold for an early check-in (D-11). "Fixing" it to
+      // the arrival time here would silently delete the ordering feature.
+      updateData.checkedInAt = new Date();
     }
 
     if (parsed.status === QueueStatus.DONE || parsed.status === QueueStatus.NO_SHOW) {
