@@ -25,6 +25,12 @@ commands:
       cp /Users/mihirmahesh/Documents/Projects/Breeyo/apps/api/.env "$ROOT/apps/api/.env"
     fi
     pnpm install --frozen-lockfile
+    # The generated Prisma client (node_modules/.prisma/client) is a build
+    # artifact, not something `pnpm install` produces on its own -- a fresh
+    # disposable worktree has none, so every test file that transitively
+    # imports @prisma/client fails at import time with "Cannot find module
+    # '.prisma/client/default'", regardless of the actual change under test.
+    pnpm --filter @breeyo/api exec prisma generate
     pnpm turbo run test --filter="...[main]"
   lint: |
     pnpm install --frozen-lockfile
