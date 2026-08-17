@@ -10,7 +10,7 @@ Mobile-first veterinary clinic management for solo and small-team vets in India.
 | Backend API | Fastify + Prisma ORM |
 | Database | PostgreSQL with Row-Level Security |
 | Cache/Queue | Redis (BullMQ) |
-| Web dashboard | Next.js (Phase 9) |
+| Web dashboard | Next.js |
 | Design system | React Native Paper v5 (MD3) |
 | Monorepo | Turborepo + pnpm workspaces |
 
@@ -26,11 +26,13 @@ breeyo/
         notifications/ Push notifications, BullMQ workers
         patient/      Owner/pet registration, search, profiles
         queue/        Walk-in queue, status transitions, Socket.IO realtime
+        scheduling/   Appointments, availability, booking, reminders (and more)
     mobile/           Expo React Native app
       src/features/
         patient/      Registration wizard, search, profiles
         queue/        Queue board, check-in, offline support
-    web/              Next.js web dashboard (Phase 9)
+        scheduling/   Day agenda, booking sheet, availability settings (and more)
+    web/              Next.js web dashboard: staff login, week-view schedule
   packages/
     ui/               Shared design system (tokens, components, wireframes)
     types/            Shared TypeScript type definitions
@@ -124,22 +126,11 @@ avdmanager create avd -n Breeyo_Pixel_7 -k "system-images;android-34;google_apis
 
 **`@breeyo/validators`** -- Zod schemas shared between API and mobile for auth, clinic, patient, and queue validation.
 
-**`@breeyo/types`** -- Shared TypeScript types for auth, patient, queue, notifications, and API contracts.
+**`@breeyo/types`** -- Shared TypeScript types for auth, patient, queue, notifications, scheduling, and API contracts.
 
 ## Build Phases
 
-| Phase | Status | Description |
-|-------|--------|-------------|
-| 01 | Done | Foundation & Authentication |
-| 02 | Done | UI/UX Design & Design System |
-| 03 | Done | Patient Registration & Walk-in Queue |
-| 04 | Next | EMR & Clinical Records |
-| 05 | Planned | Inventory Management |
-| 06 | Planned | Invoicing & Payments |
-| 07 | Planned | WhatsApp Communication |
-| 08 | Planned | Scheduling & Calendar |
-| 09 | Planned | Web Dashboard & Owner Portal |
-| 10 | Planned | Offline Hardening & Integration Polish |
+See [`.planning/ROADMAP.md`](.planning/ROADMAP.md) for the full phase list and current status.
 
 ## Environment Variables
 
