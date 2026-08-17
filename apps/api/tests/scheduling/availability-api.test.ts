@@ -195,6 +195,35 @@ describe('Scheduling availability API (SCH-01)', () => {
     expect(bookedSlots.length).toBe(blockedSlots.length);
   });
 
+  it('GET /scheduling/slots accepts a durationMinutes query string for null-service appointments', async () => {
+    const { accessToken, clinic, user } = await setupTestContext();
+    await createTestVetAvailabilityWeek(clinic.id, user.id);
+    const date = futureWeekday(1);
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/v1/scheduling/slots?vetId=${user.id}&date=${date.toISOString()}&durationMinutes=30`,
+      headers: { authorization: `Bearer ${accessToken}` },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().data.length).toBeGreaterThan(0);
+  });
+
+  it('GET /scheduling/slots returns 400 without serviceCatalogId or durationMinutes', async () => {
+    const { accessToken, clinic, user } = await setupTestContext();
+    await createTestVetAvailabilityWeek(clinic.id, user.id);
+    const date = futureWeekday(1);
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/v1/scheduling/slots?vetId=${user.id}&date=${date.toISOString()}`,
+      headers: { authorization: `Bearer ${accessToken}` },
+    });
+
+    expect(res.statusCode).toBe(400);
+  });
+
   it('GET /scheduling/availability/resolved returns null hours for a closed override day', async () => {
     const { accessToken, user } = await setupTestContext();
     const date = futureWeekday(1);

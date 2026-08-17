@@ -59,7 +59,7 @@ export const slotQuerySchema = z
     vetId: z.string().uuid(),
     date: z.coerce.date(),
     serviceCatalogId: z.string().uuid().optional(),
-    durationMinutes: z.number().int().min(5).max(480).optional(),
+    durationMinutes: z.coerce.number().int().min(5).max(480).optional(),
   })
   .refine((data) => data.serviceCatalogId !== undefined || data.durationMinutes !== undefined, {
     message: 'Provide either serviceCatalogId or durationMinutes.',
