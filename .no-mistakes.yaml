@@ -15,6 +15,15 @@ commands:
     if [ ! -f "$ROOT/.env" ]; then
       cp /Users/mihirmahesh/Documents/Projects/Breeyo/.env "$ROOT/.env"
     fi
+    # apps/api reads its own directory's .env directly (see
+    # apps/api/tests/helpers/setup.ts's dotenv config(), and Prisma's own CLI
+    # auto-load of the file next to schema.prisma) -- a root-level .env alone
+    # leaves DATABASE_URL unset there, failing every apps/api test with
+    # "Environment variable not found: DATABASE_URL" regardless of the actual
+    # change under test. Mirror the same copy at the package level.
+    if [ ! -f "$ROOT/apps/api/.env" ]; then
+      cp /Users/mihirmahesh/Documents/Projects/Breeyo/apps/api/.env "$ROOT/apps/api/.env"
+    fi
     pnpm install --frozen-lockfile
     pnpm turbo run test --filter="...[main]"
   lint: |
