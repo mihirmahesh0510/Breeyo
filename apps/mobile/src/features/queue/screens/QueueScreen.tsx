@@ -5,6 +5,7 @@ import { useRouter } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { showToast } from '@breeyo/ui';
 import { QueueStatus } from '@breeyo/types';
+import type { QueueEntryWithPet } from '@breeyo/types';
 import { useAuth } from '../../../providers/AuthProvider';
 import { ResumeBanner } from '../components/ResumeBanner';
 import {
@@ -18,6 +19,7 @@ import { useQueueUIStore } from '../store/queueUIStore';
 import { QueueBoard } from '../components/QueueBoard';
 import { CallNextButton } from '../components/CallNextButton';
 import { CheckInSheet } from '../components/CheckInSheet';
+import { ExpectedActionSheet } from '../components/ExpectedActionSheet';
 import { OfflineBanner } from '../components/OfflineBanner';
 
 export function QueueScreen() {
@@ -27,6 +29,7 @@ export function QueueScreen() {
   const isOffline = useQueueUIStore((s) => s.isOffline);
 
   const [checkInVisible, setCheckInVisible] = useState(false);
+  const [expectedEntry, setExpectedEntry] = useState<QueueEntryWithPet | null>(null);
 
   // Initialize Socket.IO connection
   useQueueSocket();
@@ -62,7 +65,7 @@ export function QueueScreen() {
         'Mark as No-show?',
         'This patient will be removed from the active queue.',
         [
-          { text: 'Cancel', style: 'cancel' },
+          { text: 'Keep in Queue', style: 'cancel' },
           {
             text: 'Mark No-show',
             style: 'destructive',
@@ -102,6 +105,21 @@ export function QueueScreen() {
     [router],
   );
 
+  // An EXPECTED row opens the quick-action sheet instead of navigating --
+  // it isn't in line yet, so there's nothing useful to show on patient
+  // detail. Every other status keeps navigating exactly as it did before
+  // `QueueBoard`'s `onCardPress` widened from `(petId)` to `(item)`.
+  const handleQueueCardPress = useCallback(
+    (item: QueueEntryWithPet) => {
+      if (item.status === QueueStatus.EXPECTED) {
+        setExpectedEntry(item);
+        return;
+      }
+      handleCardPress(item.pet.id);
+    },
+    [handleCardPress],
+  );
+
   const handleRefresh = useCallback(() => {
     refetch();
   }, [refetch]);
@@ -111,6 +129,61 @@ export function QueueScreen() {
       showToast('success', `${petName} checked in — Position #${position}`);
     },
     [],
+  );
+
+  // D-11: early check-in flips an EXPECTED entry straight to WAITING, no
+  // waiting for the slot time.
+  const handleExpectedCheckIn = useCallback(
+    (entryId: string) => {
+      const petName = expectedEntry?.pet.name;
+      setExpectedEntry(null);
+      updateStatus.mutate(
+        { entryId, status: QueueStatus.WAITING },
+        {
+          onSuccess: (result) => {
+            if (petName) {
+              showToast(
+                'success',
+                `${petName} checked in — Position #${result.data.position}`,
+              );
+            }
+          },
+        },
+      );
+    },
+    [updateStatus, expectedEntry],
+  );
+
+  const handleExpectedNoShow = useCallback(
+    (entryId: string) => {
+      Alert.alert(
+        'Mark as No-show?',
+        'This patient will be removed from the active queue.',
+        [
+          { text: 'Keep in Queue', style: 'cancel' },
+          {
+            text: 'Mark No-show',
+            style: 'destructive',
+            onPress: () => {
+              updateStatus.mutate({ entryId, status: QueueStatus.NO_SHOW });
+              setExpectedEntry(null);
+            },
+          },
+        ],
+      );
+    },
+    [updateStatus],
+  );
+
+  const handleViewAppointment = useCallback(
+    (appointmentId: string | null) => {
+      if (!appointmentId) return;
+      setExpectedEntry(null);
+      // Plain path string: /schedule is registered by plan 08-12 in a later
+      // wave, so this can't be a typed expo-router route object yet.
+      router.push(`/schedule?appointmentId=${appointmentId}` as any);
+    },
+    [router],
   );
 
   // Loading state
@@ -163,7 +236,7 @@ export function QueueScreen() {
         <QueueBoard
           data={queueData}
           disabled={isOffline}
-          onCardPress={handleCardPress}
+          onCardPress={handleQueueCardPress}
           onStatusChange={handleStatusChange}
           onNoShow={handleNoShow}
           onRefresh={handleRefresh}
@@ -186,6 +259,15 @@ export function QueueScreen() {
         visible={checkInVisible}
         onDismiss={() => setCheckInVisible(false)}
         onCheckInSuccess={handleCheckInSuccess}
+      />
+
+      <ExpectedActionSheet
+        visible={expectedEntry != null}
+        entry={expectedEntry}
+        onDismiss={() => setExpectedEntry(null)}
+        onCheckIn={handleExpectedCheckIn}
+        onNoShow={handleExpectedNoShow}
+        onViewAppointment={handleViewAppointment}
       />
     </View>
   );

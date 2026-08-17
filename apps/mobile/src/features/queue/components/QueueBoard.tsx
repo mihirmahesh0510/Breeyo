@@ -18,7 +18,7 @@ import {
 interface QueueBoardProps {
   data: QueueBoardType;
   disabled: boolean;
-  onCardPress?: (petId: string) => void;
+  onCardPress?: (item: QueueEntryWithPet) => void;
   onStatusChange?: (entryId: string, newStatus: QueueStatus) => void;
   onNoShow?: (entryId: string) => void;
   onRefresh?: () => void;
@@ -73,7 +73,7 @@ export function QueueBoard({
           position={position}
           estimatedWait={estimatedWait}
           disabled={disabled}
-          onPress={() => onCardPress?.(item.pet.id)}
+          onPress={() => onCardPress?.(item)}
           onStatusPress={() => handleStatusPress(item)}
           onLongPress={() => handleLongPress(item)}
         />
