@@ -208,6 +208,7 @@ export function BookAppointmentDrawer({
     selectedVetId ?? undefined,
     selectedDate,
     selectedServiceId ?? undefined,
+    !selectedServiceId ? reschedulingAppointment?.durationMinutes : undefined,
   );
   const createAppointment = useCreateAppointment();
   const rescheduleAppointment = useRescheduleAppointment();

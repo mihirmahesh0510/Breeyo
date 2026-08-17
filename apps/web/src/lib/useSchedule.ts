@@ -187,25 +187,31 @@ export function useOfferableSlots(
   vetId: string | undefined,
   date: Date | undefined,
   serviceCatalogId: string | undefined,
+  durationMinutes?: number,
 ) {
   const { accessToken, activeClinicId } = useAuth();
   const isoDate = date ? date.toISOString().slice(0, 10) : undefined;
-  const enabled = !!accessToken && !!activeClinicId && !!vetId && !!isoDate && !!serviceCatalogId;
+  const hasServiceCriteria = !!serviceCatalogId || !!durationMinutes;
+  const enabled = !!accessToken && !!activeClinicId && !!vetId && !!isoDate && hasServiceCriteria;
 
   return useAsyncResource<SlotOption[]>(
     async (signal) => {
       const params = new URLSearchParams({
         vetId: vetId as string,
         date: isoDate as string,
-        serviceCatalogId: serviceCatalogId as string,
       });
+      if (serviceCatalogId) {
+        params.set('serviceCatalogId', serviceCatalogId);
+      } else if (durationMinutes) {
+        params.set('durationMinutes', String(durationMinutes));
+      }
       const response = await apiClient<{ data: SlotOption[] }>(
         `/api/v1/scheduling/slots?${params.toString()}`,
         { token: accessToken!, signal },
       );
       return response.data;
     },
-    [accessToken, activeClinicId, vetId, isoDate, serviceCatalogId],
+    [accessToken, activeClinicId, vetId, isoDate, serviceCatalogId, durationMinutes],
     enabled,
   );
 }
