@@ -213,3 +213,22 @@ None -- no external service configuration required.
 ---
 *Phase: 08-scheduling-calendar*
 *Completed: 2026-08-17*
+
+## Addendum: Reschedule Self-Conflict Fixed (post-commit, 2026-08-17)
+
+The self-conflict gap flagged above under **Issues Encountered** ("No self-conflict exclusion in `rescheduleAppointment`'s double-book check") and in **key-decisions** ("No self-conflict exclusion on reschedule") has been fixed, in a follow-up commit that touched `appointment.repository.ts` and `appointment.service.ts`.
+
+**Mechanism:**
+- `AppointmentRepository.findForVetOnDate` now also selects `id` (in addition to `scheduledFor`/`durationMinutes`), so its return type is `Array<{ id: string; scheduledFor: Date; durationMinutes: number }>`.
+- `AppointmentService.validateSlot` gained an optional `excludeAppointmentId?: string` parameter. When present, any row in the `findForVetOnDate` result whose `id` matches it is skipped before the overlap check runs.
+- `rescheduleAppointment` passes `excludeAppointmentId: params.appointmentId` (the appointment's own row, still SCHEDULED under its OLD slot at the moment of the check, must never count as a conflict against itself).
+- `rescheduleSeries` (the `applyToSeries` sub-loop) passes `excludeAppointmentId: occurrence.id` for the same reason, per occurrence it revalidates -- the identical class of bug applied there too and was fixed with the same one-line change.
+- `createAppointment` never passes `excludeAppointmentId` (there is no existing row to exclude for a brand-new booking), so its double-book behavior is unchanged.
+
+**Practical effect for downstream plans:** rescheduling an appointment to the exact same slot (or any slot that overlaps only its own current row) — e.g. changing just the vet while keeping the time, or re-submitting the same time via the reschedule endpoint — no longer throws `SLOT_DOUBLE_BOOKED` and no longer requires `allowDoubleBook`. A genuine conflict against a *different* appointment is still rejected exactly as before (unaffected, covered by an explicit regression test).
+
+**Tests:** two new cases were added to `appointment.service.test.ts`'s `rescheduleAppointment` suite — one proving the false-positive self-conflict is gone (RED confirmed against the pre-fix code, GREEN after), one proving a genuine conflict against a distinct appointment id still throws `SLOT_DOUBLE_BOOKED`. Three pre-existing double-book fixtures in this file (two in `createAppointment`, one in `rescheduleAppointment`) were updated to include a synthetic `id` field (`OTHER_APPOINTMENT_ID`, distinct from the appointment under test) so they satisfy the repository's new stricter return type without changing what they assert.
+
+**Verification:** full API suite re-run after the fix: 125 files passed / 9 skipped (134 total), 1681 tests passed / 80 todo, 0 failed — exact +2 delta over this plan's original 1679-test baseline, zero regressions. `tsc --noEmit` clean.
+
+Plan 08-11's integration tests and plan 08-12's mobile reschedule UI can now treat "reschedule to the same slot" (e.g. a vet-only change) as always safe, with no special-case handling needed for a false `SLOT_DOUBLE_BOOKED`/`allowDoubleBook` prompt.
