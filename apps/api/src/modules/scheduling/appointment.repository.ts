@@ -224,6 +224,28 @@ export class AppointmentRepository {
     });
   }
 
+  /**
+   * Plan 08-10 (D-17, D-18): every `SCHEDULED` appointment whose
+   * `scheduledFor` falls within `[fromDate, toDate)`, with the owner
+   * relation included so `AppointmentReminderService` never needs a second
+   * lookup for the consent check or the template variables. Deliberately
+   * NOT `clinicId`-scoped, matching the worker-only convention of the three
+   * sweep queries above -- `AppointmentReminderService.discoverAppointmentReminders`
+   * runs once per overall sweep (its own signature takes only `now`), not
+   * once per clinic.
+   */
+  async findRemindableAppointments(fromDate: Date, toDate: Date): Promise<AppointmentWithDetails[]> {
+    const rows = await this.prisma.appointment.findMany({
+      where: {
+        status: 'SCHEDULED',
+        scheduledFor: { gte: fromDate, lt: toDate },
+      },
+      include: APPOINTMENT_DETAIL_INCLUDE,
+      orderBy: { scheduledFor: 'asc' },
+    });
+    return rows.map((row) => mapAppointment(row as AppointmentRow));
+  }
+
   /** Pass 3 (D-27 trigger 1): appointments starting soon, not yet push-notified. */
   async findStartingSoon(from: Date, to: Date, limit: number): Promise<AppointmentWithDetails[]> {
     const rows = await this.prisma.appointment.findMany({
