@@ -16,7 +16,8 @@ interface QueueCardItemProps {
   onLongPress?: () => void;
 }
 
-const STATUS_TO_VARIANT: Record<string, 'waiting' | 'inConsult' | 'done' | 'noShow'> = {
+const STATUS_TO_VARIANT: Record<string, 'waiting' | 'inConsult' | 'done' | 'noShow' | 'expected'> = {
+  EXPECTED: 'expected',
   WAITING: 'waiting',
   IN_CONSULT: 'inConsult',
   DONE: 'done',
@@ -51,7 +52,11 @@ export function QueueCardItem({
         isEmergency && styles.emergencyBorder,
         disabled && styles.disabled,
       ]}
-      accessibilityLabel={`${entry.pet.name}, ${entry.pet.owner.name}, ${QUEUE_STATUS_LABELS[entry.status as QueueStatus]}`}
+      accessibilityLabel={
+        entry.status === 'EXPECTED'
+          ? `${entry.pet.name}, ${entry.pet.owner.name}, ${QUEUE_STATUS_LABELS[entry.status as QueueStatus]}, expected at ${formatTime(entry.queuePriorityAt)}`
+          : `${entry.pet.name}, ${entry.pet.owner.name}, ${QUEUE_STATUS_LABELS[entry.status as QueueStatus]}`
+      }
       accessibilityRole="button"
     >
       {/* Species Icon */}
@@ -81,22 +86,35 @@ export function QueueCardItem({
         <Text variant="bodySmall" numberOfLines={1} style={styles.ownerName}>
           {entry.pet.owner.name}
         </Text>
-        <Text variant="bodySmall" style={styles.timestamp}>
-          Checked in {formatTime(entry.checkedInAt)}
-        </Text>
+        {entry.status === 'EXPECTED' ? (
+          <View style={styles.expectedRow}>
+            <MaterialCommunityIcons name="clock-outline" size={16} color="#5D4037" />
+            <Text variant="bodySmall" style={styles.timestamp}>
+              Expected {formatTime(entry.queuePriorityAt)}
+            </Text>
+          </View>
+        ) : (
+          <Text variant="bodySmall" style={styles.timestamp}>
+            Checked in {formatTime(entry.checkedInAt)}
+          </Text>
+        )}
       </View>
 
       {/* Right Side */}
       <View style={styles.trailing}>
-        {isWaiting && position != null && (
-          <Text variant="titleMedium" style={styles.position}>
-            #{position}
-          </Text>
-        )}
-        {isWaiting && estimatedWait && (
-          <Text variant="bodySmall" style={styles.waitTime}>
-            ~{estimatedWait}
-          </Text>
+        {entry.status === 'EXPECTED' ? null : (
+          <>
+            {isWaiting && position != null && (
+              <Text variant="titleMedium" style={styles.position}>
+                #{position}
+              </Text>
+            )}
+            {isWaiting && estimatedWait && (
+              <Text variant="bodySmall" style={styles.waitTime}>
+                ~{estimatedWait}
+              </Text>
+            )}
+          </>
         )}
         <Pressable
           onPress={disabled ? undefined : onStatusPress}
@@ -162,6 +180,11 @@ const styles = StyleSheet.create({
   },
   timestamp: {
     color: '#79747E',
+  },
+  expectedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
   },
   trailing: {
     alignItems: 'flex-end',
