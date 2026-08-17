@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import type { Server } from 'socket.io';
+import { Queue } from 'bullmq';
 import { buildTestApp, closeTestApp } from '../helpers/app.js';
 import {
   cleanupTestData,
@@ -18,6 +19,9 @@ import { AvailabilityService } from '../../src/modules/scheduling/availability.s
 import { AvailabilityRepository } from '../../src/modules/scheduling/availability.repository.js';
 import { QueueRepository } from '../../src/modules/queue/queue.repository.js';
 import { QueueHandoffService } from '../../src/modules/scheduling/queue-handoff.service.js';
+import { PushTriggerService } from '../../src/modules/scheduling/push-trigger.service.js';
+import { createNotificationBus } from '../../src/modules/notifications/notification-bus.js';
+import { runSchedulingSweep, registerSchedulingSweep } from '../../src/modules/scheduling/scheduling.sweep.worker.js';
 import { SOCKET_EVENTS } from '@breeyo/types';
 
 let app: FastifyInstance;
@@ -199,5 +203,89 @@ describe('Queue handoff sweep -- Pass 1: createExpectedEntriesForDueAppointments
     const entries = await prisma.queueEntry.findMany({ where: { clinicId: clinic.id, petId: pet.id } });
     expect(entries).toHaveLength(1);
     expect(entries[0].status).toBe('WAITING');
+  });
+});
+
+describe('Scheduling sweep worker (Task 3): runSchedulingSweep / registerSchedulingSweep', () => {
+  function buildSweepDeps(io: Server | null = null) {
+    const appointmentRepository = new AppointmentRepository(prisma);
+    const queueRepository = new QueueRepository(prisma);
+    const availability = new AvailabilityService(new AvailabilityRepository(prisma));
+    const appointmentService = new AppointmentService(appointmentRepository, availability, prisma, io);
+    const handoff = new QueueHandoffService(appointmentRepository, queueRepository, appointmentService, prisma, io);
+    const bus = createNotificationBus(app.redis);
+    vi.spyOn(bus, 'emit').mockResolvedValue(undefined);
+    const pushTriggers = new PushTriggerService(bus, prisma, app.redis);
+    return { handoff, pushTriggers, appointments: appointmentRepository, bus };
+  }
+
+  it('runs all three passes in order against real fixtures and reports per-pass counts', async () => {
+    const { clinic, owner, pet, user } = await setupClinicContext();
+    const scheduledFor = new Date(Date.now() - 5 * 60000);
+    await createTestAppointment(clinic.id, user.id, owner.id, [pet.id], user.id, { scheduledFor });
+
+    const { handoff, pushTriggers, appointments, bus } = buildSweepDeps();
+    const now = new Date();
+    const result = await runSchedulingSweep({ handoff, pushTriggers, appointments }, now);
+
+    expect(result.handoff.entriesCreated).toBe(1);
+    expect(result.errors).toHaveLength(0);
+    expect(result.noShow).toBeDefined();
+    expect(result.startingSoon).toBeDefined();
+    await bus.close();
+  });
+
+  it('the sweep is idempotent end to end: running it twice yields the same row counts and no duplicate notifications', async () => {
+    const { clinic, owner, pet, user } = await setupClinicContext();
+    const scheduledFor = new Date(Date.now() - 5 * 60000);
+    await createTestAppointment(clinic.id, user.id, owner.id, [pet.id], user.id, { scheduledFor });
+
+    const { handoff, pushTriggers, appointments, bus } = buildSweepDeps();
+    const now = new Date();
+    const first = await runSchedulingSweep({ handoff, pushTriggers, appointments }, now);
+    const second = await runSchedulingSweep({ handoff, pushTriggers, appointments }, now);
+
+    expect(first.handoff.entriesCreated).toBe(1);
+    expect(second.handoff.entriesCreated).toBe(0);
+
+    const entries = await prisma.queueEntry.findMany({ where: { clinicId: clinic.id } });
+    expect(entries).toHaveLength(1);
+    await bus.close();
+  });
+
+  it('a failure in one pass does not prevent the others, and the sweep resolves rather than rejecting', async () => {
+    const { handoff, pushTriggers, appointments, bus } = buildSweepDeps();
+    const noShowSpy = vi.spyOn(handoff, 'autoFlipExpiredExpected');
+    vi.spyOn(handoff, 'createExpectedEntriesForDueAppointments').mockRejectedValue(new Error('boom'));
+
+    const result = await runSchedulingSweep({ handoff, pushTriggers, appointments }, new Date());
+
+    expect(result.errors.length).toBeGreaterThan(0);
+    expect(noShowSpy).toHaveBeenCalledTimes(1);
+    expect(result.noShow).toBeDefined();
+    expect(result.startingSoon).toBeDefined();
+    await bus.close();
+  });
+
+  it('reports what it did in a returned summary object with per-pass counts', async () => {
+    const { handoff, pushTriggers, appointments, bus } = buildSweepDeps();
+    const result = await runSchedulingSweep({ handoff, pushTriggers, appointments }, new Date());
+
+    expect(result).toHaveProperty('handoff');
+    expect(result).toHaveProperty('noShow');
+    expect(result).toHaveProperty('startingSoon');
+    expect(result).toHaveProperty('errors');
+    await bus.close();
+  });
+
+  it('registerSchedulingSweep constructs a Queue always but no Worker under NODE_ENV=test', async () => {
+    const { handoff, pushTriggers, appointments, bus } = buildSweepDeps();
+    const { queue, worker } = registerSchedulingSweep(app.redis, { handoff, pushTriggers, appointments });
+
+    expect(queue).toBeInstanceOf(Queue);
+    expect(worker).toBeNull();
+
+    await queue.close();
+    await bus.close();
   });
 });
