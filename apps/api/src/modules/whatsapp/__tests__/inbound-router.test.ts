@@ -245,6 +245,58 @@ describe('InboundRouterService.route (WHA-01/05, D-03/09/10/11)', () => {
     expect(appointmentActionHandler.handleAction).toHaveBeenCalledWith(expect.anything(), 'CANCEL', BOOKING_UUID);
   });
 
+  it("route(TEXT 'KEEP') resolves the owner's outstanding appointment_reminder task and delegates to AppointmentActionHandler.handleAction with action KEEP and the reminder's appointment id (D-15/D-16/D-33)", async () => {
+    prisma.whatsAppReminderTask.findFirst.mockResolvedValue({ id: 'reminder-task-1', sourceId: BOOKING_UUID });
+
+    await service.route(textEvent('KEEP'), CLINIC_ID);
+
+    expect(prisma.whatsAppReminderTask.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          clinicId: CLINIC_ID,
+          ownerId: OWNER_ID,
+          sourceType: 'APPOINTMENT',
+          kind: 'APPOINTMENT_REMINDER',
+          state: 'SENT',
+        }),
+      }),
+    );
+    expect(appointmentActionHandler.handleAction).toHaveBeenCalledTimes(1);
+    const [ctx, action, appointmentId] = appointmentActionHandler.handleAction.mock.calls[0];
+    expect(ctx).toMatchObject({ clinicId: CLINIC_ID, threadId: THREAD_ID, ownerId: OWNER_ID });
+    expect(action).toBe('KEEP');
+    expect(appointmentId).toBe(BOOKING_UUID);
+    expect(bookingHandler.startBooking).not.toHaveBeenCalled();
+  });
+
+  it("route(TEXT 'move') and route(TEXT '  Cancel  ') dispatch MOVE/CANCEL case/whitespace-insensitively with the matched appointment id", async () => {
+    prisma.whatsAppReminderTask.findFirst.mockResolvedValue({ id: 'reminder-task-2', sourceId: BOOKING_UUID });
+
+    await service.route(textEvent('move'), CLINIC_ID);
+    expect(appointmentActionHandler.handleAction).toHaveBeenCalledWith(expect.anything(), 'MOVE', BOOKING_UUID);
+
+    vi.clearAllMocks();
+    prisma.whatsAppReminderTask.findFirst.mockResolvedValue({ id: 'reminder-task-3', sourceId: BOOKING_UUID });
+    await service.route(textEvent('  Cancel  '), CLINIC_ID);
+    expect(appointmentActionHandler.handleAction).toHaveBeenCalledWith(expect.anything(), 'CANCEL', BOOKING_UUID);
+  });
+
+  it("route(TEXT 'KEEP') with no outstanding appointment_reminder task calls no handler (stale/unattributable reply is silently dropped)", async () => {
+    prisma.whatsAppReminderTask.findFirst.mockResolvedValue(null);
+
+    await service.route(textEvent('KEEP'), CLINIC_ID);
+
+    expect(appointmentActionHandler.handleAction).not.toHaveBeenCalled();
+  });
+
+  it("route(TEXT 'KEEP sounds good') does NOT dispatch to AppointmentActionHandler — only the bare keyword matches (Anti-Pattern A8)", async () => {
+    prisma.whatsAppReminderTask.findFirst.mockResolvedValue({ id: 'reminder-task-4', sourceId: BOOKING_UUID });
+
+    await service.route(textEvent('KEEP sounds good'), CLINIC_ID);
+
+    expect(appointmentActionHandler.handleAction).not.toHaveBeenCalled();
+  });
+
   it("route(LIST_REPLY 'booking:slot:<uuid>') delegates to BookingInboundHandler.handlePayload", async () => {
     const rowId = `booking:slot:${BOOKING_UUID}`;
     await service.route(listReplyEvent(rowId), CLINIC_ID);
