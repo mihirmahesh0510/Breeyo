@@ -8,6 +8,7 @@ import type {
   CallNextParams,
   GetQueueBoardParams,
 } from './queue.types.js';
+import type { PushTriggerService } from '../scheduling/push-trigger.service.js';
 
 /** Default estimated consult time in seconds (15 min) when insufficient data */
 const DEFAULT_CONSULT_SECONDS = 900;
@@ -16,6 +17,10 @@ export class QueueService {
   constructor(
     private readonly repository: QueueRepository,
     private readonly io: Server | null = null,
+    // Phase 8 (D-27 trigger 3): optional so every pre-existing
+    // `new QueueService(repository, io)` call site and unit test keeps
+    // compiling and behaving unchanged when omitted.
+    private readonly pushTriggers: PushTriggerService | null = null,
   ) {}
 
   /**
@@ -95,6 +100,25 @@ export class QueueService {
       entry,
       timestamp: Date.now(),
     });
+
+    // D-27 trigger 3: check whether this check-in just crossed (or is still
+    // past) the backlog threshold. Wrapped in try/catch -- a notification
+    // failure must never fail the check-in that triggered it (RESEARCH
+    // Pitfall 5 / T-08-45).
+    if (this.pushTriggers) {
+      try {
+        const oldestWaiting = await this.repository.findOldestWaiting(params.clinicId, today);
+        const longestWaitMinutes = oldestWaiting
+          ? Math.max(0, Math.round((Date.now() - oldestWaiting.queuePriorityAt.getTime()) / 60000))
+          : 0;
+        // This check-in's own entry is already WAITING (created above), so
+        // the post-check-in waiting count is waitingCount + 1.
+        await this.pushTriggers.notifyQueueBacklog(params.clinicId, waitingCount + 1, longestWaitMinutes);
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error('QueueService.checkIn: backlog push trigger failed', err);
+      }
+    }
 
     return entry;
   }

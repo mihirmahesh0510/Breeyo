@@ -130,6 +130,31 @@ export class QueueRepository {
   }
 
   /**
+   * Phase 8 (D-27 trigger 3): the single oldest WAITING entry today, by the
+   * same ordering `findNextWaiting`/the board's waiting branch already use --
+   * its `queuePriorityAt` is the "longest wait" reference point for the
+   * queue-backlog push. A narrow `select` rather than reusing
+   * `getQueueBoard` (which would load the whole board) since `checkIn`'s hot
+   * path only needs this one timestamp.
+   */
+  async findOldestWaiting(clinicId: string, today: Date): Promise<{ queuePriorityAt: Date } | null> {
+    return this.prisma.queueEntry.findFirst({
+      where: {
+        clinicId,
+        status: 'WAITING',
+        checkedInAt: { gte: today },
+        archivedAt: null,
+      },
+      orderBy: [
+        { isEmergency: 'desc' },
+        { queuePriorityAt: 'asc' },
+        { checkedInAt: 'asc' },
+      ],
+      select: { queuePriorityAt: true },
+    });
+  }
+
+  /**
    * Finds the next WAITING entry: emergency first, then by queue priority
    * time (D-10), then FIFO by check-in time as a tiebreak (D-34).
    */
