@@ -138,13 +138,16 @@ export class AppointmentRepository {
    * occupy their slot -- a cancelled or no-show appointment does not.
    * Accepts the same `Db` client as `create`/`createMany` so the D-34
    * advisory-lock transaction's re-check runs inside that same transaction.
+   * `id` is selected (in addition to the slot fields `getOfferableSlots`
+   * needs) so `AppointmentService.validateSlot` can exclude the row of the
+   * appointment currently being rescheduled from its own conflict check.
    */
   async findForVetOnDate(
     clinicId: string,
     vetId: string,
     date: Date,
     client: Db = this.prisma,
-  ): Promise<Array<{ scheduledFor: Date; durationMinutes: number }>> {
+  ): Promise<Array<{ id: string; scheduledFor: Date; durationMinutes: number }>> {
     const { start, end } = istDayBounds(date);
     return client.appointment.findMany({
       where: {
@@ -153,7 +156,7 @@ export class AppointmentRepository {
         scheduledFor: { gte: start, lt: end },
         status: { in: ['SCHEDULED', 'CHECKED_IN'] },
       },
-      select: { scheduledFor: true, durationMinutes: true },
+      select: { id: true, scheduledFor: true, durationMinutes: true },
     });
   }
 

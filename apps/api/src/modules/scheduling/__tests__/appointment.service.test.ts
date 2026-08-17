@@ -27,6 +27,7 @@ const PET_ID_2 = '00000000-0000-0000-0000-000000000004';
 const OTHER_OWNER_PET_ID = '00000000-0000-0000-0000-000000000005';
 const SERVICE_ID = '00000000-0000-0000-0000-000000000006';
 const APPOINTMENT_ID = '00000000-0000-0000-0000-000000000200';
+const OTHER_APPOINTMENT_ID = '00000000-0000-0000-0000-000000000210';
 
 const TODAY = getTodayIST();
 const TOMORROW = addDaysIST(TODAY, 1);
@@ -265,7 +266,7 @@ describe('AppointmentService.createAppointment', () => {
 
   it('rejects a taken slot without the override', async () => {
     vi.mocked(repository.findForVetOnDate).mockResolvedValue([
-      { scheduledFor: atMinutes(TOMORROW, 10 * 60), durationMinutes: 30 },
+      { id: OTHER_APPOINTMENT_ID, scheduledFor: atMinutes(TOMORROW, 10 * 60), durationMinutes: 30 },
     ]);
 
     await expect(service.createAppointment(baseParams())).rejects.toMatchObject({
@@ -276,7 +277,7 @@ describe('AppointmentService.createAppointment', () => {
 
   it('books a taken slot with allowDoubleBook true and returns a DOUBLE_BOOKED warning', async () => {
     vi.mocked(repository.findForVetOnDate).mockResolvedValue([
-      { scheduledFor: atMinutes(TOMORROW, 10 * 60), durationMinutes: 30 },
+      { id: OTHER_APPOINTMENT_ID, scheduledFor: atMinutes(TOMORROW, 10 * 60), durationMinutes: 30 },
     ]);
 
     const result = await service.createAppointment(baseParams({ allowDoubleBook: true }));
@@ -367,7 +368,9 @@ describe('AppointmentService.createAppointment', () => {
   it('serializes two concurrent bookings for the identical vet+slot so the second always observes the conflict (D-34)', async () => {
     vi.mocked(repository.findForVetOnDate)
       .mockResolvedValueOnce([]) // first request: slot is free
-      .mockResolvedValueOnce([{ scheduledFor: atMinutes(TOMORROW, 10 * 60), durationMinutes: 30 }]); // second request now sees the first's row
+      .mockResolvedValueOnce([
+        { id: OTHER_APPOINTMENT_ID, scheduledFor: atMinutes(TOMORROW, 10 * 60), durationMinutes: 30 },
+      ]); // second request now sees the first's row
 
     await service.createAppointment(baseParams());
     expect(repository.create).toHaveBeenCalledTimes(1);
@@ -445,13 +448,43 @@ describe('AppointmentService lifecycle transitions', () => {
 
     it('rejects rescheduling into an already-taken slot without the override', async () => {
       vi.mocked(repository.findForVetOnDate).mockResolvedValue([
-        { scheduledFor: atMinutes(addDaysIST(TOMORROW, 1), 11 * 60), durationMinutes: 30 },
+        { id: OTHER_APPOINTMENT_ID, scheduledFor: atMinutes(addDaysIST(TOMORROW, 1), 11 * 60), durationMinutes: 30 },
       ]);
 
       await expect(service.rescheduleAppointment(rescheduleParams())).rejects.toMatchObject({
         statusCode: 409,
         code: 'SLOT_DOUBLE_BOOKED',
       });
+    });
+
+    it('does not treat the appointment being rescheduled as its own double-booking conflict (true no-op time reschedule)', async () => {
+      // The only "conflicting" row `findForVetOnDate` returns IS the
+      // appointment currently being rescheduled (same id, same slot) -- a
+      // vet-only change (or any reschedule that keeps the same time) must
+      // not see its own current row as a conflict.
+      const sameSlot = atMinutes(TOMORROW, 10 * 60);
+      vi.mocked(repository.findById).mockResolvedValue(mockAppointment({ scheduledFor: sameSlot }) as never);
+      vi.mocked(repository.findForVetOnDate).mockResolvedValue([
+        { id: APPOINTMENT_ID, scheduledFor: sameSlot, durationMinutes: 30 },
+      ]);
+
+      await expect(
+        service.rescheduleAppointment(rescheduleParams({ scheduledFor: sameSlot })),
+      ).resolves.toBeDefined();
+
+      expect(repository.update).toHaveBeenCalledWith(CLINIC_ID, APPOINTMENT_ID, expect.anything());
+    });
+
+    it('still rejects a genuine double-booking against a DIFFERENT appointment on reschedule', async () => {
+      const sameSlot = atMinutes(TOMORROW, 10 * 60);
+      vi.mocked(repository.findById).mockResolvedValue(mockAppointment({ scheduledFor: sameSlot }) as never);
+      vi.mocked(repository.findForVetOnDate).mockResolvedValue([
+        { id: OCCURRENCE_ID_2, scheduledFor: sameSlot, durationMinutes: 30 },
+      ]);
+
+      await expect(
+        service.rescheduleAppointment(rescheduleParams({ scheduledFor: sameSlot })),
+      ).rejects.toMatchObject({ statusCode: 409, code: 'SLOT_DOUBLE_BOOKED' });
     });
 
     it('resets all three sweep marker columns on a successful reschedule', async () => {

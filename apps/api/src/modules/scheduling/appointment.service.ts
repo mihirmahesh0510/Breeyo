@@ -274,6 +274,14 @@ export class AppointmentService {
    * pre-pass, which only wants to know whether an occurrence is bookable at
    * all, not whether it's double-booked yet) or run against a specific `Db`
    * client (D-34's transaction).
+   *
+   * `excludeAppointmentId` (D-14 self-conflict fix): `rescheduleAppointment`
+   * passes the id of the appointment it is moving, since that appointment's
+   * OWN still-current row is among the rows `findForVetOnDate` returns for
+   * the vet/date being checked. Without excluding it, a reschedule that
+   * keeps (or overlaps) the same time -- e.g. only changing the vet -- would
+   * see its own row as a conflict against itself. `createAppointment` has no
+   * existing row to exclude, so it never passes this.
    */
   private async validateSlot(params: {
     clinicId: string;
@@ -283,6 +291,7 @@ export class AppointmentService {
     allowDoubleBook: boolean;
     skipDoubleBookCheck?: boolean;
     client?: Db;
+    excludeAppointmentId?: string;
   }): Promise<BookingWarning[]> {
     const warnings: BookingWarning[] = [];
     const now = new Date();
@@ -336,6 +345,12 @@ export class AppointmentService {
     // `allowDoubleBook` is set, otherwise reject.
     const existing = await this.repository.findForVetOnDate(params.clinicId, params.vetId, params.scheduledFor, params.client);
     const conflict = existing.find((entry) => {
+      if (params.excludeAppointmentId && entry.id === params.excludeAppointmentId) {
+        // The appointment being rescheduled is still SCHEDULED under its OLD
+        // slot until this same call's `repository.update` runs -- its own
+        // still-current row must never count as a conflict against itself.
+        return false;
+      }
       const entryStart = istMinutesOfDay(entry.scheduledFor);
       const entryEnd = entryStart + entry.durationMinutes;
       return startMinutes < entryEnd && endMinutes > entryStart;
@@ -456,6 +471,7 @@ export class AppointmentService {
       scheduledFor: parsed.scheduledFor,
       durationMinutes: current.durationMinutes,
       allowDoubleBook: parsed.allowDoubleBook,
+      excludeAppointmentId: params.appointmentId,
     });
 
     // D-31: once a single occurrence is deliberately moved off its series'
@@ -551,6 +567,10 @@ export class AppointmentService {
           scheduledFor: newDate,
           durationMinutes: occurrence.durationMinutes,
           allowDoubleBook,
+          // Same self-conflict fix as the anchor reschedule above: this
+          // occurrence's own still-current row is among the rows
+          // `findForVetOnDate` returns for its vet/date.
+          excludeAppointmentId: occurrence.id,
         });
         await this.repository.update(clinicId, occurrence.id, {
           scheduledFor: newDate,
