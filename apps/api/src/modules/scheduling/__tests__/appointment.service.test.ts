@@ -386,3 +386,333 @@ describe('AppointmentService.createAppointment', () => {
     );
   });
 });
+
+const SERIES_ID = '00000000-0000-0000-0000-000000000300';
+const OCCURRENCE_ID_2 = '00000000-0000-0000-0000-000000000201';
+const OCCURRENCE_ID_3 = '00000000-0000-0000-0000-000000000202';
+
+describe('AppointmentService lifecycle transitions', () => {
+  let service: AppointmentService;
+  let repository: ReturnType<typeof createMockRepository>;
+  let availability: ReturnType<typeof createMockAvailability>;
+  let prisma: PrismaClient;
+  let io: ReturnType<typeof createMockIO>;
+
+  beforeEach(() => {
+    repository = createMockRepository();
+    availability = createMockAvailability();
+    const mocked = createMockPrisma();
+    prisma = mocked.prisma;
+    io = createMockIO();
+    service = new AppointmentService(repository, availability, prisma, io);
+
+    vi.mocked(repository.findById).mockResolvedValue(mockAppointment() as never);
+    vi.mocked(repository.update).mockImplementation(
+      async (_clinicId: string, _id: string, data: Record<string, unknown>) =>
+        mockAppointment(data) as never,
+    );
+  });
+
+  describe('rescheduleAppointment', () => {
+    function rescheduleParams(overrides: Record<string, unknown> = {}) {
+      return {
+        clinicId: CLINIC_ID,
+        userId: USER_ID,
+        appointmentId: APPOINTMENT_ID,
+        scheduledFor: atMinutes(addDaysIST(TOMORROW, 1), 11 * 60),
+        allowDoubleBook: false,
+        applyToSeries: false,
+        ...overrides,
+      };
+    }
+
+    it('rejects rescheduling into a day the vet is not available', async () => {
+      vi.mocked(availability.resolveAvailabilityForDate).mockResolvedValue(null);
+
+      await expect(service.rescheduleAppointment(rescheduleParams())).rejects.toMatchObject({
+        statusCode: 400,
+        code: 'VET_NOT_AVAILABLE',
+      });
+    });
+
+    it('rejects rescheduling beyond the booking horizon', async () => {
+      const beyondHorizon = atMinutes(addDaysIST(TODAY, BOOKING_HORIZON_DAYS + 1), 10 * 60);
+
+      await expect(
+        service.rescheduleAppointment(rescheduleParams({ scheduledFor: beyondHorizon })),
+      ).rejects.toMatchObject({ statusCode: 400, code: 'BOOKING_HORIZON_EXCEEDED' });
+    });
+
+    it('rejects rescheduling into an already-taken slot without the override', async () => {
+      vi.mocked(repository.findForVetOnDate).mockResolvedValue([
+        { scheduledFor: atMinutes(addDaysIST(TOMORROW, 1), 11 * 60), durationMinutes: 30 },
+      ]);
+
+      await expect(service.rescheduleAppointment(rescheduleParams())).rejects.toMatchObject({
+        statusCode: 409,
+        code: 'SLOT_DOUBLE_BOOKED',
+      });
+    });
+
+    it('resets all three sweep marker columns on a successful reschedule', async () => {
+      await service.rescheduleAppointment(rescheduleParams());
+
+      expect(repository.update).toHaveBeenCalledWith(
+        CLINIC_ID,
+        APPOINTMENT_ID,
+        expect.objectContaining({
+          queueEntryCreatedAt: null,
+          noShowFlippedAt: null,
+          startingSoonNotifiedAt: null,
+        }),
+      );
+    });
+
+    it('rejects rescheduling an already checked-in appointment', async () => {
+      vi.mocked(repository.findById).mockResolvedValue(mockAppointment({ status: 'CHECKED_IN' }) as never);
+
+      await expect(service.rescheduleAppointment(rescheduleParams())).rejects.toMatchObject({
+        statusCode: 409,
+        code: 'APPOINTMENT_NOT_RESCHEDULABLE',
+      });
+      expect(repository.update).not.toHaveBeenCalled();
+    });
+
+    it('with applyToSeries moves every future occurrence and leaves past ones untouched', async () => {
+      const pastOccurrence = mockAppointment({
+        id: OCCURRENCE_ID_2,
+        recurringSeriesId: SERIES_ID,
+        recurrenceIndex: 1,
+        scheduledFor: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
+      });
+      const futureOccurrence = mockAppointment({
+        id: OCCURRENCE_ID_3,
+        recurringSeriesId: SERIES_ID,
+        recurrenceIndex: 2,
+        scheduledFor: atMinutes(addDaysIST(TOMORROW, 7), 10 * 60),
+      });
+      const anchor = mockAppointment({
+        id: APPOINTMENT_ID,
+        recurringSeriesId: SERIES_ID,
+        recurrenceIndex: 0,
+        scheduledFor: atMinutes(TOMORROW, 10 * 60),
+      });
+
+      vi.mocked(repository.findById).mockResolvedValue(anchor as never);
+      vi.mocked(repository.findBySeries).mockResolvedValue([anchor, pastOccurrence, futureOccurrence] as never);
+
+      await service.rescheduleAppointment(
+        rescheduleParams({ scheduledFor: atMinutes(addDaysIST(TOMORROW, 1), 11 * 60), applyToSeries: true }),
+      );
+
+      // The future occurrence is moved by the same delta (+1 day, 10:00 -> 11:00).
+      expect(repository.update).toHaveBeenCalledWith(
+        CLINIC_ID,
+        OCCURRENCE_ID_3,
+        expect.objectContaining({ scheduledFor: atMinutes(addDaysIST(TOMORROW, 8), 11 * 60) }),
+      );
+      // The past occurrence is never touched.
+      expect(repository.update).not.toHaveBeenCalledWith(CLINIC_ID, OCCURRENCE_ID_2, expect.anything());
+    });
+
+    it('audit-logs APPOINTMENT_RESCHEDULED with both old and new scheduledFor, and broadcasts', async () => {
+      const oldScheduledFor = atMinutes(TOMORROW, 10 * 60);
+      vi.mocked(repository.findById).mockResolvedValue(mockAppointment({ scheduledFor: oldScheduledFor }) as never);
+
+      const newScheduledFor = atMinutes(addDaysIST(TOMORROW, 1), 11 * 60);
+      await service.rescheduleAppointment(rescheduleParams({ scheduledFor: newScheduledFor }));
+
+      expect(writeAuditLog).toHaveBeenCalledWith(
+        prisma,
+        expect.stringMatching('APPOINTMENT_RESCHEDULED'),
+        expect.objectContaining({
+          metadata: expect.objectContaining({ oldScheduledFor, newScheduledFor }),
+        }),
+      );
+      expect(io.to).toHaveBeenCalledWith(`clinic:${CLINIC_ID}`);
+    });
+
+    it('detaches a single rescheduled occurrence from its series (D-31)', async () => {
+      vi.mocked(repository.findById).mockResolvedValue(
+        mockAppointment({ recurringSeriesId: SERIES_ID, recurrenceIndex: 2 }) as never,
+      );
+
+      await service.rescheduleAppointment(rescheduleParams({ applyToSeries: false }));
+
+      expect(repository.update).toHaveBeenCalledWith(
+        CLINIC_ID,
+        APPOINTMENT_ID,
+        expect.objectContaining({ recurringSeriesId: null }),
+      );
+      // Only the one row is touched -- applyToSeries is false, so the rest of
+      // the series must never be read or written.
+      expect(repository.findBySeries).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('cancelAppointment', () => {
+    function cancelParams(overrides: Record<string, unknown> = {}) {
+      return {
+        clinicId: CLINIC_ID,
+        userId: USER_ID,
+        appointmentId: APPOINTMENT_ID,
+        reason: 'Owner request',
+        scope: 'ONE' as const,
+        ...overrides,
+      };
+    }
+
+    it('cancels a SCHEDULED appointment', async () => {
+      const result = await service.cancelAppointment(cancelParams());
+
+      expect(repository.update).toHaveBeenCalledWith(
+        CLINIC_ID,
+        APPOINTMENT_ID,
+        expect.objectContaining({
+          status: 'CANCELLED',
+          cancelledById: USER_ID,
+          cancelReason: 'Owner request',
+        }),
+      );
+      expect(result.appointment).toBeDefined();
+      expect(writeAuditLog).toHaveBeenCalledWith(
+        prisma,
+        expect.stringMatching('APPOINTMENT_CANCELLED'),
+        expect.anything(),
+      );
+      expect(io.to).toHaveBeenCalledWith(`clinic:${CLINIC_ID}`);
+    });
+
+    it('scope SERIES cancels every future SCHEDULED occurrence and leaves an already-resolved past one alone', async () => {
+      // D-31: a past occurrence that already ran its course (COMPLETED here)
+      // is left alone -- the SERIES-scope filter is status === SCHEDULED,
+      // not "future date", so a genuinely past-but-still-SCHEDULED row (an
+      // edge case the sweep would normally have already resolved) would in
+      // fact also be cancelled; that combination is covered by the
+      // status-filter test below instead.
+      const pastOccurrence = mockAppointment({
+        id: OCCURRENCE_ID_2,
+        recurringSeriesId: SERIES_ID,
+        status: 'COMPLETED',
+        scheduledFor: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
+      });
+      const futureOccurrence = mockAppointment({
+        id: OCCURRENCE_ID_3,
+        recurringSeriesId: SERIES_ID,
+        status: 'SCHEDULED',
+        scheduledFor: atMinutes(addDaysIST(TOMORROW, 7), 10 * 60),
+      });
+      const anchor = mockAppointment({ id: APPOINTMENT_ID, recurringSeriesId: SERIES_ID, status: 'SCHEDULED' });
+
+      vi.mocked(repository.findById).mockResolvedValue(anchor as never);
+      vi.mocked(repository.findBySeries).mockResolvedValue([anchor, pastOccurrence, futureOccurrence] as never);
+
+      await service.cancelAppointment(cancelParams({ scope: 'SERIES' }));
+
+      expect(repository.update).toHaveBeenCalledWith(CLINIC_ID, OCCURRENCE_ID_3, expect.objectContaining({ status: 'CANCELLED' }));
+      expect(repository.update).not.toHaveBeenCalledWith(CLINIC_ID, OCCURRENCE_ID_2, expect.anything());
+    });
+
+    it('scope SERIES skips members already CHECKED_IN or COMPLETED (D-31)', async () => {
+      const checkedInOccurrence = mockAppointment({
+        id: OCCURRENCE_ID_2,
+        recurringSeriesId: SERIES_ID,
+        status: 'CHECKED_IN',
+        scheduledFor: atMinutes(addDaysIST(TOMORROW, 7), 10 * 60),
+      });
+      const scheduledOccurrence = mockAppointment({
+        id: OCCURRENCE_ID_3,
+        recurringSeriesId: SERIES_ID,
+        status: 'SCHEDULED',
+        scheduledFor: atMinutes(addDaysIST(TOMORROW, 14), 10 * 60),
+      });
+      const anchor = mockAppointment({ id: APPOINTMENT_ID, recurringSeriesId: SERIES_ID, status: 'SCHEDULED' });
+
+      vi.mocked(repository.findById).mockResolvedValue(anchor as never);
+      vi.mocked(repository.findBySeries).mockResolvedValue([anchor, checkedInOccurrence, scheduledOccurrence] as never);
+
+      await service.cancelAppointment(cancelParams({ scope: 'SERIES' }));
+
+      expect(repository.update).toHaveBeenCalledWith(CLINIC_ID, APPOINTMENT_ID, expect.objectContaining({ status: 'CANCELLED' }));
+      expect(repository.update).toHaveBeenCalledWith(CLINIC_ID, OCCURRENCE_ID_3, expect.objectContaining({ status: 'CANCELLED' }));
+      expect(repository.update).not.toHaveBeenCalledWith(OCCURRENCE_ID_2, expect.anything(), expect.anything());
+      expect(repository.update).not.toHaveBeenCalledWith(CLINIC_ID, OCCURRENCE_ID_2, expect.anything());
+    });
+
+    it('rejects cancelling a COMPLETED appointment', async () => {
+      vi.mocked(repository.findById).mockResolvedValue(mockAppointment({ status: 'COMPLETED' }) as never);
+
+      await expect(service.cancelAppointment(cancelParams())).rejects.toMatchObject({
+        statusCode: 400,
+        code: 'INVALID_TRANSITION',
+      });
+    });
+
+    it('rejects cancelling an unknown or cross-tenant appointment with 404, never 403', async () => {
+      vi.mocked(repository.findById).mockResolvedValue(null);
+
+      await expect(service.cancelAppointment(cancelParams())).rejects.toMatchObject({
+        statusCode: 404,
+        code: 'APPOINTMENT_NOT_FOUND',
+      });
+    });
+  });
+
+  describe('checkInAppointment', () => {
+    it('transitions to CHECKED_IN, stamps checkedInAt, and broadcasts APPOINTMENT_UPDATED', async () => {
+      const updated = await service.checkInAppointment({ clinicId: CLINIC_ID, userId: USER_ID, appointmentId: APPOINTMENT_ID });
+
+      expect(repository.update).toHaveBeenCalledWith(
+        CLINIC_ID,
+        APPOINTMENT_ID,
+        expect.objectContaining({ status: 'CHECKED_IN', checkedInAt: expect.any(Date) }),
+      );
+      expect(updated).toBeDefined();
+      expect(writeAuditLog).toHaveBeenCalledWith(prisma, expect.stringMatching('APPOINTMENT_CHECKED_IN'), expect.anything());
+      expect(io.to).toHaveBeenCalledWith(`clinic:${CLINIC_ID}`);
+    });
+
+    it('is idempotent-safe: checking in an already CHECKED_IN appointment throws INVALID_TRANSITION', async () => {
+      vi.mocked(repository.findById).mockResolvedValue(mockAppointment({ status: 'CHECKED_IN' }) as never);
+
+      await expect(
+        service.checkInAppointment({ clinicId: CLINIC_ID, userId: USER_ID, appointmentId: APPOINTMENT_ID }),
+      ).rejects.toMatchObject({ statusCode: 400, code: 'INVALID_TRANSITION' });
+      expect(repository.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('completeAppointment', () => {
+    it('rejects completing a SCHEDULED (not yet checked-in) appointment', async () => {
+      await expect(
+        service.completeAppointment({ clinicId: CLINIC_ID, userId: USER_ID, appointmentId: APPOINTMENT_ID }),
+      ).rejects.toMatchObject({ statusCode: 400, code: 'INVALID_TRANSITION' });
+    });
+
+    it('transitions from CHECKED_IN to COMPLETED and stamps completedAt', async () => {
+      vi.mocked(repository.findById).mockResolvedValue(mockAppointment({ status: 'CHECKED_IN' }) as never);
+
+      await service.completeAppointment({ clinicId: CLINIC_ID, userId: USER_ID, appointmentId: APPOINTMENT_ID });
+
+      expect(repository.update).toHaveBeenCalledWith(
+        CLINIC_ID,
+        APPOINTMENT_ID,
+        expect.objectContaining({ status: 'COMPLETED', completedAt: expect.any(Date) }),
+      );
+      expect(writeAuditLog).toHaveBeenCalledWith(prisma, expect.stringMatching('APPOINTMENT_COMPLETED'), expect.anything());
+    });
+  });
+
+  describe('markNoShow', () => {
+    it('sets status to NO_SHOW and stamps noShowFlippedAt via the repository marker mutator', async () => {
+      vi.mocked(repository.markNoShowFlipped).mockResolvedValue(mockAppointment({ status: 'NO_SHOW' }) as never);
+
+      const updated = await service.markNoShow({ clinicId: CLINIC_ID, userId: USER_ID, appointmentId: APPOINTMENT_ID });
+
+      expect(repository.markNoShowFlipped).toHaveBeenCalledWith(CLINIC_ID, APPOINTMENT_ID, expect.any(Date));
+      expect(updated?.status).toBe('NO_SHOW');
+      expect(writeAuditLog).toHaveBeenCalledWith(prisma, expect.stringMatching('APPOINTMENT_NO_SHOW'), expect.anything());
+      expect(io.to).toHaveBeenCalledWith(`clinic:${CLINIC_ID}`);
+    });
+  });
+});
