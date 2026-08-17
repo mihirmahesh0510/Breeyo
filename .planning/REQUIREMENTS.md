@@ -90,11 +90,11 @@ Requirements for Beta launch (20 pilot clinics, solo vets).
 
 ### Scheduling & Calendar
 
-- [ ] **SCH-01**: User can schedule future appointments for a patient
-- [ ] **SCH-02**: Scheduled appointments appear in the walk-in queue at their time slot
-- [ ] **SCH-03**: User can view calendar in day and week views
-- [ ] **SCH-04**: Calendar syncs in real time across mobile and web (multi-device)
-- [ ] **SCH-05**: User receives push notifications for upcoming appointments and queue changes
+- [x] **SCH-01**: User can schedule future appointments for a patient
+- [x] **SCH-02**: Scheduled appointments appear in the walk-in queue at their time slot
+- [x] **SCH-03**: User can view calendar in day and week views
+- [x] **SCH-04**: Calendar syncs in real time across mobile and web (multi-device)
+- [ ] **SCH-05**: User receives push notifications for upcoming appointments and queue changes — left unticked: the notification pipeline (triggers, debounce, in-app rows, Expo send call) is fully built and verified by automated tests plus live server-side verification (see `08-VALIDATION.md` § Manual-Only Verifications), but actual Expo push delivery to a real device could not be verified in this build environment (no physical hardware/Expo credentials available). Requires the user's own device-based confirmation before this can be ticked.
 
 ### Platform & Infrastructure
 
@@ -201,11 +201,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 | WHA-03 | Phase 7 | Pending |
 | WHA-04 | Phase 7 | Pending |
 | WHA-05 | Phase 7 | Pending |
-| SCH-01 | Phase 8 | Pending |
-| SCH-02 | Phase 8 | Pending |
-| SCH-03 | Phase 8 | Pending |
-| SCH-04 | Phase 8 | Pending |
-| SCH-05 | Phase 8 | Pending |
+| SCH-01 | Phase 8 | Complete |
+| SCH-02 | Phase 8 | Complete |
+| SCH-03 | Phase 8 | Complete |
+| SCH-04 | Phase 8 | Complete |
+| SCH-05 | Phase 8 | Partial — device push delivery unverified |
 | PLT-01 | Phase 9 | Pending |
 | PLT-02 | Phase 9 | Pending |
 | PLT-03 | Phase 10 | Pending |
