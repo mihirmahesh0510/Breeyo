@@ -63,6 +63,16 @@ export interface GetOfferableSlotsParams {
 export interface CreateAppointmentParams extends CreateAppointmentInput {
   clinicId: string;
   userId: string;
+  /**
+   * Plan 08-10 (D-12): defaults to `AppointmentSource.STAFF` when omitted
+   * (every plan 08-07 call site is staff-driven). A confirmed WhatsApp
+   * booking passes `AppointmentSource.WHATSAPP` and its originating
+   * `WhatsAppBookingRequest` id here instead of creating a standalone slot
+   * block, so it goes through the exact same availability/horizon/
+   * blocked-period/double-book validation as a staff booking.
+   */
+  source?: AppointmentSource;
+  whatsappBookingRequestId?: string;
 }
 
 export interface RescheduleAppointmentParams extends RescheduleAppointmentInput {

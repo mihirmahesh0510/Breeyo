@@ -227,11 +227,13 @@ export class AppointmentService {
             durationMinutes,
             notes: parsed.notes ?? null,
             createdById: params.userId,
-            // D-12 (plan 08-10) will let a WhatsApp-confirmed booking pass its
-            // own source through; every caller in this plan is staff-driven.
-            source: AppointmentSource.STAFF,
+            // D-12 (plan 08-10): a WhatsApp-confirmed booking passes its own
+            // source/originating booking-request id through; every plan
+            // 08-07 call site is staff-driven and omits both, defaulting here.
+            source: params.source ?? AppointmentSource.STAFF,
             recurringSeriesId,
             recurrenceIndex: recurringSeriesId ? index : null,
+            whatsappBookingRequestId: params.whatsappBookingRequestId ?? null,
           },
           parsed.petIds,
           tx,

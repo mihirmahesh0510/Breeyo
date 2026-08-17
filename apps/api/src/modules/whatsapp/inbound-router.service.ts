@@ -70,6 +70,16 @@ export interface ReminderReplyHandler {
   markReplied(ctx: ReminderReplyContext): Promise<void>;
 }
 
+/**
+ * Supplied by plan 08-10 Task 3. A no-op default keeps this file
+ * wave-independent (identical convention to `BookingInboundHandler`/
+ * `ReminderReplyHandler` above) — Phase 8's `OwnerActionService` is the real
+ * implementation, injected at route-composition time.
+ */
+export interface AppointmentActionHandler {
+  handleAction(ctx: InboundRouteContext, action: 'KEEP' | 'MOVE' | 'CANCEL', appointmentId: string): Promise<void>;
+}
+
 const noopBookingHandler: BookingInboundHandler = {
   async startBooking() {
     // No-op default (see file header) — 07-10 supplies the real handler.
@@ -85,6 +95,13 @@ const noopReminderReplyHandler: ReminderReplyHandler = {
   },
 };
 
+const noopAppointmentActionHandler: AppointmentActionHandler = {
+  async handleAction() {
+    // No-op default — plan 08-10 Task 3 supplies the real handler
+    // (`OwnerActionService`) at route-composition time (plan 08-11).
+  },
+};
+
 export interface InboundRouterDeps {
   repository: WhatsAppRepository;
   // The admin `PrismaClient`, matching `WhatsAppRepository`/
@@ -94,6 +111,7 @@ export interface InboundRouterDeps {
   deliveryStatusService: DeliveryStatusService;
   bookingHandler?: BookingInboundHandler;
   reminderHandler?: ReminderReplyHandler;
+  appointmentActionHandler?: AppointmentActionHandler;
 }
 
 function isUniqueConstraintViolation(err: unknown): boolean {
@@ -147,10 +165,12 @@ function bodyOf(event: WaInboundEvent): string {
 export class InboundRouterService {
   private readonly bookingHandler: BookingInboundHandler;
   private readonly reminderHandler: ReminderReplyHandler;
+  private readonly appointmentActionHandler: AppointmentActionHandler;
 
   constructor(private readonly deps: InboundRouterDeps) {
     this.bookingHandler = deps.bookingHandler ?? noopBookingHandler;
     this.reminderHandler = deps.reminderHandler ?? noopReminderReplyHandler;
+    this.appointmentActionHandler = deps.appointmentActionHandler ?? noopAppointmentActionHandler;
   }
 
   /**
@@ -318,6 +338,24 @@ export class InboundRouterService {
 
     if (payload === 'BOOK' || payload === 'book:start') {
       await this.bookingHandler.startBooking(ctx);
+      return;
+    }
+
+    // Phase 8 plan 08-10 Task 3 (D-15, D-16): the owner KEEP/MOVE/CANCEL
+    // bridge — `appointment:keep:<uuid>`, `appointment:move:<uuid>` and
+    // `appointment:cancel:<uuid>` all dispatch to `OwnerActionService` via
+    // the injected `AppointmentActionHandler`, never to `bookingHandler`,
+    // which knows nothing about real `Appointment` rows.
+    if (payload.startsWith('appointment:keep:')) {
+      await this.appointmentActionHandler.handleAction(ctx, 'KEEP', payload.slice('appointment:keep:'.length));
+      return;
+    }
+    if (payload.startsWith('appointment:move:')) {
+      await this.appointmentActionHandler.handleAction(ctx, 'MOVE', payload.slice('appointment:move:'.length));
+      return;
+    }
+    if (payload.startsWith('appointment:cancel:')) {
+      await this.appointmentActionHandler.handleAction(ctx, 'CANCEL', payload.slice('appointment:cancel:'.length));
       return;
     }
 

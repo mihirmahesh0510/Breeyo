@@ -230,6 +230,125 @@ describe('BookingService.confirmSlot (D-06, D-07)', () => {
   });
 });
 
+describe('BookingService.confirmSlot — D-12 real-appointment redirect (plan 08-10)', () => {
+  const VET_ID = 'vet-1';
+
+  function createMockAppointmentService() {
+    return {
+      createAppointment: vi.fn(),
+      cancelAppointment: vi.fn().mockResolvedValue({ appointment: {} }),
+    };
+  }
+
+  function createMockAvailability() {
+    return { listVets: vi.fn().mockResolvedValue([{ id: VET_ID, name: 'Dr. Vet' }]) };
+  }
+
+  it('a confirmed WhatsApp booking calls appointmentService.createAppointment with source WHATSAPP and the booking id, before any Phase 7 state change', async () => {
+    const repository = createMockRepository();
+    const prisma = createMockPrisma();
+    const whatsAppService = createMockWhatsAppService();
+    repository.findBookingRequestById.mockResolvedValue(awaitingBooking());
+    repository.confirmBooking.mockResolvedValue({
+      ...awaitingBooking({ state: 'CONFIRMED' }),
+      confirmedAt: new Date(),
+      slotDate: SLOT.date,
+      slotStartMinutes: SLOT.startMinutes,
+      slotDurationMinutes: SLOT.durationMinutes,
+    });
+    const appointmentService = createMockAppointmentService();
+    appointmentService.createAppointment.mockResolvedValue({
+      appointments: [{ id: 'real-appointment-1' }],
+      warnings: [],
+    });
+    const availability = createMockAvailability();
+    (prisma as any).whatsAppBookingRequest = { update: vi.fn().mockResolvedValue({}) };
+
+    const service = new BookingService({
+      repository: repository as unknown as BookingRepository,
+      prisma: prisma as any,
+      whatsAppService: whatsAppService as any,
+      appointmentService: appointmentService as any,
+      availability: availability as any,
+    });
+
+    const result = await service.confirmSlot(CLINIC_ID, BOOKING_ID, SLOT);
+
+    expect(result.outcome).toBe('CONFIRMED');
+    expect(appointmentService.createAppointment).toHaveBeenCalledWith(
+      expect.objectContaining({
+        clinicId: CLINIC_ID,
+        source: 'WHATSAPP',
+        whatsappBookingRequestId: BOOKING_ID,
+        vetId: VET_ID,
+      }),
+    );
+    // Created before any hold/confirm — the appointment call must precede
+    // the transaction that mutates Phase 7's own state.
+    const appointmentCallOrder = appointmentService.createAppointment.mock.invocationCallOrder[0];
+    const transactionCallOrder = prisma.$transaction.mock.invocationCallOrder[0];
+    expect(appointmentCallOrder).toBeLessThan(transactionCallOrder);
+    expect((prisma as any).whatsAppBookingRequest.update).toHaveBeenCalledWith({
+      where: { id: BOOKING_ID },
+      data: { supersededByAppointmentId: 'real-appointment-1' },
+    });
+  });
+
+  it('a WhatsApp booking into an unavailable slot is refused (UNAVAILABLE) and never reaches confirmBooking', async () => {
+    const repository = createMockRepository();
+    const prisma = createMockPrisma();
+    const whatsAppService = createMockWhatsAppService();
+    repository.findBookingRequestById.mockResolvedValue(awaitingBooking());
+    const appointmentService = createMockAppointmentService();
+    const vetNotAvailable = Object.assign(new Error('This vet is not working then.'), {
+      statusCode: 400,
+      code: 'VET_NOT_AVAILABLE',
+    });
+    appointmentService.createAppointment.mockRejectedValue(vetNotAvailable);
+    const availability = createMockAvailability();
+
+    const service = new BookingService({
+      repository: repository as unknown as BookingRepository,
+      prisma: prisma as any,
+      whatsAppService: whatsAppService as any,
+      appointmentService: appointmentService as any,
+      availability: availability as any,
+    });
+
+    const result = await service.confirmSlot(CLINIC_ID, BOOKING_ID, SLOT);
+
+    expect(result).toEqual({ outcome: 'UNAVAILABLE', reason: 'VET_NOT_AVAILABLE' });
+    expect(repository.confirmBooking).not.toHaveBeenCalled();
+    expect(repository.createSlotHold).not.toHaveBeenCalled();
+    expect(whatsAppService.sendTemplate).not.toHaveBeenCalled();
+  });
+
+  it('without appointmentService/availability configured, confirmSlot behaves exactly as Phase 7 shipped it (backward compatible)', async () => {
+    const repository = createMockRepository();
+    const prisma = createMockPrisma();
+    const whatsAppService = createMockWhatsAppService();
+    repository.findBookingRequestById.mockResolvedValue(awaitingBooking());
+    repository.confirmBooking.mockResolvedValue({
+      ...awaitingBooking({ state: 'CONFIRMED' }),
+      confirmedAt: new Date(),
+      slotDate: SLOT.date,
+      slotStartMinutes: SLOT.startMinutes,
+      slotDurationMinutes: SLOT.durationMinutes,
+    });
+
+    const service = new BookingService({
+      repository: repository as unknown as BookingRepository,
+      prisma: prisma as any,
+      whatsAppService: whatsAppService as any,
+    });
+
+    const result = await service.confirmSlot(CLINIC_ID, BOOKING_ID, SLOT);
+
+    expect(result.outcome).toBe('CONFIRMED');
+    expect(repository.createSlotHold).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('BookingService.cancelBooking (D-09, D-25)', () => {
   it('transitions CONFIRMED to CANCELLED, deletes the slot hold, stores cancelReason, and writes an audit entry', async () => {
     const repository = createMockRepository();
