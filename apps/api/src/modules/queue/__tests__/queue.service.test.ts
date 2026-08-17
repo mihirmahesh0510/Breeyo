@@ -83,6 +83,9 @@ const mockEntry = {
   completedAt: null,
   archivedAt: null,
   updatedAt: now,
+  // Phase 8 (D-08, D-10): no schema default, NOT NULL.
+  queuePriorityAt: now,
+  appointmentId: null,
   pet: mockPet,
 };
 

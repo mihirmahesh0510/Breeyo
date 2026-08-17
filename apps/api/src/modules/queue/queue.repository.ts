@@ -102,6 +102,14 @@ export class QueueRepository {
         status: data.status,
         position: data.position,
         isEmergency: data.isEmergency,
+        // Phase 8 (D-08, D-10): the sort key an EXPECTED-status sweep row
+        // (plan 08-09) and this organic walk-in share, so ordering is a
+        // single `queuePriorityAt` orderBy instead of a raw-SQL coalesce.
+        // For a walk-in, priority time and physical check-in time are the
+        // same instant. No schema default exists for this column (it is
+        // backfilled from checkedInAt for pre-existing rows by the
+        // migration), so every create must supply it explicitly.
+        queuePriorityAt: new Date(),
         ...(data.visitReason && { visitReason: data.visitReason }),
       },
       include: PET_OWNER_INCLUDE,
