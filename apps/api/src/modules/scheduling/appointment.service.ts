@@ -84,6 +84,16 @@ export class AppointmentService {
   }
 
   /**
+   * Plan 08-11: the single-appointment read `GET /scheduling/appointments/:id`
+   * needs. Thin passthrough to `repository.findById`, which is already
+   * `clinicId`-scoped and returns `null` on a cross-tenant/nonexistent id so
+   * the controller can throw a 404, never a 403.
+   */
+  async getAppointment(clinicId: string, appointmentId: string): Promise<AppointmentWithDetails | null> {
+    return this.repository.findById(clinicId, appointmentId);
+  }
+
+  /**
    * Composes the appointment-owned `existing` range (this service's own
    * repository query) with `AvailabilityService.getOfferableSlots`, which
    * deliberately has zero appointment-repository dependency of its own

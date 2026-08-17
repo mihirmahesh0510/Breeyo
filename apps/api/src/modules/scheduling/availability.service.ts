@@ -46,6 +46,26 @@ export class AvailabilityService {
     return resolveDayHours(templateDay, override);
   }
 
+  /**
+   * Plan 08-11: `GET /scheduling/availability/:vetId/template` needs the raw
+   * weekly template rows (not the merged/resolved-for-one-day shape
+   * `resolveAvailabilityForDate` returns). Thin passthrough to the
+   * repository, which is already `clinicId`-scoped.
+   */
+  async getTemplateForVet(clinicId: string, vetId: string) {
+    return this.repository.getTemplateForVet(clinicId, vetId);
+  }
+
+  /**
+   * Plan 08-11: `GET /scheduling/blocked-periods` needs the full blocked-period
+   * rows (id, reason, reasonText, etc.), not the merged minute-range shape
+   * `getBlockedRangesForDate` returns for slot generation. Thin passthrough
+   * to the repository, which is already `clinicId`-scoped.
+   */
+  async getBlockedPeriods(clinicId: string, vetId: string, date: Date) {
+    return this.repository.getBlockedPeriods(clinicId, vetId, date);
+  }
+
   async getBlockedRangesForDate(
     clinicId: string,
     vetId: string,

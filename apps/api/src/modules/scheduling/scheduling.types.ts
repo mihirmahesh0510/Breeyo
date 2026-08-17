@@ -60,9 +60,20 @@ export interface GetOfferableSlotsParams {
  * availability params above.
  */
 
-export interface CreateAppointmentParams extends CreateAppointmentInput {
+export interface CreateAppointmentParams extends Omit<CreateAppointmentInput, 'serviceCatalogId'> {
   clinicId: string;
   userId: string;
+  /**
+   * D-02: `createAppointmentSchema` (the shared validator) requires this
+   * field, but `AppointmentService.createAppointment` re-parses with its own
+   * `.partial({ serviceCatalogId: true })` variant and falls back to
+   * `DEFAULT_SERVICE_DURATION_MINUTES` when it is omitted. Widened to
+   * optional here (overriding `CreateAppointmentInput`'s required field) so
+   * this params type reflects what the service actually accepts -- plan
+   * 08-11's controller passes this straight through from its own
+   * similarly-widened `createAppointmentBodySchema`.
+   */
+  serviceCatalogId?: string;
   /**
    * Plan 08-10 (D-12): defaults to `AppointmentSource.STAFF` when omitted
    * (every plan 08-07 call site is staff-driven). A confirmed WhatsApp
