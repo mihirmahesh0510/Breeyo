@@ -1300,6 +1300,9 @@ enum WaReminderKind {
   FOLLOW_UP
   VACCINE_DUE
   DEWORMING_DUE
+  /// Phase 8 (D-17, D-18): appointment ADVANCE/ON_DATE reminders, riding this
+  /// same table/pipeline rather than a parallel messaging mechanism.
+  APPOINTMENT_REMINDER
 }
 
 /// Two-touch model (D-01, D-02): ADVANCE fires some days before the due

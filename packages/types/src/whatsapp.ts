@@ -15,14 +15,20 @@
 /** Which adapter backs the `WaProvider` port for a clinic. */
 export type WaProviderId = 'simulator' | 'cloud-api';
 
-/** The six Beta message templates (WHA-04, D-10). */
+/**
+ * The Beta message templates (WHA-04, D-10). `appointment_reminder` is
+ * Phase 8's addition (D-17, D-18) to Phase 7's existing template set --
+ * added here rather than in a new file, per D-17's ban on a parallel
+ * messaging mechanism.
+ */
 export type WaTemplateKey =
   | 'invoice_delivery'
   | 'payment_reminder'
   | 'follow_up_reminder'
   | 'vaccine_due'
   | 'deworming_due'
-  | 'booking_confirmation';
+  | 'booking_confirmation'
+  | 'appointment_reminder';
 
 /** D-10: reminder-category templates are STOP-silenceable; transactional are not. */
 export type WaTemplateCategory = 'REMINDER' | 'TRANSACTIONAL';
@@ -46,10 +52,11 @@ export type WaNumberStatus = 'UNKNOWN' | 'VALID' | 'INVALID';
 /** What a thread's most recent activity, or a message's send, was about. */
 export type WaContextType = 'REMINDER' | 'INVOICE' | 'BOOKING' | 'GENERAL';
 
-/** D-01, D-02: the three automated reminder sources. Deliberately excludes
- * payment reminders (D-05 manual-only) so a payment reminder is not even
- * representable as a `WhatsAppReminderTask`. */
-export type WaReminderKind = 'FOLLOW_UP' | 'VACCINE_DUE' | 'DEWORMING_DUE';
+/** D-01, D-02, D-17, D-18: the four automated reminder sources. Deliberately
+ * excludes payment reminders (D-05 manual-only) so a payment reminder is not
+ * even representable as a `WhatsAppReminderTask`. `APPOINTMENT_REMINDER` is
+ * Phase 8's addition, riding this same enum/table/pipeline. */
+export type WaReminderKind = 'FOLLOW_UP' | 'VACCINE_DUE' | 'DEWORMING_DUE' | 'APPOINTMENT_REMINDER';
 
 /** D-01, D-02: the "before" and "on the date" two-touch reminder pattern. */
 export type WaReminderTouch = 'ADVANCE' | 'ON_DATE';
