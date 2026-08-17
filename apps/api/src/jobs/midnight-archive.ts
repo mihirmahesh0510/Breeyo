@@ -1,7 +1,7 @@
 import cron from 'node-cron';
 import type { PrismaClient } from '@prisma/client';
 import type { Server } from 'socket.io';
-import { SOCKET_EVENTS } from '@breeyo/types';
+import { SOCKET_EVENTS, SCHEDULING_TIMEZONE } from '@breeyo/types';
 import { QueueRepository } from '../modules/queue/queue.repository.js';
 import { getTodayIST } from '../lib/ist-date.js';
 
@@ -35,6 +35,6 @@ export function scheduleMidnightArchive(prisma: PrismaClient, io: Server) {
         console.error('Midnight archive failed:', error);
       }
     },
-    { timezone: 'Asia/Kolkata' },
+    { timezone: SCHEDULING_TIMEZONE },
   );
 }
