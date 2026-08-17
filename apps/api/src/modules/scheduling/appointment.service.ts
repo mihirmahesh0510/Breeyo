@@ -215,7 +215,16 @@ export class AppointmentService {
       for (let index = 0; index < survivingDates.length; index += 1) {
         const scheduledFor = survivingDates[index];
         const lockKey = `${parsed.vetId}|${scheduledFor.toISOString()}`;
-        await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`;
+        // `pg_advisory_xact_lock` returns `void` -- `$queryRaw` tries to
+        // deserialize every column of its result set into a Prisma scalar
+        // type and fails outright on `void` (`P2010: Failed to deserialize
+        // column of type 'void'`), a real bug this plan's first real-Postgres
+        // exercise of this transaction (Task 3's HTTP integration tests)
+        // surfaced -- every prior test of this path used a mocked
+        // transaction client. `$executeRaw` runs the exact same statement
+        // (the lock is still acquired for its side effect) but only reports
+        // an affected-row count, never attempting to typemap a result set.
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`;
 
         const doubleBookWarnings = await this.validateSlot({
           clinicId: params.clinicId,

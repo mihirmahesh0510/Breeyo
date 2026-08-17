@@ -113,7 +113,7 @@ function createMockAvailability(): AvailabilityService {
 
 function createMockPrisma() {
   const txClient = {
-    $queryRaw: vi.fn().mockResolvedValue([]),
+    $executeRaw: vi.fn().mockResolvedValue(0),
   };
   const petOwnerFindFirst = vi.fn().mockResolvedValue(mockOwner);
   const petFindFirst = vi.fn().mockResolvedValue({ id: PET_ID });
@@ -123,7 +123,7 @@ function createMockPrisma() {
     pet: { findFirst: petFindFirst },
     serviceCatalog: { findFirst: serviceCatalogFindFirst },
     $transaction: vi.fn(async (callback: (tx: unknown) => Promise<unknown>) => callback(txClient)),
-    $queryRaw: vi.fn(),
+    $executeRaw: vi.fn(),
     authAuditLog: { create: vi.fn().mockResolvedValue({}) },
   };
   return {
@@ -161,7 +161,7 @@ describe('AppointmentService.createAppointment', () => {
   let repository: ReturnType<typeof createMockRepository>;
   let availability: ReturnType<typeof createMockAvailability>;
   let prisma: PrismaClient;
-  let txClient: { $queryRaw: ReturnType<typeof vi.fn> };
+  let txClient: { $executeRaw: ReturnType<typeof vi.fn> };
   let petOwnerFindFirst: ReturnType<typeof vi.fn>;
   let petFindFirst: ReturnType<typeof vi.fn>;
   let serviceCatalogFindFirst: ReturnType<typeof vi.fn>;
@@ -384,7 +384,7 @@ describe('AppointmentService.createAppointment', () => {
     expect(repository.create).toHaveBeenCalledTimes(1);
 
     // The advisory lock is acquired before the conflict re-check, every time.
-    expect(txClient.$queryRaw.mock.invocationCallOrder[0]).toBeLessThan(
+    expect(txClient.$executeRaw.mock.invocationCallOrder[0]).toBeLessThan(
       vi.mocked(repository.findForVetOnDate).mock.invocationCallOrder[0],
     );
   });
