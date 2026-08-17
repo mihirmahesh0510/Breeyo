@@ -472,7 +472,7 @@ describe('AppointmentService lifecycle transitions', () => {
         service.rescheduleAppointment(rescheduleParams({ scheduledFor: sameSlot })),
       ).resolves.toBeDefined();
 
-      expect(repository.update).toHaveBeenCalledWith(CLINIC_ID, APPOINTMENT_ID, expect.anything());
+      expect(repository.update).toHaveBeenCalledWith(CLINIC_ID, APPOINTMENT_ID, expect.anything(), expect.anything());
     });
 
     it('still rejects a genuine double-booking against a DIFFERENT appointment on reschedule', async () => {
@@ -498,6 +498,7 @@ describe('AppointmentService lifecycle transitions', () => {
           noShowFlippedAt: null,
           startingSoonNotifiedAt: null,
         }),
+        expect.anything(),
       );
     });
 
@@ -543,9 +544,10 @@ describe('AppointmentService lifecycle transitions', () => {
         CLINIC_ID,
         OCCURRENCE_ID_3,
         expect.objectContaining({ scheduledFor: atMinutes(addDaysIST(TOMORROW, 8), 11 * 60) }),
+        expect.anything(),
       );
       // The past occurrence is never touched.
-      expect(repository.update).not.toHaveBeenCalledWith(CLINIC_ID, OCCURRENCE_ID_2, expect.anything());
+      expect(repository.update).not.toHaveBeenCalledWith(CLINIC_ID, OCCURRENCE_ID_2, expect.anything(), expect.anything());
     });
 
     it('audit-logs APPOINTMENT_RESCHEDULED with both old and new scheduledFor, and broadcasts', async () => {
@@ -576,6 +578,7 @@ describe('AppointmentService lifecycle transitions', () => {
         CLINIC_ID,
         APPOINTMENT_ID,
         expect.objectContaining({ recurringSeriesId: null }),
+        expect.anything(),
       );
       // Only the one row is touched -- applyToSeries is false, so the rest of
       // the series must never be read or written.

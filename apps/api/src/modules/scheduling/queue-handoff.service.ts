@@ -69,52 +69,57 @@ export class QueueHandoffService {
         visitReason = service?.name;
       }
 
-      // One appointment, one transaction. Real crash-safety for this pass
-      // comes from the null `queueEntryCreatedAt` marker on the driving query
-      // above plus the per-pet active-entry dedup check below (RESEARCH
-      // Pattern 2's "use both"), not from this transaction boundary alone --
-      // it exists so the three writes below commit together as one unit
-      // whenever the underlying connection allows it.
-      await this.prisma.$transaction(async () => {
+      // One appointment, one transaction -- `tx` is threaded through every
+      // write below (the queue-handoff-transaction-noop fix: the previous
+      // version of this callback took no `tx` parameter, so its three writes
+      // each ran through `this.queue`/`this.appointments`'s own
+      // `this.prisma` and auto-committed independently, not atomically as
+      // this comment claims). A crash between `createEntryIfNoneActive`
+      // succeeding and `markQueueEntryCreated` running now cannot happen
+      // without the whole transaction rolling back.
+      await this.prisma.$transaction(async (tx) => {
         for (const appointmentPet of appointment.pets) {
           // A pet who walked in (or was otherwise entered) before their
           // appointment slot arrived already has a board entry today --
-          // never give them a second one.
-          const existingActive = await this.queue.findTodayActiveEntryForPet(
+          // never give them a second one. The active-entry check and the
+          // create run under one advisory lock (queue-checkin-handoff-race
+          // fix), inside this same `tx`, so a walk-in check-in racing this
+          // exact pet/day can't also observe "no active entry" first.
+          const { entry, existingActive } = await this.queue.createEntryIfNoneActive(
             appointment.clinicId,
             appointmentPet.petId,
             today,
+            {
+              clinicId: appointment.clinicId,
+              petId: appointmentPet.petId,
+              checkedInBy: appointment.createdById,
+              status: 'EXPECTED',
+              // D-13: an EXPECTED row does not occupy a walk-in position.
+              position: 0,
+              isEmergency: false,
+              visitReason,
+              // D-10: this is the ENTIRE mechanism behind scheduled-time queue
+              // priority -- the entry's priority is the appointment's SLOT
+              // time, never the sweep's run time. Do NOT "fix" this to `now`;
+              // that would silently delete D-10/D-11 (see
+              // 08-RESEARCH.md § Architecture Patterns Pattern 3).
+              queuePriorityAt: appointment.scheduledFor,
+              appointmentId: appointment.id,
+            },
+            tx,
           );
-          if (existingActive) {
+          if (existingActive || !entry) {
             continue;
           }
 
-          const entry = await this.queue.createEntry({
-            clinicId: appointment.clinicId,
-            petId: appointmentPet.petId,
-            checkedInBy: appointment.createdById,
-            status: 'EXPECTED',
-            // D-13: an EXPECTED row does not occupy a walk-in position.
-            position: 0,
-            isEmergency: false,
-            visitReason,
-            // D-10: this is the ENTIRE mechanism behind scheduled-time queue
-            // priority -- the entry's priority is the appointment's SLOT
-            // time, never the sweep's run time. Do NOT "fix" this to `now`;
-            // that would silently delete D-10/D-11 (see
-            // 08-RESEARCH.md § Architecture Patterns Pattern 3).
-            queuePriorityAt: appointment.scheduledFor,
-            appointmentId: appointment.id,
-          });
-
-          await this.appointments.setPetQueueEntry(appointment.clinicId, appointmentPet.id, entry.id);
+          await this.appointments.setPetQueueEntry(appointment.clinicId, appointmentPet.id, entry.id, tx);
           entryIds.push(entry.id);
           entriesCreated += 1;
         }
 
         // Last statement: stamps the marker that keeps the driving query
         // above from ever re-selecting this appointment.
-        await this.appointments.markQueueEntryCreated(appointment.clinicId, appointment.id, now);
+        await this.appointments.markQueueEntryCreated(appointment.clinicId, appointment.id, now, tx);
       });
 
       appointmentsProcessed += 1;

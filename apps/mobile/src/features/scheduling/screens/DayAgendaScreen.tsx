@@ -107,6 +107,9 @@ export function DayAgendaScreen() {
           onSuccess: () => {
             showToast('success', 'Checked in');
           },
+          onError: () => {
+            showToast('error', 'Could not check in. Try again.');
+          },
         },
       );
     },
@@ -132,6 +135,9 @@ export function DayAgendaScreen() {
                 {
                   onSuccess: () => {
                     showToast('success', 'Appointment cancelled');
+                  },
+                  onError: () => {
+                    showToast('error', 'Could not cancel this appointment. Try again.');
                   },
                 },
               );

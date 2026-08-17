@@ -270,6 +270,17 @@ export class BookingService {
       return { outcome: 'CREATED', appointmentId: appointment.id };
     } catch (err) {
       const code = (err as { code?: string }).code ?? 'UNKNOWN';
+      // A genuine domain decline (VET_NOT_AVAILABLE, SLOT_BLOCKED,
+      // SLOT_IN_PAST, BOOKING_HORIZON_EXCEEDED, SLOT_DOUBLE_BOOKED) is
+      // expected and self-explanatory from `reason` alone in the caller's
+      // reply — but this catch-all also swallows a Zod validation failure or
+      // a raw DB/connection error, mapping either into the identical
+      // business UNAVAILABLE outcome with no server-side trace at all. Log
+      // unconditionally (this file has no logger dependency of its own — see
+      // the codebase's established `console.error` convention, e.g.
+      // `appointment.service.ts`'s `runChangeHook`) so an infra failure here
+      // is still visible even though the owner only ever sees "not available".
+      console.error('BookingService.createRealAppointmentForBooking failed', { bookingId, code, err });
       return { outcome: 'UNAVAILABLE', reason: code };
     }
   }

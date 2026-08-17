@@ -1,8 +1,17 @@
-import type { QueueEntryStatus } from '@prisma/client';
+import type { Prisma, PrismaClient, QueueEntryStatus } from '@prisma/client';
 import type { DbClient } from '../../lib/prisma-rls.js';
 import { getTodayIST, istDayBounds } from '../../lib/ist-date.js';
 import { ACTIVE_QUEUE_STATUSES, CLOSED_QUEUE_STATUSES } from '@breeyo/types';
 import type { CreateEntryParams } from './queue.types.js';
+
+/**
+ * `DbClient` (the tenant-scoped or admin `PrismaClient`) or a Prisma
+ * interactive-transaction client -- lets `findTodayActiveEntryForPet`/
+ * `createEntry` run inside a caller's own transaction (e.g.
+ * `QueueHandoffService`'s per-appointment `prisma.$transaction`) instead of
+ * always going through this repository's own `this.prisma` connection.
+ */
+type Db = DbClient | Prisma.TransactionClient;
 
 const PET_OWNER_INCLUDE = {
   pet: {
@@ -33,8 +42,8 @@ export class QueueRepository {
    * pet is a duplicate -- the correct staff action is to check the existing
    * EXPECTED entry in, not create a second row.
    */
-  async findTodayActiveEntryForPet(clinicId: string, petId: string, today: Date) {
-    return this.prisma.queueEntry.findFirst({
+  async findTodayActiveEntryForPet(clinicId: string, petId: string, today: Date, client: Db = this.prisma) {
+    return client.queueEntry.findFirst({
       where: {
         clinicId,
         petId,
@@ -91,8 +100,8 @@ export class QueueRepository {
   /**
    * Creates a new queue entry with pet and owner included in the response.
    */
-  async createEntry(data: CreateEntryParams) {
-    return this.prisma.queueEntry.create({
+  async createEntry(data: CreateEntryParams, client: Db = this.prisma) {
+    return client.queueEntry.create({
       data: {
         clinicId: data.clinicId,
         petId: data.petId,
@@ -106,6 +115,58 @@ export class QueueRepository {
       },
       include: PET_OWNER_INCLUDE,
     });
+  }
+
+  /**
+   * `QueueService.checkIn` (a walk-in) and `QueueHandoffService`'s sweep
+   * handoff pass each need "no active entry for this pet today, so create
+   * one" -- calling `findTodayActiveEntryForPet` then `createEntry`
+   * separately lets both paths observe "not active yet" before either
+   * commits, producing two simultaneous active rows for the same pet. This
+   * wraps the check-then-create in one `pg_advisory_xact_lock` (the same
+   * mechanism `AppointmentService`'s D-34 vet+slot lock uses), keyed on
+   * `(clinicId, petId, day)`, so the two paths serialize against each other
+   * regardless of which repository instance/connection either runs on.
+   *
+   * `client`, when supplied, runs the lock+check+create inside the caller's
+   * own transaction (`QueueHandoffService`'s per-appointment transaction) so
+   * it commits atomically with that transaction's other writes; omitted, a
+   * fresh transaction is opened just for this call (`QueueService.checkIn`,
+   * which has no other writes to join).
+   */
+  async createEntryIfNoneActive(
+    clinicId: string,
+    petId: string,
+    today: Date,
+    data: CreateEntryParams,
+    client?: Db,
+  ): Promise<{
+    entry: Awaited<ReturnType<QueueRepository['createEntry']>> | null;
+    existingActive: Awaited<ReturnType<QueueRepository['findTodayActiveEntryForPet']>> | null;
+  }> {
+    const run = async (tx: Db) => {
+      const lockKey = `queue-checkin|${clinicId}|${petId}|${today.toISOString().slice(0, 10)}`;
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`;
+
+      const existingActive = await this.findTodayActiveEntryForPet(clinicId, petId, today, tx);
+      if (existingActive) {
+        return { entry: null, existingActive };
+      }
+
+      const entry = await this.createEntry(data, tx);
+      return { entry, existingActive: null };
+    };
+
+    if (client) {
+      return run(client);
+    }
+    // Cast per the established `tx as unknown as never` pattern
+    // (`booking.service.ts`) for crossing the tenant-vs-admin transaction
+    // typing boundary -- at runtime `this.prisma` may be the `TenantPrismaClient`
+    // proxy from `prisma-rls.ts`, whose own `$transaction` trap still fires
+    // (and still binds the `app.clinic_id` GUC) regardless of the static type
+    // used to access it here.
+    return (this.prisma as unknown as PrismaClient).$transaction((tx) => run(tx));
   }
 
   /**

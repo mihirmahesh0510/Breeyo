@@ -122,7 +122,9 @@ export class OwnerActionService {
 
     if (parsed.data.action === 'KEEP') {
       // D-20: SCHEDULED already implies confirmed — nothing to transition.
-      await this.ownerReplySender.send(params.clinicId, params.threadOwnerId, OWNER_REPLY_COPY.keep(petNames(appointment)));
+      await this.guardSideEffect('ownerReplySender.send (KEEP)', () =>
+        this.ownerReplySender.send(params.clinicId, params.threadOwnerId, OWNER_REPLY_COPY.keep(petNames(appointment))),
+      );
       return { ok: true, applied: 'KEEP' };
     }
 
@@ -132,8 +134,16 @@ export class OwnerActionService {
       // through the existing NotificationBus/worker pipeline, landing on
       // the existing Notification model/NotificationList surface — no new
       // task-tracking mechanism here) and a send-path owner acknowledgement.
-      await this.pushTriggers.notifyOwnerAction(params.clinicId, appointment, 'MOVE');
-      await this.ownerReplySender.send(params.clinicId, params.threadOwnerId, OWNER_REPLY_COPY.moveRequested);
+      // Each awaited independently (matching `whatsapp.routes.ts`'s
+      // onCancelled/onRescheduled hooks) so one failing never blocks the
+      // other, and neither can turn this webhook-triggered call into an
+      // uncaught 500 that Meta's redelivery then treats as a duplicate.
+      await this.guardSideEffect('pushTriggers.notifyOwnerAction (MOVE)', () =>
+        this.pushTriggers.notifyOwnerAction(params.clinicId, appointment, 'MOVE'),
+      );
+      await this.guardSideEffect('ownerReplySender.send (MOVE)', () =>
+        this.ownerReplySender.send(params.clinicId, params.threadOwnerId, OWNER_REPLY_COPY.moveRequested),
+      );
       return { ok: true, applied: 'MOVE' };
     }
 
@@ -168,16 +178,44 @@ export class OwnerActionService {
       throw err;
     }
 
-    await this.reminders.cancelPendingForAppointment(params.appointmentId, params.clinicId);
-    await this.pushTriggers.notifyOwnerAction(params.clinicId, appointment, 'CANCEL');
+    // The cancellation itself already committed above -- everything past
+    // this point is a notification/reply side effect, each guarded
+    // independently (same pattern as the MOVE branch and
+    // `appointment.service.ts`'s `runChangeHook`) so a failure here never
+    // surfaces as an uncaught 500 from this webhook-triggered call, which
+    // would otherwise permanently lose the notification: the inbound
+    // message row is already recorded, so Meta's retry is treated as a
+    // duplicate and this handler never runs again for it.
+    await this.guardSideEffect('reminders.cancelPendingForAppointment', () =>
+      this.reminders.cancelPendingForAppointment(params.appointmentId, params.clinicId),
+    );
+    await this.guardSideEffect('pushTriggers.notifyOwnerAction (CANCEL)', () =>
+      this.pushTriggers.notifyOwnerAction(params.clinicId, appointment, 'CANCEL'),
+    );
     // D-33: symmetric with KEEP/MOVE -- CANCEL now also closes the loop
     // with the owner, through the same send path, not a second one.
-    await this.ownerReplySender.send(
-      params.clinicId,
-      params.threadOwnerId,
-      OWNER_REPLY_COPY.cancelled(petNames(appointment), formatApptDate(appointment.scheduledFor)),
+    await this.guardSideEffect('ownerReplySender.send (CANCEL)', () =>
+      this.ownerReplySender.send(
+        params.clinicId,
+        params.threadOwnerId,
+        OWNER_REPLY_COPY.cancelled(petNames(appointment), formatApptDate(appointment.scheduledFor)),
+      ),
     );
     return { ok: true, applied: 'CANCEL' };
+  }
+
+  /**
+   * Runs a non-critical notification/reply side effect without letting its
+   * failure fail (or 500) `handleOwnerAction` itself -- mirrors
+   * `appointment.service.ts`'s `runChangeHook`.
+   */
+  private async guardSideEffect(label: string, fn: () => Promise<unknown>): Promise<void> {
+    try {
+      await fn();
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error(`OwnerActionService.handleOwnerAction: ${label} failed`, err);
+    }
   }
 
   /** T-08-46/T-08-47: every refusal is logged (audited), but the reply

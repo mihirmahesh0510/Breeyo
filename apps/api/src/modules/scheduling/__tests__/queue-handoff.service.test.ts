@@ -58,7 +58,7 @@ function createMockAppointmentRepository(): AppointmentRepository {
 }
 
 function createMockQueueRepository(): QueueRepository {
-  return {
+  const repo = {
     findTodayActiveEntryForPet: vi.fn().mockResolvedValue(null),
     createEntry: vi.fn().mockImplementation((data: Record<string, unknown>) =>
       Promise.resolve({ id: ENTRY_ID_1, ...data }),
@@ -67,7 +67,25 @@ function createMockQueueRepository(): QueueRepository {
     updateEntry: vi.fn().mockImplementation((id: string, data: Record<string, unknown>) =>
       Promise.resolve({ id, ...data }),
     ),
-  } as unknown as QueueRepository;
+  };
+  // queue-checkin-handoff-race fix: `createExpectedEntriesForDueAppointments`
+  // now calls this single method instead of composing
+  // `findTodayActiveEntryForPet` then `createEntry` itself -- the mock
+  // re-composes them the same way the real (lock-protected) implementation
+  // does, so every test above that stubs those two mocks directly keeps
+  // working unchanged. The `tx` (4th) arg is accepted and ignored -- the
+  // fake has no real lock to acquire.
+  const createEntryIfNoneActive = vi.fn(
+    async (clinicId: string, petId: string, today: Date, data: Record<string, unknown>) => {
+      const existingActive = await repo.findTodayActiveEntryForPet(clinicId, petId, today);
+      if (existingActive) {
+        return { entry: null, existingActive };
+      }
+      const entry = await repo.createEntry(data);
+      return { entry, existingActive: null };
+    },
+  );
+  return { ...repo, createEntryIfNoneActive } as unknown as QueueRepository;
 }
 
 function createMockAppointmentService(): AppointmentService {
@@ -143,8 +161,8 @@ describe('QueueHandoffService (mocked, pure branching logic)', () => {
       expect(queue.createEntry).toHaveBeenCalledWith(
         expect.objectContaining({ position: 0, appointmentId: APPOINTMENT_ID, status: 'EXPECTED' }),
       );
-      expect(appointments.setPetQueueEntry).toHaveBeenCalledWith(CLINIC_ID, AP_ID_1, ENTRY_ID_1);
-      expect(appointments.markQueueEntryCreated).toHaveBeenCalledWith(CLINIC_ID, APPOINTMENT_ID, NOW);
+      expect(appointments.setPetQueueEntry).toHaveBeenCalledWith(CLINIC_ID, AP_ID_1, ENTRY_ID_1, expect.anything());
+      expect(appointments.markQueueEntryCreated).toHaveBeenCalledWith(CLINIC_ID, APPOINTMENT_ID, NOW, expect.anything());
     });
 
     it('skips a pet that already has an active queue entry today', async () => {
@@ -157,7 +175,7 @@ describe('QueueHandoffService (mocked, pure branching logic)', () => {
       expect(queue.createEntry).not.toHaveBeenCalled();
       expect(result.entriesCreated).toBe(0);
       // The appointment is still processed/marked so the sweep does not retry forever.
-      expect(appointments.markQueueEntryCreated).toHaveBeenCalledWith(CLINIC_ID, APPOINTMENT_ID, NOW);
+      expect(appointments.markQueueEntryCreated).toHaveBeenCalledWith(CLINIC_ID, APPOINTMENT_ID, NOW, expect.anything());
     });
 
     it('broadcasts QUEUE_UPDATED once per appointment, not once per pet', async () => {

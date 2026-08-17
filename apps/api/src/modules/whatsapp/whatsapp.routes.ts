@@ -159,6 +159,20 @@ export default async function whatsappRoutes(fastify: FastifyInstance): Promise<
   const availabilityService = new AvailabilityService(availabilityRepository, fastify.prisma, fastify.io ?? null);
   const appointmentRepository = new AppointmentRepository(fastify.prisma);
 
+  // A second, independent `NotificationBus` — `scheduling.routes.ts` builds
+  // its own for the identical reason (`fastify.notificationBus` is not
+  // reachable from a sibling plugin registration; see that file's own
+  // `key-decisions` entry). Closed on this plugin's own `onClose` hook.
+  // Constructed here, ahead of `queueService` below, so that instance can be
+  // given `pushTriggers` directly (5a5e683's fix for `queue.routes.ts`
+  // applied at this composition root too, per T-08 finding
+  // queueservice-pushtriggers-partial-fix).
+  const schedulingNotificationBus = createNotificationBus(fastify.redis);
+  fastify.addHook('onClose', async () => {
+    await schedulingNotificationBus.close();
+  });
+  const pushTriggers = new PushTriggerService(schedulingNotificationBus, fastify.prisma, fastify.redis);
+
   // D-28 fix: a SECOND, independent `QueueRepository`/`QueueService` pair,
   // built the exact same way `scheduling.routes.ts` builds its own (raw
   // `fastify.prisma` + `fastify.io`) — this file's `appointmentService`
@@ -168,7 +182,7 @@ export default async function whatsappRoutes(fastify: FastifyInstance): Promise<
   // endpoints. There is no shared state to duplicate here (both are
   // stateless aside from the `io` reference).
   const queueRepository = new QueueRepository(fastify.prisma);
-  const queueService = new QueueService(queueRepository, fastify.io ?? null);
+  const queueService = new QueueService(queueRepository, fastify.io ?? null, pushTriggers);
 
   // D-17/D-18: the appointment ADVANCE/ON_DATE reminder-discovery source,
   // reusing this file's own `repository`/`reminderTaskRepository` instances
@@ -228,16 +242,6 @@ export default async function whatsappRoutes(fastify: FastifyInstance): Promise<
       }
     },
   );
-
-  // A second, independent `NotificationBus` — `scheduling.routes.ts` builds
-  // its own for the identical reason (`fastify.notificationBus` is not
-  // reachable from a sibling plugin registration; see that file's own
-  // `key-decisions` entry). Closed on this plugin's own `onClose` hook.
-  const schedulingNotificationBus = createNotificationBus(fastify.redis);
-  fastify.addHook('onClose', async () => {
-    await schedulingNotificationBus.close();
-  });
-  const pushTriggers = new PushTriggerService(schedulingNotificationBus, fastify.prisma, fastify.redis);
 
   // D-15, D-16, D-33: the owner KEEP/MOVE/CANCEL bridge. `ownerReplySender`
   // adapts `OwnerReplySender` onto THIS file's own existing send path

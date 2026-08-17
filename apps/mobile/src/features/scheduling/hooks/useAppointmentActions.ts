@@ -45,6 +45,13 @@ export interface UpdateAppointmentStatusParams {
   status: AppointmentStatus;
 }
 
+const IST_TIME_ZONE = 'Asia/Kolkata';
+
+/** Matches `useSchedule.ts`'s own `istDateKey` -- the same IST day-key every per-day cache entry is keyed on. */
+function istDateKey(date: Date): string {
+  return date.toLocaleDateString('en-CA', { timeZone: IST_TIME_ZONE });
+}
+
 type ScheduleAppointmentsEnvelope = { data: AppointmentWithDetails[] };
 
 /**
@@ -71,6 +78,18 @@ function patchAppointmentInCache(
   activeClinicId: string | null,
   appointmentId: string,
   patch: Partial<AppointmentWithDetails>,
+  options?: {
+    /**
+     * D-31: when a reschedule moves `patch.scheduledFor` to a different IST
+     * day than a given per-day cache entry's own key, patching it in place
+     * there would leave that day's list showing the appointment at its wrong
+     * (new) time until the delayed `invalidateQueries` below fires -- remove
+     * it from that day's list instead. The correct day's own list picks it
+     * up once that invalidation refetches it; there is no cached "target
+     * day" list to append into safely without risking a duplicate.
+     */
+    removeFromOtherDayLists?: boolean;
+  },
 ): CacheSnapshot[] {
   const matches = queryClient.getQueriesData<ScheduleAppointmentsEnvelope>({
     queryKey: ['schedule', activeClinicId],
@@ -82,10 +101,16 @@ function patchAppointmentInCache(
     snapshots.push({ queryKey, data });
     if (!data) continue;
 
+    const isoDate = queryKey[2] as string;
+    const movingToAnotherDay =
+      options?.removeFromOtherDayLists && patch.scheduledFor instanceof Date && istDateKey(patch.scheduledFor) !== isoDate;
+
     queryClient.setQueryData<ScheduleAppointmentsEnvelope>(queryKey, {
-      data: data.data.map((appointment) =>
-        appointment.id === appointmentId ? { ...appointment, ...patch } : appointment,
-      ),
+      data: movingToAnotherDay
+        ? data.data.filter((appointment) => appointment.id !== appointmentId)
+        : data.data.map((appointment) =>
+            appointment.id === appointmentId ? { ...appointment, ...patch } : appointment,
+          ),
     });
   }
 
@@ -154,10 +179,16 @@ export function useRescheduleAppointment() {
       ),
     onMutate: async ({ appointmentId, scheduledFor, vetId }) => {
       await queryClient.cancelQueries({ queryKey: ['schedule', activeClinicId] });
-      const snapshots = patchAppointmentInCache(queryClient, activeClinicId, appointmentId, {
-        scheduledFor: new Date(scheduledFor),
-        ...(vetId ? { vetId } : {}),
-      });
+      const snapshots = patchAppointmentInCache(
+        queryClient,
+        activeClinicId,
+        appointmentId,
+        {
+          scheduledFor: new Date(scheduledFor),
+          ...(vetId ? { vetId } : {}),
+        },
+        { removeFromOtherDayLists: true },
+      );
       return { snapshots };
     },
     onError: (_err, _vars, context) => {

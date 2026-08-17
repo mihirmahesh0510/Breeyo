@@ -49,20 +49,6 @@ export class QueueService {
       throw error;
     }
 
-    // Check for existing active entry (WAITING or IN_CONSULT)
-    const activeEntry = await this.repository.findTodayActiveEntryForPet(
-      params.clinicId,
-      parsed.petId,
-      today,
-    );
-
-    if (activeEntry) {
-      const error = new Error('Pet is already in today\'s queue') as Error & { statusCode: number; code: string };
-      error.statusCode = 409;
-      error.code = 'ALREADY_IN_QUEUE';
-      throw error;
-    }
-
     // D-40: Same-day re-check-in detection
     if (!params.reCheckIn) {
       const doneEntry = await this.repository.findTodayDoneEntryForPet(
@@ -82,18 +68,34 @@ export class QueueService {
     // Assign position: waiting count + 1
     const waitingCount = await this.repository.countWaiting(params.clinicId, today);
 
-    const entry = await this.repository.createEntry({
-      clinicId: params.clinicId,
-      petId: parsed.petId,
-      checkedInBy: params.userId,
-      status: 'WAITING',
-      position: waitingCount + 1,
-      isEmergency: parsed.isEmergency,
-      visitReason: parsed.visitReason,
-      // D-08/D-10: for an organic walk-in, priority time and physical
-      // check-in time are the same instant.
-      queuePriorityAt: new Date(),
-    });
+    // The active-entry check and the create run under one advisory lock
+    // (queue-checkin-handoff-race fix) -- without it, this check-in could
+    // race the sweep's appointment handoff pass for the same pet's now-due
+    // appointment, both observing "no active entry" before either commits.
+    const { entry, existingActive } = await this.repository.createEntryIfNoneActive(
+      params.clinicId,
+      parsed.petId,
+      today,
+      {
+        clinicId: params.clinicId,
+        petId: parsed.petId,
+        checkedInBy: params.userId,
+        status: 'WAITING',
+        position: waitingCount + 1,
+        isEmergency: parsed.isEmergency,
+        visitReason: parsed.visitReason,
+        // D-08/D-10: for an organic walk-in, priority time and physical
+        // check-in time are the same instant.
+        queuePriorityAt: new Date(),
+      },
+    );
+
+    if (existingActive || !entry) {
+      const error = new Error('Pet is already in today\'s queue') as Error & { statusCode: number; code: string };
+      error.statusCode = 409;
+      error.code = 'ALREADY_IN_QUEUE';
+      throw error;
+    }
 
     // Broadcast to clinic room
     this.broadcast(params.clinicId, SOCKET_EVENTS.PATIENT_CHECKED_IN, {

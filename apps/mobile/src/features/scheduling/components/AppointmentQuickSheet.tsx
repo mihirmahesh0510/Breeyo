@@ -101,6 +101,9 @@ export function AppointmentQuickSheet({ visible, appointment, onDismiss }: Appoi
           showToast('success', `${petName} checked in`);
           onDismiss();
         },
+        onError: () => {
+          showToast('error', 'Could not check in. Try again.');
+        },
       },
     );
   }, [appointment, updateStatus, onDismiss]);
@@ -114,6 +117,9 @@ export function AppointmentQuickSheet({ visible, appointment, onDismiss }: Appoi
           showToast('success', 'Appointment cancelled');
           onDismiss();
         },
+        onError: () => {
+          showToast('error', 'Could not cancel this appointment. Try again.');
+        },
       },
     );
   }, [appointment, cancelAppointment, onDismiss]);
@@ -126,6 +132,9 @@ export function AppointmentQuickSheet({ visible, appointment, onDismiss }: Appoi
         onSuccess: () => {
           showToast('success', 'Appointment cancelled');
           onDismiss();
+        },
+        onError: () => {
+          showToast('error', 'Could not cancel these appointments. Try again.');
         },
       },
     );
@@ -196,6 +205,9 @@ export function AppointmentQuickSheet({ visible, appointment, onDismiss }: Appoi
           }
           setMoveMode(false);
           onDismiss();
+        },
+        onError: () => {
+          showToast('error', 'Could not move this appointment. Try again.');
         },
       },
     );

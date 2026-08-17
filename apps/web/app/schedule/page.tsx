@@ -68,9 +68,20 @@ export default function SchedulePage() {
     selectedVetId ? entries.filter((e) => e.vetId === selectedVetId) : entries,
   );
 
+  // `computeRowBounds` documents its input as "the union of every non-null
+  // day's open hours across the displayed vets" -- picking only the first
+  // matching vet's hours here (as opposed to the union across every vet
+  // shown that day) clamps a second vet's appointments outside the first
+  // vet's hours into the wrong row when "All Vets" is selected.
   const hoursByDay = availabilityByDay.map((entries) => {
-    const working = entries.find((e) => e.hours);
-    return working?.hours ?? null;
+    const working = entries.filter((e) => e.hours);
+    if (working.length === 0) {
+      return null;
+    }
+    return {
+      openMinutes: Math.min(...working.map((e) => e.hours!.openMinutes)),
+      closeMinutes: Math.max(...working.map((e) => e.hours!.closeMinutes)),
+    };
   });
   const bounds = computeRowBounds(hoursByDay);
 

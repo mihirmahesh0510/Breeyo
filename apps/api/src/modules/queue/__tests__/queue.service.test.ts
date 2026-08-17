@@ -4,7 +4,7 @@ import type { QueueRepository } from '../queue.repository.js';
 import type { Server } from 'socket.io';
 
 function createMockRepository(): QueueRepository {
-  return {
+  const repo = {
     // D-30: checkIn verifies the pet belongs to the calling clinic first.
     // Default to "found" so the existing check-in cases exercise the paths
     // they were written for; the not-found path is asserted explicitly below.
@@ -20,7 +20,21 @@ function createMockRepository(): QueueRepository {
     getAverageConsultDuration: vi.fn(),
     archiveEntries: vi.fn(),
     deleteExpectedEntryForAppointment: vi.fn(),
-  } as unknown as QueueRepository;
+  };
+  // queue-checkin-handoff-race fix: `QueueService.checkIn` now calls this
+  // single method instead of composing `findTodayActiveEntryForPet` then
+  // `createEntry` itself -- the mock re-composes them the same way the real
+  // (lock-protected) implementation does, so every test above that stubs
+  // those two mocks directly keeps working unchanged.
+  const createEntryIfNoneActive = vi.fn(async (clinicId: string, petId: string, today: Date, data: unknown) => {
+    const existingActive = await repo.findTodayActiveEntryForPet(clinicId, petId, today);
+    if (existingActive) {
+      return { entry: null, existingActive };
+    }
+    const entry = await repo.createEntry(data as never);
+    return { entry, existingActive: null };
+  });
+  return { ...repo, createEntryIfNoneActive } as unknown as QueueRepository;
 }
 
 function createMockIO(): Server {

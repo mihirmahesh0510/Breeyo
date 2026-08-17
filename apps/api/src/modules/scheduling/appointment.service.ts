@@ -486,37 +486,50 @@ export class AppointmentService {
 
     const newVetId = parsed.vetId ?? current.vetId;
 
-    const warnings = await this.validateSlot({
-      clinicId: params.clinicId,
-      vetId: newVetId,
-      scheduledFor: parsed.scheduledFor,
-      durationMinutes: current.durationMinutes,
-      allowDoubleBook: parsed.allowDoubleBook,
-      excludeAppointmentId: params.appointmentId,
-    });
-
     // D-31: once a single occurrence is deliberately moved off its series'
     // regular cadence, it is no longer a "member" of that series for a
     // later Cancel All or series-wide reschedule -- detach it in the same
     // update call rather than a second write.
     const detachFromSeries = !parsed.applyToSeries && Boolean(current.recurringSeriesId);
 
-    const updateData: Record<string, unknown> = {
-      scheduledFor: parsed.scheduledFor,
-      vetId: newVetId,
-      // RESEARCH Pitfall 6: these three markers are keyed to the OLD
-      // scheduledFor. Leaving them set would make the sweep skip the
-      // appointment's new due moment (queueEntryCreatedAt stays non-null),
-      // leave a no-show flip stuck to the old time (noShowFlippedAt), or let
-      // a stale "starting soon" push stand (startingSoonNotifiedAt) -- reset
-      // all three on every reschedule.
-      queueEntryCreatedAt: null,
-      noShowFlippedAt: null,
-      startingSoonNotifiedAt: null,
-      ...(detachFromSeries ? { recurringSeriesId: null } : {}),
-    };
+    // D-34: same check-then-update-under-lock pattern as `createAppointment`
+    // -- without this, two concurrent reschedules (or a reschedule racing a
+    // create) targeting the same vet+slot could both observe "slot free"
+    // under READ COMMITTED and both commit, double-booking despite
+    // `allowDoubleBook: false`.
+    const { updated, warnings } = await this.prisma.$transaction(async (tx) => {
+      const lockKey = `${newVetId}|${parsed.scheduledFor.toISOString()}`;
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`;
 
-    const updated = await this.repository.update(params.clinicId, params.appointmentId, updateData);
+      const slotWarnings = await this.validateSlot({
+        clinicId: params.clinicId,
+        vetId: newVetId,
+        scheduledFor: parsed.scheduledFor,
+        durationMinutes: current.durationMinutes,
+        allowDoubleBook: parsed.allowDoubleBook,
+        excludeAppointmentId: params.appointmentId,
+        client: tx,
+      });
+
+      const updateData: Record<string, unknown> = {
+        scheduledFor: parsed.scheduledFor,
+        vetId: newVetId,
+        // RESEARCH Pitfall 6: these three markers are keyed to the OLD
+        // scheduledFor. Leaving them set would make the sweep skip the
+        // appointment's new due moment (queueEntryCreatedAt stays non-null),
+        // leave a no-show flip stuck to the old time (noShowFlippedAt), or let
+        // a stale "starting soon" push stand (startingSoonNotifiedAt) -- reset
+        // all three on every reschedule.
+        queueEntryCreatedAt: null,
+        noShowFlippedAt: null,
+        startingSoonNotifiedAt: null,
+        ...(detachFromSeries ? { recurringSeriesId: null } : {}),
+      };
+
+      const updatedRow = await this.repository.update(params.clinicId, params.appointmentId, updateData, tx);
+      return { updated: updatedRow, warnings: slotWarnings };
+    });
+
     if (!updated) {
       throw domainError('Appointment not found', 404, 'APPOINTMENT_NOT_FOUND');
     }
@@ -582,25 +595,40 @@ export class AppointmentService {
       const newDate = new Date(occurrence.scheduledFor.getTime() + deltaMs);
 
       try {
-        const occurrenceWarnings = await this.validateSlot({
-          clinicId,
-          vetId,
-          scheduledFor: newDate,
-          durationMinutes: occurrence.durationMinutes,
-          allowDoubleBook,
-          // Same self-conflict fix as the anchor reschedule above: this
-          // occurrence's own still-current row is among the rows
-          // `findForVetOnDate` returns for its vet/date.
-          excludeAppointmentId: occurrence.id,
+        // D-34: each occurrence gets its own lock + transaction (never one
+        // shared transaction for the whole series) so one occurrence's
+        // conflict is skipped and reported, exactly as before, instead of
+        // rolling back every other occurrence already moved in this pass.
+        await this.prisma.$transaction(async (tx) => {
+          const lockKey = `${vetId}|${newDate.toISOString()}`;
+          await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`;
+
+          const occurrenceWarnings = await this.validateSlot({
+            clinicId,
+            vetId,
+            scheduledFor: newDate,
+            durationMinutes: occurrence.durationMinutes,
+            allowDoubleBook,
+            // Same self-conflict fix as the anchor reschedule above: this
+            // occurrence's own still-current row is among the rows
+            // `findForVetOnDate` returns for its vet/date.
+            excludeAppointmentId: occurrence.id,
+            client: tx,
+          });
+          await this.repository.update(
+            clinicId,
+            occurrence.id,
+            {
+              scheduledFor: newDate,
+              vetId,
+              queueEntryCreatedAt: null,
+              noShowFlippedAt: null,
+              startingSoonNotifiedAt: null,
+            },
+            tx,
+          );
+          warnings.push(...occurrenceWarnings);
         });
-        await this.repository.update(clinicId, occurrence.id, {
-          scheduledFor: newDate,
-          vetId,
-          queueEntryCreatedAt: null,
-          noShowFlippedAt: null,
-          startingSoonNotifiedAt: null,
-        });
-        warnings.push(...occurrenceWarnings);
       } catch (err) {
         const error = err as Error & { code: string; message: string };
         warnings.push({

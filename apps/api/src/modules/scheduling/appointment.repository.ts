@@ -172,20 +172,30 @@ export class AppointmentRepository {
   /**
    * Scoped on both `id` and `clinicId`; returns `null` when zero rows
    * matched so the service throws 404 rather than a cross-tenant 403.
+   * Accepts the same `Db` client as `create`/`findForVetOnDate` (D-34) so a
+   * caller running this inside its own advisory-lock transaction reads its
+   * own just-committed write back through that same connection -- reading
+   * back through `this.prisma` (a different connection) here would still be
+   * looking at the pre-update row until the caller's transaction commits.
    */
   async update(
     clinicId: string,
     appointmentId: string,
     data: Record<string, unknown>,
+    client: Db = this.prisma,
   ): Promise<AppointmentWithDetails | null> {
-    const result = await this.prisma.appointment.updateMany({
+    const result = await client.appointment.updateMany({
       where: { id: appointmentId, clinicId },
       data,
     });
     if (result.count === 0) {
       return null;
     }
-    return this.findById(clinicId, appointmentId);
+    const row = await client.appointment.findFirst({
+      where: { id: appointmentId, clinicId },
+      include: APPOINTMENT_DETAIL_INCLUDE,
+    });
+    return row ? mapAppointment(row as AppointmentRow) : null;
   }
 
   // ---------------------------------------------------------------------
@@ -270,8 +280,8 @@ export class AppointmentRepository {
   // write in this repository stays scoped on both `id` and `clinicId`.
   // ---------------------------------------------------------------------
 
-  async markQueueEntryCreated(clinicId: string, appointmentId: string, at: Date): Promise<void> {
-    await this.prisma.appointment.updateMany({
+  async markQueueEntryCreated(clinicId: string, appointmentId: string, at: Date, client: Db = this.prisma): Promise<void> {
+    await client.appointment.updateMany({
       where: { id: appointmentId, clinicId },
       data: { queueEntryCreatedAt: at },
     });
@@ -294,8 +304,8 @@ export class AppointmentRepository {
   }
 
   /** Writes `AppointmentPet.queueEntryId` after the handoff creates the queue entry. */
-  async setPetQueueEntry(clinicId: string, appointmentPetId: string, queueEntryId: string): Promise<void> {
-    await this.prisma.appointmentPet.updateMany({
+  async setPetQueueEntry(clinicId: string, appointmentPetId: string, queueEntryId: string, client: Db = this.prisma): Promise<void> {
+    await client.appointmentPet.updateMany({
       where: { id: appointmentPetId, clinicId },
       data: { queueEntryId },
     });

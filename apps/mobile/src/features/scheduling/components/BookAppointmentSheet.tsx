@@ -106,6 +106,7 @@ export function BookAppointmentSheet({
   const [selectedDate, setSelectedDate] = useState<Date>(defaultDate ?? new Date());
   const [selectedSlot, setSelectedSlot] = useState<SlotOption | null>(null);
   const [serverDoubleBookError, setServerDoubleBookError] = useState(false);
+  const [bookingErrorMessage, setBookingErrorMessage] = useState<string | null>(null);
   const [repeatExpanded, setRepeatExpanded] = useState(false);
   const [recurrenceEnabled, setRecurrenceEnabled] = useState(false);
   const [recurrenceInterval, setRecurrenceInterval] = useState<RecurrenceInterval>(RecurrenceInterval.WEEKLY);
@@ -142,6 +143,7 @@ export function BookAppointmentSheet({
       setSelectedDate(defaultDate ?? new Date());
       setSelectedSlot(null);
       setServerDoubleBookError(false);
+      setBookingErrorMessage(null);
       setRepeatExpanded(false);
       setRecurrenceEnabled(false);
       setRecurrenceInterval(RecurrenceInterval.WEEKLY);
@@ -184,11 +186,13 @@ export function BookAppointmentSheet({
     setSelectedDate(date);
     setSelectedSlot(null);
     setServerDoubleBookError(false);
+    setBookingErrorMessage(null);
   }, []);
 
   const handleSelectSlot = useCallback((slot: SlotOption) => {
     setSelectedSlot(slot);
     setServerDoubleBookError(false);
+    setBookingErrorMessage(null);
   }, []);
 
   const maxDate = useMemo(() => addDays(new Date(), BOOKING_HORIZON_DAYS), []);
@@ -217,6 +221,7 @@ export function BookAppointmentSheet({
     (options: { allowDoubleBook: boolean }) => {
       if (!ownerData || !selectedServiceId || !selectedVetId || !selectedSlot) return;
 
+      setBookingErrorMessage(null);
       const isoDate = istDateKey(selectedDate);
       const hhmm = minutesToHHMM(selectedSlot.startMinutes);
       const scheduledFor = `${isoDate}T${hhmm}:00+05:30`;
@@ -256,10 +261,14 @@ export function BookAppointmentSheet({
           onError: (error: any) => {
             if (error?.code === 'SLOT_DOUBLE_BOOKED') {
               setServerDoubleBookError(true);
+              return;
             }
             // SLOT_TAKEN, BOOKING_HORIZON_EXCEEDED, SLOT_BLOCKED and
-            // VET_NOT_AVAILABLE already carry UI-SPEC copy from the server
-            // in `error.message` -- rendered inline rather than restated.
+            // VET_NOT_AVAILABLE carry UI-SPEC copy from the server in
+            // `error.message` -- rendered inline as a generic error banner
+            // rather than restated, so the mutation never just fails
+            // silently with the spinner stopping.
+            setBookingErrorMessage(error?.message || 'Could not book this appointment. Try again.');
           },
         },
       );
@@ -509,6 +518,18 @@ export function BookAppointmentSheet({
                 })}
               </View>
             )}
+          </View>
+        ) : null}
+
+        {/* Generic booking error banner (SLOT_TAKEN/BOOKING_HORIZON_EXCEEDED/
+            SLOT_BLOCKED/VET_NOT_AVAILABLE) -- SLOT_DOUBLE_BOOKED gets its own
+            dedicated warning strip below instead. */}
+        {bookingErrorMessage ? (
+          <View style={styles.errorStrip} testID="book-appointment-error">
+            <MaterialCommunityIcons name="alert-circle-outline" size={16} color="#BA1A1A" />
+            <Text variant="bodySmall" style={styles.errorStripText}>
+              {bookingErrorMessage}
+            </Text>
           </View>
         ) : null}
 
@@ -762,6 +783,19 @@ const styles = StyleSheet.create({
   },
   slotChipTakenText: {
     color: '#49454F',
+  },
+  errorStrip: {
+    marginTop: 16,
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: '#F9DEDC',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  errorStripText: {
+    color: '#BA1A1A',
+    flex: 1,
   },
   warningStrip: {
     marginTop: 16,

@@ -138,7 +138,6 @@ export function BlockedPeriodSheet({ visible, onDismiss, vetId, date }: BlockedP
           value={startTime}
           onChangeText={setStartTime}
           placeholder="13:00"
-          keyboardType="number-pad"
           style={styles.timeInput}
           testID="blocked-start-time"
         />
@@ -147,7 +146,6 @@ export function BlockedPeriodSheet({ visible, onDismiss, vetId, date }: BlockedP
           value={endTime}
           onChangeText={setEndTime}
           placeholder="14:00"
-          keyboardType="number-pad"
           style={styles.timeInput}
           testID="blocked-end-time"
         />

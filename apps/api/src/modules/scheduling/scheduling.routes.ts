@@ -50,6 +50,28 @@ export default async function schedulingRoutes(fastify: FastifyInstance): Promis
 
   const appointmentRepository = new AppointmentRepository(fastify.prisma);
 
+  // ─── D-27 push triggers ─────────────────────────────────────────────────
+  // `fastify.notificationBus` (decorated by `notification.routes.ts`) is NOT
+  // actually reachable here: Fastify's plugin encapsulation scopes a bare
+  // `fastify.decorate(...)` call to that plugin's own child context and its
+  // descendants, never to a SIBLING top-level `app.register(...)` call --
+  // the exact same reason `clinic.routes.ts`/`whatsapp.routes.ts` above have
+  // to re-decorate `permissionService` themselves rather than reading the
+  // one `auth.routes.ts` already decorated. `emr.routes.ts` hit this same
+  // wall for its own D-72 notification bus and resolved it the same way:
+  // construct a fresh, cheap `NotificationBus` (a thin BullMQ producer
+  // wrapper, no state to duplicate) rather than depending on a decoration
+  // that plugin isolation makes unreachable. Constructed here, ahead of
+  // `queueService` below, so that instance can be given `pushTriggers`
+  // directly (5a5e683's fix for `queue.routes.ts` applied at this
+  // composition root too, per T-08 finding queueservice-pushtriggers-partial-fix).
+  const notificationBus = createNotificationBus(fastify.redis);
+  fastify.addHook('onClose', async () => {
+    await notificationBus.close();
+  });
+
+  const pushTriggers = new PushTriggerService(notificationBus, fastify.prisma, fastify.redis);
+
   // D-28: a SECOND, independent `QueueRepository`/`QueueService` pair, built
   // the same way `queue.routes.ts` builds its own (raw `fastify.prisma` +
   // `fastify.io`) rather than importing that module's per-request instance --
@@ -58,7 +80,7 @@ export default async function schedulingRoutes(fastify: FastifyInstance): Promis
   // `onRescheduled`/`onCancelled` hooks below (and `QueueHandoffService`) can
   // close over ONE instance for the lifetime of the process.
   const queueRepository = new QueueRepository(fastify.prisma);
-  const queueService = new QueueService(queueRepository, fastify.io);
+  const queueService = new QueueService(queueRepository, fastify.io, pushTriggers);
 
   // ─── Phase 7-dependent reminder-cancellation wiring (08-10), guarded ──────
   // `reminderService` stays `null` if this construction fails for ANY reason,
@@ -128,25 +150,6 @@ export default async function schedulingRoutes(fastify: FastifyInstance): Promis
       }
     },
   );
-
-  // ─── D-27 push triggers ─────────────────────────────────────────────────
-  // `fastify.notificationBus` (decorated by `notification.routes.ts`) is NOT
-  // actually reachable here: Fastify's plugin encapsulation scopes a bare
-  // `fastify.decorate(...)` call to that plugin's own child context and its
-  // descendants, never to a SIBLING top-level `app.register(...)` call --
-  // the exact same reason `clinic.routes.ts`/`whatsapp.routes.ts` above have
-  // to re-decorate `permissionService` themselves rather than reading the
-  // one `auth.routes.ts` already decorated. `emr.routes.ts` hit this same
-  // wall for its own D-72 notification bus and resolved it the same way:
-  // construct a fresh, cheap `NotificationBus` (a thin BullMQ producer
-  // wrapper, no state to duplicate) rather than depending on a decoration
-  // that plugin isolation makes unreachable.
-  const notificationBus = createNotificationBus(fastify.redis);
-  fastify.addHook('onClose', async () => {
-    await notificationBus.close();
-  });
-
-  const pushTriggers = new PushTriggerService(notificationBus, fastify.prisma, fastify.redis);
 
   const queueHandoffService = new QueueHandoffService(
     appointmentRepository,
