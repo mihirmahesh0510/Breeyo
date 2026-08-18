@@ -10,6 +10,7 @@ import { buildInvoiceListQueryString, type InvoiceFilters } from '../lib/invoice
 import { apiClient } from '../../../lib/api';
 import { useAuth } from '../../../providers/AuthProvider';
 import { canViewInvoices } from '../lib/pet-invoices';
+import { canManagePayments } from '../lib/invoice-actions';
 
 // --- Response types ---
 
@@ -114,6 +115,39 @@ export function useViewInvoicesPermission() {
     ...query,
     /** False while loading, so the section is never shown before the check resolves. */
     canViewInvoices: canViewInvoices(query.data),
+  };
+}
+
+/**
+ * The `MANAGE_PAYMENTS` check `InvoiceActionBar` gates its money actions on
+ * (E2E-BUG-FIX-PLAN.md §6.3).
+ *
+ * Reads the same `/auth/permissions` endpoint and cache key as
+ * `useViewInvoicesPermission`/`useBillingSettingsPermission`.
+ *
+ * Defence in depth, not the enforcement point: the API rejects a caller
+ * without `MANAGE_PAYMENTS` regardless. Its purpose is to stop the bar
+ * offering Void/Refund/Collect Payment/Issue Credit Note to someone who can
+ * only ever see them 403.
+ */
+export function useManagePaymentsPermission() {
+  const { accessToken, activeClinicId } = useAuth();
+
+  const query = useQuery({
+    queryKey: ['auth', 'permissions', activeClinicId],
+    queryFn: () =>
+      apiClient<{ data: { permissions: string[] } }>('/api/v1/auth/permissions', {
+        token: accessToken!,
+      }),
+    enabled: !!accessToken && !!activeClinicId,
+    staleTime: 5 * 60_000,
+    select: (response) => response.data.permissions,
+  });
+
+  return {
+    ...query,
+    /** False while loading, so the bar never briefly shows money actions before the check resolves. */
+    canManagePayments: canManagePayments(query.data),
   };
 }
 

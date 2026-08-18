@@ -13,6 +13,7 @@ import { QuickSaleCart } from '../components/QuickSaleCart';
 import { QuickSaleTotals } from '../components/QuickSaleTotals';
 import { formatPaiseINR } from '../lib/format';
 import { parseRupeesToPaise, stockShortfallsFrom } from '../lib/builder-state';
+import { BILLING_ROUTES } from './BillingDashboardScreen';
 
 /**
  * 06-UI-SPEC.md's `Quick Sale Screen (D-04)` copy table, verbatim.
@@ -155,7 +156,7 @@ export function QuickSaleScreen() {
         useQuickSaleCartStore.getState().reset();
         // Straight to payment collection: a counter sale is finalized already,
         // and the customer is still standing there with money in hand.
-        router.replace(`/(app)/(tabs)/billing/${invoice.id}` as never);
+        router.replace(BILLING_ROUTES.invoiceDetail(invoice.id) as never);
       },
       onError: (error) => {
         const found = stockShortfallsFrom(error);

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { INVOICE_STATUSES, type InvoiceStatus } from '@breeyo/types';
 import {
+  canManagePayments,
   INVOICE_ACTIONS,
   INVOICE_ACTION_ORDER,
   invoiceActionSet,
@@ -140,6 +141,64 @@ describe('billing exceptions block every status-changing action (D-35, D-36)', (
           .blockedByException,
       ).toBe(false);
     }
+  });
+});
+
+describe('MANAGE_PAYMENTS gates the money actions (E2E-BUG-FIX-PLAN.md §6.3)', () => {
+  it('defaults to permitted when hasManagePayments is omitted, so every existing call site keeps working', () => {
+    const actions = invoiceActionSet({ status: 'UNPAID', hasPayments: false });
+    expect(actions.pay).toBe(true);
+    expect(actions.void).toBe(true);
+    expect(actions.creditNote).toBe(true);
+  });
+
+  it('hides Pay, Void and Issue Credit Note for a caller without MANAGE_PAYMENTS', () => {
+    const actions = invoiceActionSet({ status: 'UNPAID', hasPayments: false, hasManagePayments: false });
+    expect(actions.pay).toBe(false);
+    expect(actions.void).toBe(false);
+    expect(actions.creditNote).toBe(false);
+  });
+
+  it('hides Refund for a caller without MANAGE_PAYMENTS, even with an existing payment', () => {
+    const actions = invoiceActionSet({
+      status: 'PAID',
+      hasPayments: true,
+      hasManagePayments: false,
+    });
+    expect(actions.refund).toBe(false);
+  });
+
+  it('does not withhold Edit, Delete, Print, Share or Download — those are not money actions', () => {
+    const actions = invoiceActionSet({ status: 'DRAFT', hasPayments: false, hasManagePayments: false });
+    expect(actions.edit).toBe(true);
+    expect(actions.delete).toBe(true);
+
+    const documentActions = invoiceActionSet({
+      status: 'VOIDED',
+      hasPayments: true,
+      hasManagePayments: false,
+    });
+    expect(documentActions.print).toBe(true);
+    expect(documentActions.share).toBe(true);
+    expect(documentActions.download).toBe(true);
+  });
+
+  it('is excluded from the bar entirely, not merely disabled', () => {
+    const visible = visibleInvoiceActions({
+      status: 'UNPAID',
+      hasPayments: false,
+      hasManagePayments: false,
+    });
+    expect(visible).not.toContain('pay');
+    expect(visible).not.toContain('void');
+    expect(visible).not.toContain('creditNote');
+    expect(visible).not.toContain('refund');
+  });
+
+  it('canManagePayments reads MANAGE_PAYMENTS off the permission list, absent list included', () => {
+    expect(canManagePayments(['VIEW_INVOICES', 'MANAGE_PAYMENTS'])).toBe(true);
+    expect(canManagePayments(['VIEW_INVOICES'])).toBe(false);
+    expect(canManagePayments(undefined)).toBe(false);
   });
 });
 

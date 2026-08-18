@@ -10,6 +10,7 @@ import {
   petInvoicesSectionState,
   sortInvoicesNewestFirst,
 } from '../lib/pet-invoices';
+import { BILLING_ROUTES } from '../screens/BillingDashboardScreen';
 
 export interface PetInvoicesTabProps {
   petId: string;
@@ -133,7 +134,7 @@ export function PetInvoicesTab({ petId, petName, testID }: PetInvoicesTabProps) 
             // The same detail route the Billing tab's list pushes, so an invoice
             // opened from a pet profile and one opened from the dashboard land
             // on the same screen.
-            onPress={() => router.push(`/(app)/(tabs)/billing/${invoice.id}` as never)}
+            onPress={() => router.push(BILLING_ROUTES.invoiceDetail(invoice.id) as never)}
             testID={`pet-invoice-card-${invoice.id}`}
           />
         ))}
