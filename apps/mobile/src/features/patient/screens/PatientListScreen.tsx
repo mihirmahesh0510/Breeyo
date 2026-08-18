@@ -22,13 +22,13 @@ export function PatientListScreen() {
 
   const handleSelectPet = useCallback(
     (petId: string) => {
-      router.push(`/(app)/patients/${petId}` as any);
+      router.push(`/(app)/patient/${petId}` as any);
     },
     [router],
   );
 
   const handleAddPatient = useCallback(() => {
-    router.push('/(app)/register-patient' as any);
+    router.push('/(app)/patient/register' as any);
   }, [router]);
 
   const handleRefresh = useCallback(() => {

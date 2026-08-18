@@ -74,6 +74,17 @@ created: 2026-04-19
 | Real-time queue updates across devices | QUE-02 | Requires multiple simultaneous device connections | Open queue on 2 browser tabs, check in patient on tab 1, verify tab 2 updates within 2 seconds |
 | 2-tap check-in UX flow | QUE-01 | UX interaction count is a design measure, not a unit test | On mobile device: tap FAB, enter mobile number, tap pet — verify only 2 taps after FAB |
 | Sound + haptic notification on queue change | D-24 | Hardware-dependent | Enable notifications, change queue status on device A, verify sound/haptic on device B |
+| Post-fix navigation smoke test (E2E-BUG-FIX-PLAN.md §3.1–3.4) | PAT-05 | Four hardcoded route strings broke navigation four times in this phase alone with nothing catching it; a manual tap-through until an automated navigation harness exists | Tap through: Patients list → pet profile → owner detail → register-new-patient-from-owner, and back, on a real device/emulator. All four must land, not 404 |
+
+---
+
+## E2E Bug Fix Additions (E2E-BUG-FIX-PLAN.md, 2026-08-19)
+
+| # | Behavior | Test | Why it matters |
+|---|----------|------|-----------------|
+| §3.5 | Check-in with a known mobile number surfaces the existing owner's pets, not the "new patient" path | `apps/mobile/src/features/queue/lib/__tests__/check-in-sheet.test.ts` (`deriveOwnerLookupState`) | The single most important test added in this pass — `CheckInSheet.tsx` previously double-unwrapped the lookup response (`lookupQuery.data?.data`), so 100% of returning patients were funneled into full re-registration. Zero tests existed for `CheckInSheet` before this fix. |
+| §3.6 | Patient/queue routes reject roles missing the required permission, and accept roles that have it | `apps/api/tests/patient/patient-queue-permissions.test.ts` | `patient.routes.ts`/`queue.routes.ts` had zero `requirePermission(...)` calls despite `seed.ts` defining the codes. Role × route matrix: `InventoryManager` (VIEW_PATIENTS only, no queue access) → 403 on every EDIT_PATIENTS/queue route; `FrontDesk` (has all of them) → not forbidden. |
+| §3.7 | Editing a pet's species, birth year, or birth month persists the change | `apps/mobile/src/features/patient/lib/__tests__/edit-pet-form.test.ts` (`buildPetUpdates`, `validateEditPetForm`) | `EditPetForm` previously had no species/age fields at all, even though the API and mutation type already accepted them. |
 
 ---
 

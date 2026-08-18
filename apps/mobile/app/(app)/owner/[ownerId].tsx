@@ -7,5 +7,5 @@ export default function OwnerDetailRoute() {
 
   if (!ownerId) return null;
 
-  return <OwnerDetailScreen ownerId={ownerId} />;
+  return <OwnerDetailScreen />;
 }

@@ -235,7 +235,7 @@ export function RegisterPatientScreen() {
 
   const handleViewProfile = useCallback(() => {
     if (existingOwner) {
-      router.push(`/patients/owner/${existingOwner.id}`);
+      router.push(`/(app)/owner/${existingOwner.id}` as any);
     }
   }, [existingOwner, router]);
 

@@ -67,7 +67,7 @@ export function PatientDetailScreen() {
 
   const handleOwnerPress = useCallback(
     (ownerId: string) => {
-      router.push(`/(app)/owners/${ownerId}` as any);
+      router.push(`/(app)/owner/${ownerId}` as any);
     },
     [router],
   );

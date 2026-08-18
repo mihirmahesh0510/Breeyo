@@ -5,10 +5,11 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { BottomSheet } from '@breeyo/ui';
 import { SPECIES_ICONS } from '@breeyo/types';
-import type { OwnerWithPets, Pet } from '@breeyo/types';
+import type { Pet } from '@breeyo/types';
 import { useLookupOwner } from '../../patient/hooks/usePatientRegister';
 import { useCheckIn } from '../hooks/useCheckIn';
 import { VisitReasonPicker } from './VisitReasonPicker';
+import { deriveOwnerLookupState } from '../lib/check-in-sheet';
 
 interface CheckInSheetProps {
   visible: boolean;
@@ -44,9 +45,10 @@ export function CheckInSheet({
   const lookupQuery = useLookupOwner(mobile);
   const checkInMutation = useCheckIn();
 
-  const ownerData = lookupQuery.data?.data as OwnerWithPets | undefined;
-  const isLooking = lookupQuery.isFetching;
-  const ownerNotFound = isValidMobile && !isLooking && !ownerData;
+  const { ownerData, isLooking, ownerNotFound } = deriveOwnerLookupState(
+    lookupQuery,
+    isValidMobile,
+  );
 
   // Reset state when sheet closes
   useEffect(() => {

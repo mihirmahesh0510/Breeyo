@@ -7,5 +7,5 @@ export default function PetDetailRoute() {
 
   if (!petId) return null;
 
-  return <PatientDetailScreen petId={petId} />;
+  return <PatientDetailScreen />;
 }

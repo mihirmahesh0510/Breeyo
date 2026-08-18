@@ -40,13 +40,13 @@ export function OwnerDetailScreen() {
 
   const handleSelectPet = useCallback(
     (petId: string) => {
-      router.push(`/(app)/patients/${petId}` as any);
+      router.push(`/(app)/patient/${petId}` as any);
     },
     [router],
   );
 
   const handleAddPet = useCallback(() => {
-    router.push(`/(app)/register-patient?ownerId=${ownerId}` as any);
+    router.push(`/(app)/patient/register?ownerId=${ownerId}` as any);
   }, [router, ownerId]);
 
   if (isLoading) {
