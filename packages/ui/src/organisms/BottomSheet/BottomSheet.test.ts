@@ -13,7 +13,11 @@ describe('BottomSheet', () => {
   beforeEach(() => {
     vi.mocked(useTheme).mockReturnValue(FAKE_THEME as any);
     vi.mocked(Keyboard.dismiss).mockClear();
-    vi.mocked(useEffect).mockClear();
+    // Restore the shared setup.ts default (invoke immediately, ignore deps)
+    // in case a prior test in this file installed its own diffing
+    // implementation.
+    vi.mocked(useEffect).mockReset();
+    vi.mocked(useEffect).mockImplementation((fn: () => void) => fn());
   });
 
   it('dismisses a previously-focused keyboard when it becomes visible', async () => {
@@ -28,18 +32,32 @@ describe('BottomSheet', () => {
     expect(Keyboard.dismiss).not.toHaveBeenCalled();
   });
 
-  it('declares [visible] as the effect dependency, not every render', async () => {
+  it('does not re-fire Keyboard.dismiss on a re-render where visible stays true', async () => {
     // This is the regression the fix actually targets: Keyboard.dismiss()
-    // used to run in the render body, re-firing on every re-render while the
-    // sheet stayed visible (e.g. each keystroke inside the sheet's own
-    // inputs, which blurred the very field being typed into). The test-infra
-    // `useEffect` mock (packages/ui/tests/setup.ts) invokes the callback
-    // unconditionally regardless of the deps array — it does not reproduce
-    // React's own dependency-diffing — so the real guarantee this test can
-    // make is that the component *declares* the correct dependency array,
-    // which is what React's diffing acts on in production.
+    // used to run unconditionally in the render body, re-firing on every
+    // re-render while the sheet stayed visible -- e.g. each keystroke typed
+    // into the sheet's own inputs, which blurred the very field being typed
+    // into. The shared test-infra `useEffect` mock (packages/ui/tests/setup.ts)
+    // ignores the dependency array entirely (it just invokes the callback),
+    // so it can't by itself distinguish "gated on [visible]" from "runs every
+    // render". This test adds a real (if minimal) dependency-diffing
+    // implementation local to itself -- only re-invoking the effect when the
+    // deps array actually changed -- so it exercises the exact guarantee
+    // React's own diffing provides in production, not just an implementation
+    // detail of how the effect is declared.
+    let previousDeps: unknown[] | undefined;
+    vi.mocked(useEffect).mockImplementation((fn: () => void, deps?: unknown[]) => {
+      const changed =
+        !previousDeps || !deps || deps.length !== previousDeps.length ||
+        deps.some((d, i) => d !== previousDeps![i]);
+      previousDeps = deps;
+      if (changed) fn();
+    });
+
     const { BottomSheet } = await import('./BottomSheet');
-    BottomSheet({ visible: true, onDismiss: vi.fn(), children: null });
-    expect(vi.mocked(useEffect).mock.calls[0][1]).toEqual([true]);
+    BottomSheet({ visible: true, onDismiss: vi.fn(), children: null }); // first render
+    BottomSheet({ visible: true, onDismiss: vi.fn(), children: null }); // re-render, visible unchanged
+
+    expect(Keyboard.dismiss).toHaveBeenCalledTimes(1);
   });
 });
