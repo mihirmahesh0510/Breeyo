@@ -577,9 +577,10 @@ DPDP Act compliance — tracks user consent for data processing.
 
 #### tenantContext (`apps/api/src/middleware/tenant-context.ts`)
 - Reads `clinicId` from `request.user.activeClinicId`
+- Returns 400 if no clinic selected
+- Confirms the `ClinicMember` behind the session still exists and is active via `PermissionService.getUserPermissionsResult()`; returns 401 `SESSION_EXPIRED` if not (D-37, `01-CONTEXT.md`)
 - Creates tenant-scoped Prisma client via `createTenantClient(clinicId)`
 - Executes `SET LOCAL app.clinic_id = '{clinicId}'` for RLS enforcement
-- Returns 400 if no clinic selected
 
 #### authorize (`apps/api/src/middleware/authorize.ts`)
 - Factory function: `requirePermission(...permissions: string[])`
