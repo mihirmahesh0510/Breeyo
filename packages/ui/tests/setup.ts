@@ -1,6 +1,6 @@
 import { vi } from 'vitest';
 
-vi.mock('react', () => ({
+const reactMock = {
   createElement: vi.fn(),
   forwardRef: vi.fn((fn: any) => fn),
   memo: vi.fn((fn: any) => fn),
@@ -9,7 +9,13 @@ vi.mock('react', () => ({
   useMemo: vi.fn((fn: any) => fn()),
   useRef: vi.fn((init: any) => ({ current: init })),
   useEffect: vi.fn(),
-}));
+};
+
+// `import React from 'react'; React.createElement(...)` needs a default
+// export on the mock, not just named exports — components that only test
+// exported constants never hit this path, but ones that invoke the
+// component function itself (e.g. BottomSheet's Keyboard-dismiss test) do.
+vi.mock('react', () => ({ ...reactMock, default: reactMock }));
 
 vi.mock('react-native', () => ({
   Platform: { OS: 'android', select: vi.fn((obj: any) => obj.android) },
@@ -33,6 +39,7 @@ vi.mock('react-native', () => ({
   },
   Pressable: 'Pressable',
   TextInput: 'TextInput',
+  Keyboard: { dismiss: vi.fn() },
 }));
 
 const mockComponent = vi.fn(() => null);

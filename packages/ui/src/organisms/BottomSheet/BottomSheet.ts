@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, StyleSheet } from 'react-native';
+import { Keyboard, View, StyleSheet } from 'react-native';
 import { Text } from 'react-native-paper';
 import { useAppTheme } from '../../theme/types';
 
@@ -51,6 +51,12 @@ export function BottomSheet({
   if (!visible) {
     return null;
   }
+
+  // Dismiss any keyboard left open by a field underneath the sheet — without
+  // this, a previously-focused input keeps receiving keystrokes typed into
+  // the sheet's own fields (e.g. Inventory's category/unit picker corrupting
+  // the Selling Price field behind it).
+  Keyboard.dismiss();
 
   const styles = StyleSheet.create({
     backdrop: {
