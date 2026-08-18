@@ -119,6 +119,26 @@ function renderBookingConfirmation(v: Record<string, string>): string {
   );
 }
 
+/**
+ * Phase 8 (D-17, D-18): the ADVANCE touch names the pet, date and time and
+ * invites a KEEP/MOVE/CANCEL reply; the ON_DATE touch is a same-day nudge
+ * with no invitation (the ADVANCE touch already gave the owner a chance to
+ * act, and D-18 has no escalation logic re-asking on the day).
+ */
+function renderAppointmentReminder(v: Record<string, string>): string {
+  if (v.touch === 'ADVANCE') {
+    return (
+      `Hi ${v.owner_name}, this is a reminder that ${v.pet_name} has an appointment ` +
+      `on ${v.appointment_date} at ${v.appointment_time}. Reply KEEP to confirm, ` +
+      `MOVE to request a new time, or CANCEL to cancel.`
+    );
+  }
+  return (
+    `Hi ${v.owner_name}, just a reminder that ${v.pet_name}'s appointment is today ` +
+    `at ${v.appointment_time}.`
+  );
+}
+
 // ─── The registry ─────────────────────────────────────────────────────────
 
 export const WA_TEMPLATES: Readonly<Record<WaTemplateKey, WaTemplateDefinition>> = Object.freeze({
@@ -180,19 +200,38 @@ export const WA_TEMPLATES: Readonly<Record<WaTemplateKey, WaTemplateDefinition>>
     buttons: [{ id: 'booking:confirm', title: 'Got it, thanks' }],
     supportsMedia: false,
   },
+  appointment_reminder: {
+    key: 'appointment_reminder',
+    staffName: WA_TEMPLATE_STAFF_NAMES.appointment_reminder,
+    category: WA_TEMPLATE_CATEGORIES.appointment_reminder,
+    variables: WA_TEMPLATE_VARIABLE_SCHEMAS.appointment_reminder,
+    render: renderAppointmentReminder,
+    cloud: { name: 'appointment_reminder', languageCode: 'en', metaCategory: 'UTILITY' },
+    // Beta text-only prompt (D-15/D-16/D-33): the owner replies KEEP/MOVE/
+    // CANCEL as free text or via a real WhatsApp interactive button once the
+    // Cloud API adapter is live. Wiring per-appointment dynamic button ids
+    // (`appointment:keep:<this appointment's id>`) into this frozen
+    // registry is out of this plan's scope (see 08-10-SUMMARY.md) — the
+    // `appointment:keep|move|cancel:<uuid>` payload namespace is already
+    // reachable from `InboundRouterService.dispatchPayload` for any caller
+    // (a real button tap, or 08-15's manual QA simulation) that produces it.
+    supportsMedia: false,
+  },
 } satisfies Record<WaTemplateKey, WaTemplateDefinition>);
 
 /**
- * D-05: the ONLY map from an automated reminder kind to a template. Exactly
- * three entries — the automated sweep (07-11) can never reach
- * `payment_reminder` through this map, structurally, because it is not a
- * key in it.
+ * D-05: the ONLY map from an automated reminder kind to a template. The
+ * automated sweep (07-11) can never reach `payment_reminder` through this
+ * map, structurally, because it is not a key in it. Phase 8 (D-17, D-18)
+ * adds the fourth entry, `APPOINTMENT_REMINDER`, without touching D-05's
+ * guarantee for the other three.
  */
 export const WA_REMINDER_KIND_TO_TEMPLATE: Readonly<Record<WaReminderKind, WaTemplateKey>> =
   Object.freeze({
     FOLLOW_UP: 'follow_up_reminder',
     VACCINE_DUE: 'vaccine_due',
     DEWORMING_DUE: 'deworming_due',
+    APPOINTMENT_REMINDER: 'appointment_reminder',
   });
 
 export function getTemplate(key: WaTemplateKey): WaTemplateDefinition {

@@ -551,6 +551,6 @@ describe('isAdvanceEscalationSuppressedBySibling (D-28)', () => {
 
 describe('WA_REMINDER_LEAD_DAYS sanity (used by upsertTasksForSource)', () => {
   it('has the three automated reminder kinds with the D-01/D-02 lead days', () => {
-    expect(WA_REMINDER_LEAD_DAYS).toEqual({ FOLLOW_UP: 1, VACCINE_DUE: 3, DEWORMING_DUE: 3 });
+    expect(WA_REMINDER_LEAD_DAYS).toEqual({ FOLLOW_UP: 1, VACCINE_DUE: 3, DEWORMING_DUE: 3, APPOINTMENT_REMINDER: 1 });
   });
 });

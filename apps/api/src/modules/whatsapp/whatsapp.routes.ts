@@ -30,6 +30,27 @@
  *      resolve (see `prisma-rls.ts`'s `DbClient` doc comment); both are also
  *      shared with the reminder-sweep worker and the inbound booking
  *      handler, so they cannot be rebuilt per single clinicId anyway.
+ *
+ * Fix (closing 08-11-SUMMARY.md's disclosed "Known Gaps"): this file now
+ * ALSO constructs the Phase 8 scheduling collaborators
+ * (`AppointmentService`/`AvailabilityService`/`PushTriggerService`/
+ * `AppointmentReminderService`/`OwnerActionService`) that
+ * `InboundRouterDeps.appointmentActionHandler`, `BookingServiceDeps`'s D-12
+ * optional deps, and `ReminderSweepDeps.appointmentReminders` need — the
+ * exact same admin-scoped construction pattern as every other collaborator
+ * above (D-30 exemption: none of these run inside an authenticated HTTP
+ * request either). `scheduling.routes.ts` already constructs equivalent
+ * instances for its own module and could not wire them here because this
+ * file was outside that plan's declared scope; the two sets of instances are
+ * independent (no shared state beyond the same underlying Postgres rows).
+ * Also fixed as part of the same effort: `whatsapp.webhook.routes.ts` used
+ * to construct its OWN bare `InboundRouterService` with none of
+ * `bookingHandler`/`reminderHandler`/`appointmentActionHandler` injected —
+ * meaning a REAL Meta Cloud API delivery could never reach any of the three,
+ * unlike the simulator path below (`simulatorWorker`), which already used
+ * this file's fully-wired `inboundRouter`. That webhook plugin now receives
+ * this file's `inboundRouter`/`deliveryStatusService` as plugin options
+ * instead of building its own. See that file's own header comment.
  */
 
 import type { FastifyInstance } from 'fastify';
@@ -40,7 +61,7 @@ import { WhatsAppService } from './whatsapp.service.js';
 import { InboxService } from './inbox.service.js';
 import { DeliveryStatusService } from './delivery-status.service.js';
 import { InboundRouterService } from './inbound-router.service.js';
-import { createWhatsAppQueues } from './whatsapp-queue.js';
+import { createWhatsAppQueues, WA_JOB_OPTIONS } from './whatsapp-queue.js';
 import { createOutboundWorker } from './workers/outbound.worker.js';
 import { createSimulatorWorker } from './workers/simulator.worker.js';
 import { createWhatsAppController } from './whatsapp.controller.js';
@@ -58,6 +79,16 @@ import { PermissionService } from '../auth/permission.service.js';
 import { authenticate } from '../../middleware/authenticate.js';
 import { tenantContext } from '../../middleware/tenant-context.js';
 import { requirePermission } from '../../middleware/authorize.js';
+import { createNotificationBus } from '../notifications/notification-bus.js';
+import { AvailabilityRepository } from '../scheduling/availability.repository.js';
+import { AppointmentRepository } from '../scheduling/appointment.repository.js';
+import { AvailabilityService } from '../scheduling/availability.service.js';
+import { AppointmentService } from '../scheduling/appointment.service.js';
+import { PushTriggerService } from '../scheduling/push-trigger.service.js';
+import { AppointmentReminderService } from '../scheduling/reminder.service.js';
+import { OwnerActionService, createAppointmentActionHandler, type OwnerReplySender } from '../scheduling/owner-action.service.js';
+import { QueueRepository } from '../queue/queue.repository.js';
+import { QueueService } from '../queue/queue.service.js';
 
 export default async function whatsappRoutes(fastify: FastifyInstance): Promise<void> {
   const isTest = process.env.NODE_ENV === 'test';
@@ -116,6 +147,155 @@ export default async function whatsappRoutes(fastify: FastifyInstance): Promise<
   // — none of which run inside an authenticated HTTP request.
   const deliveryStatusService = new DeliveryStatusService(repository, fastify.prisma, fastify.io ?? null);
 
+  // ─── Phase 8 (08-10/08-11) scheduling collaborators, admin-scoped ─────────
+  // D-30 exemption: identical reasoning to whatsAppService/bookingService
+  // above — these feed OwnerActionService (webhook/simulator-triggered,
+  // never inside an authenticated request) and BookingService's D-12
+  // redirect (shared with bookingHandler, also webhook-triggered), so they
+  // cannot be rebuilt per single clinicId either. See the file header's
+  // "Fix" paragraph for why this construction lives here rather than only
+  // in scheduling.routes.ts.
+  const availabilityRepository = new AvailabilityRepository(fastify.prisma);
+  const availabilityService = new AvailabilityService(availabilityRepository, fastify.prisma, fastify.io ?? null);
+  const appointmentRepository = new AppointmentRepository(fastify.prisma);
+
+  // D-30 exemption: a second, independent `NotificationBus` — `scheduling.routes.ts` builds
+  // its own for the identical reason (`fastify.notificationBus` is not
+  // reachable from a sibling plugin registration; see that file's own
+  // `key-decisions` entry). Closed on this plugin's own `onClose` hook.
+  // Constructed here, ahead of `queueService` below, so that instance can be
+  // given `pushTriggers` directly (5a5e683's fix for `queue.routes.ts`
+  // applied at this composition root too, per T-08 finding
+  // queueservice-pushtriggers-partial-fix).
+  const schedulingNotificationBus = createNotificationBus(fastify.redis);
+  fastify.addHook('onClose', async () => {
+    await schedulingNotificationBus.close();
+  });
+  const pushTriggers = new PushTriggerService(schedulingNotificationBus, fastify.prisma, fastify.redis);
+
+  // D-30 exemption / D-28 fix: a SECOND, independent `QueueRepository`/`QueueService` pair,
+  // built the exact same way `scheduling.routes.ts` builds its own (raw
+  // `fastify.prisma` + `fastify.io`) — this file's `appointmentService`
+  // instance needs its own `onRescheduled`/`onCancelled` hooks below so an
+  // owner-initiated WhatsApp CANCEL/reschedule ALSO cleans up an already-
+  // created `EXPECTED` queue card, not only the scheduling-module HTTP
+  // endpoints. There is no shared state to duplicate here (both are
+  // stateless aside from the `io` reference).
+  const queueRepository = new QueueRepository(fastify.prisma);
+  const queueService = new QueueService(queueRepository, fastify.io ?? null, pushTriggers);
+
+  // D-17/D-18: the appointment ADVANCE/ON_DATE reminder-discovery source,
+  // reusing this file's own `repository`/`reminderTaskRepository` instances
+  // rather than constructing new ones — there is already exactly one of
+  // each in this composition root. Passed to `createReminderSweepWorker`
+  // below (closing 08-11-SUMMARY.md's Known Gap #3), to `OwnerActionService`
+  // (its own CANCEL branch needs `cancelPendingForAppointment`), and now
+  // (D-28 fix) to `appointmentService`'s own `onRescheduled`/`onCancelled`
+  // hooks below — moved up ahead of that construction so both hooks can
+  // reference it directly instead of via a forward closure reference.
+  const appointmentReminderService = new AppointmentReminderService(
+    reminderTaskRepository,
+    repository,
+    appointmentRepository,
+  );
+
+  // D-30 exemption: same reasoning as availabilityRepository/appointmentRepository
+  // above -- no DB-level RLS on these tables, so fastify.prisma is injected
+  // directly.
+  const appointmentService = new AppointmentService(
+    appointmentRepository,
+    availabilityService,
+    fastify.prisma,
+    fastify.io ?? null,
+    // onRescheduled/onCancelled — D-28 fix, mirroring `scheduling.routes.ts`'s
+    // identical hook shape exactly: D-28 queue cleanup (unconditional) +
+    // D-10 reminder cancellation (also unconditional here, since unlike
+    // `scheduling.routes.ts` this file's `appointmentReminderService` is not
+    // behind a Phase-7-availability guard — it is already constructed
+    // unconditionally above), each independently try/caught so one failing
+    // never blocks the other or the underlying reschedule/cancel.
+    async (appointmentId: string, clinicId: string) => {
+      try {
+        await queueService.removeExpectedEntryForAppointment(clinicId, appointmentId);
+      } catch (err) {
+        fastify.log.error({ err, appointmentId, clinicId }, 'whatsapp: queue EXPECTED cleanup failed on reschedule');
+      }
+      try {
+        await appointmentReminderService.cancelPendingForAppointment(appointmentId, clinicId);
+      } catch (err) {
+        fastify.log.error({ err, appointmentId, clinicId }, 'whatsapp: reminder cancellation failed on reschedule');
+      }
+    },
+    // onCancelled — identical shape to onRescheduled above. This is the hook
+    // `OwnerActionService.handleOwnerAction`'s CANCEL branch actually
+    // exercises (via `appointmentService.cancelAppointment`), which is the
+    // gap this fix closes: previously this file's `appointmentService` had
+    // no hooks at all, so an owner-initiated WhatsApp CANCEL never removed
+    // the appointment's `EXPECTED` queue card.
+    async (appointmentId: string, clinicId: string) => {
+      try {
+        await queueService.removeExpectedEntryForAppointment(clinicId, appointmentId);
+      } catch (err) {
+        fastify.log.error({ err, appointmentId, clinicId }, 'whatsapp: queue EXPECTED cleanup failed on cancel');
+      }
+      try {
+        await appointmentReminderService.cancelPendingForAppointment(appointmentId, clinicId);
+      } catch (err) {
+        fastify.log.error({ err, appointmentId, clinicId }, 'whatsapp: reminder cancellation failed on cancel');
+      }
+    },
+  );
+
+  // D-15, D-16, D-33: the owner KEEP/MOVE/CANCEL bridge. `ownerReplySender`
+  // adapts `OwnerReplySender` onto THIS file's own existing send path
+  // (`repository.createOutboundMessage` + `touchThread` + `queues.outbound`)
+  // — the exact mechanism `booking-inbound.handler.ts`'s own `sendText`
+  // already uses — rather than opening a second `Queue` instance the way
+  // `scheduling.routes.ts` has to (that file has no `queues.outbound` of its
+  // own to reuse).
+  const ownerReplySender: OwnerReplySender = {
+    // D-30 exemption: runs from the owner-action bridge below, not inside
+    // an HTTP request -- no request.db exists here either.
+    async send(clinicId: string, ownerId: string, body: string): Promise<void> {
+      const thread = await fastify.prisma.whatsAppThread.findFirst({ where: { clinicId, ownerId } });
+      if (!thread) {
+        fastify.log.warn({ clinicId, ownerId }, 'whatsapp: no WhatsApp thread found for owner reply, skipping send');
+        return;
+      }
+      const message = await repository.createOutboundMessage(clinicId, {
+        threadId: thread.id,
+        channel: 'SIMULATOR',
+        body,
+        contextType: 'BOOKING',
+      });
+      await repository.touchThread(clinicId, thread.id, {
+        lastMessageAt: new Date(),
+        lastMessagePreview: body.slice(0, 120),
+        lastContextType: 'BOOKING',
+      });
+      await queues.outbound.add(
+        'send',
+        { messageId: (message as { id: string }).id },
+        { jobId: `send-${(message as { id: string }).id}`, ...WA_JOB_OPTIONS },
+      );
+    },
+  };
+
+  // D-30 exemption: same reasoning as ownerReplySender.send above.
+  const ownerActionService = new OwnerActionService(
+    appointmentRepository,
+    appointmentService,
+    appointmentReminderService,
+    pushTriggers,
+    fastify.prisma,
+    ownerReplySender,
+  );
+
+  // The REAL AppointmentActionHandler (08-10 Task 3), replacing
+  // InboundRouterService's no-op default — closes 08-11-SUMMARY.md's Known
+  // Gap #1.
+  const appointmentActionHandler = createAppointmentActionHandler({ ownerActionService });
+
   // D-30 exemption: feeds bookingHandler (webhook-triggered) below. The
   // controller's own `getSlotsHandler` uses `buildSlotService` instead (see
   // the per-request builders, below the workers).
@@ -129,6 +309,11 @@ export default async function whatsappRoutes(fastify: FastifyInstance): Promise<
     repository: bookingRepository,
     prisma: fastify.prisma,
     whatsAppService,
+    // D-12: the real-appointment redirect on WhatsApp booking confirmation
+    // — closes 08-11-SUMMARY.md's Known Gap #2. Both are the exact `Pick<>`
+    // shapes `BookingServiceDeps` declares.
+    appointmentService,
+    availability: availabilityService,
   });
 
   // The REAL BookingInboundHandler (07-10), replacing InboundRouterService's
@@ -157,6 +342,7 @@ export default async function whatsappRoutes(fastify: FastifyInstance): Promise<
     deliveryStatusService,
     bookingHandler,
     reminderHandler,
+    appointmentActionHandler,
   });
 
   // ─── Workers (self-guard on NODE_ENV === 'test', Pitfall 7) ───────────────
@@ -198,6 +384,10 @@ export default async function whatsappRoutes(fastify: FastifyInstance): Promise<
     whatsAppService,
     outboundQueue: queues.outbound,
     redis: fastify.redis,
+    // D-17/D-18: closes 08-11-SUMMARY.md's Known Gap #3 — the appointment
+    // ADVANCE/ON_DATE reminder-discovery pass now actually runs on the same
+    // daily sweep cadence as Phase 7's own three reminder sources.
+    appointmentReminders: appointmentReminderService,
   });
   fastify.addHook('onClose', async () => {
     await outboundWorker?.close();
@@ -315,8 +505,13 @@ export default async function whatsappRoutes(fastify: FastifyInstance): Promise<
   // ─── Webhook plugin (07-09) — encapsulated child registration so its
   // scoped raw-body content-type parser stays confined to the two webhook
   // routes and never leaks onto the routes registered above (see that
-  // file's own header comment on why this must stay a separate plugin). ────
-  await fastify.register(whatsappWebhookRoutes);
+  // file's own header comment on why this must stay a separate plugin).
+  // Passes THIS file's fully-wired `inboundRouter`/`deliveryStatusService`
+  // as plugin options — fixed alongside the scheduling wiring above, since
+  // this plugin used to construct its own bare-bones `InboundRouterService`
+  // with none of bookingHandler/reminderHandler/appointmentActionHandler
+  // injected (see that file's own header comment). ───────────────────────
+  await fastify.register(whatsappWebhookRoutes, { inboundRouter, deliveryStatusService });
 
   fastify.log.info('WhatsApp routes registered');
 }

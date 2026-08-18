@@ -12,6 +12,7 @@ export const WA_TEMPLATE_KEYS: readonly WaTemplateKey[] = [
   'vaccine_due',
   'deworming_due',
   'booking_confirmation',
+  'appointment_reminder',
 ] as const;
 
 /**
@@ -25,6 +26,7 @@ export const WA_TEMPLATE_STAFF_NAMES: Readonly<Record<WaTemplateKey, string>> = 
   vaccine_due: 'Vaccine due',
   deworming_due: 'Deworming due',
   booking_confirmation: 'Booking confirmation',
+  appointment_reminder: 'Appointment reminder',
 } as const;
 
 /**
@@ -40,6 +42,9 @@ export const WA_TEMPLATE_CATEGORIES: Readonly<Record<WaTemplateKey, WaTemplateCa
   vaccine_due: 'REMINDER',
   deworming_due: 'REMINDER',
   booking_confirmation: 'TRANSACTIONAL',
+  // D-17/D-18: an appointment reminder is silenceable by the same global
+  // STOP opt-out as every other reminder-category template.
+  appointment_reminder: 'REMINDER',
 } as const;
 
 /**
@@ -95,6 +100,13 @@ export const WA_REMINDER_LEAD_DAYS = {
   FOLLOW_UP: 1,
   VACCINE_DUE: 3,
   DEWORMING_DUE: 3,
+  // Phase 8 (D-18): unused by `upsertTasksForSource` (no `ReminderSourceRow`
+  // is ever produced with this kind -- `AppointmentReminderService` computes
+  // its own ADVANCE/ON_DATE days independently, see reminder.service.ts's
+  // file header). Present only so `WaReminderKind`-indexed lookups
+  // (`reminder-task.service.ts`'s `upsertTasksForSource`) stay exhaustive
+  // now that `WaReminderKind` has a fourth value.
+  APPOINTMENT_REMINDER: 1,
 } as const;
 
 /**
@@ -183,7 +195,17 @@ const UUID_SEGMENT = '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4
  * D-21: `booking:pet:<uuid>` is also allowed — before offering slots, a
  * multi-pet owner is asked which pet the appointment is for, and their
  * reply is a row payload in this same `booking:<action>:<uuid>` shape.
+ *
+ * Phase 8 plan 08-10 Task 3 (D-15, D-16, D-33): `appointment:keep|move|
+ * cancel:<uuid>` is the inbound payload namespace 07-RESEARCH already
+ * reserved for the owner KEEP/MOVE/CANCEL bridge (unlike `booking:cancel|
+ * move:*`, an *appointment* (not a provisional booking) IS ownable/
+ * actionable by the owner directly — `OwnerActionService` enforces the
+ * thread-owner check, not the absence of a payload grammar entry). Added by
+ * Task 3, together with `InboundRouterService`'s new dispatch branch --
+ * NOT by Task 1 (which only adds the template), so this stays paired with
+ * the code that actually consumes it.
  */
 export const WA_BUTTON_PAYLOAD_PATTERN = new RegExp(
-  `^(?:book:start|STOP|BOOK|booking:(?:confirm|slot|pet):${UUID_SEGMENT})$`,
+  `^(?:book:start|STOP|BOOK|booking:(?:confirm|slot|pet):${UUID_SEGMENT}|appointment:(?:keep|move|cancel):${UUID_SEGMENT})$`,
 );

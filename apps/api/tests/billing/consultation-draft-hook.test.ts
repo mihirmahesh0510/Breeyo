@@ -110,6 +110,8 @@ async function consultationWithQueueEntry() {
       treatingVetId: clinicianUserId,
       status: 'WAITING',
       position: 1,
+      // Phase 8: queuePriorityAt has no schema default and is NOT NULL.
+      queuePriorityAt: new Date(),
     },
   });
 

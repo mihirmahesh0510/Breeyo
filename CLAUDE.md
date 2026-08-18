@@ -8,7 +8,7 @@ Breeyo is a mobile-first veterinary clinic management platform for solo and smal
 
 - **API:** Fastify 5 + Prisma ORM + PostgreSQL (RLS multi-tenancy)
 - **Mobile:** Expo SDK 52 (React Native) + Expo Router
-- **Web:** Next.js (Phase 9)
+- **Web:** Next.js
 - **UI:** React Native Paper v5 (MD3), atomic design (atoms/molecules/organisms)
 - **Cache/Queue:** Redis + BullMQ
 - **Validation:** Zod schemas shared via `@breeyo/validators`
@@ -20,12 +20,12 @@ Breeyo is a mobile-first veterinary clinic management platform for solo and smal
 
 | Package | Path | Description |
 |---------|------|-------------|
-| `@breeyo/api` | `apps/api` | Fastify backend (auth, clinic, notifications, patient, queue) |
+| `@breeyo/api` | `apps/api` | Fastify backend (auth, clinic, notifications, patient, queue, scheduling, and more) |
 | `@breeyo/mobile` | `apps/mobile` | Expo React Native app |
 | `@breeyo/web` | `apps/web` | Next.js web dashboard |
 | `@breeyo/ui` | `packages/ui` | Design system (26 components) |
-| `@breeyo/validators` | `packages/validators` | Shared Zod schemas (auth, clinic, patient, queue) |
-| `@breeyo/types` | `packages/types` | Shared TypeScript types (auth, patient, queue, notifications) |
+| `@breeyo/validators` | `packages/validators` | Shared Zod schemas (auth, clinic, patient, queue, scheduling, and more) |
+| `@breeyo/types` | `packages/types` | Shared TypeScript types (auth, patient, queue, notifications, scheduling, and more) |
 | `@breeyo/config` | `packages/config` | Shared tsconfig bases |
 
 ## Development Commands
@@ -109,6 +109,4 @@ pnpm --filter @breeyo/ui test
 
 ## Build Phases
 
-Completed phases: **01** (Foundation & Auth), **02** (UI/UX Design System), **03** (Patient Registration & Walk-in Queue)
-Current phase: **04 - EMR & Clinical Records**
-See `ROADMAP.md` for full phase plan.
+See `.planning/ROADMAP.md` for the phase list and current status, and `.planning/STATE.md` for what's active right now.

@@ -8,6 +8,7 @@ import type {
   CallNextParams,
   GetQueueBoardParams,
 } from './queue.types.js';
+import type { PushTriggerService } from '../scheduling/push-trigger.service.js';
 
 /** Default estimated consult time in seconds (15 min) when insufficient data */
 const DEFAULT_CONSULT_SECONDS = 900;
@@ -16,6 +17,10 @@ export class QueueService {
   constructor(
     private readonly repository: QueueRepository,
     private readonly io: Server | null = null,
+    // Phase 8 (D-27 trigger 3): optional so every pre-existing
+    // `new QueueService(repository, io)` call site and unit test keeps
+    // compiling and behaving unchanged when omitted.
+    private readonly pushTriggers: PushTriggerService | null = null,
   ) {}
 
   /**
@@ -44,20 +49,6 @@ export class QueueService {
       throw error;
     }
 
-    // Check for existing active entry (WAITING or IN_CONSULT)
-    const activeEntry = await this.repository.findTodayActiveEntryForPet(
-      params.clinicId,
-      parsed.petId,
-      today,
-    );
-
-    if (activeEntry) {
-      const error = new Error('Pet is already in today\'s queue') as Error & { statusCode: number; code: string };
-      error.statusCode = 409;
-      error.code = 'ALREADY_IN_QUEUE';
-      throw error;
-    }
-
     // D-40: Same-day re-check-in detection
     if (!params.reCheckIn) {
       const doneEntry = await this.repository.findTodayDoneEntryForPet(
@@ -77,21 +68,59 @@ export class QueueService {
     // Assign position: waiting count + 1
     const waitingCount = await this.repository.countWaiting(params.clinicId, today);
 
-    const entry = await this.repository.createEntry({
-      clinicId: params.clinicId,
-      petId: parsed.petId,
-      checkedInBy: params.userId,
-      status: 'WAITING',
-      position: waitingCount + 1,
-      isEmergency: parsed.isEmergency,
-      visitReason: parsed.visitReason,
-    });
+    // The active-entry check and the create run under one advisory lock
+    // (queue-checkin-handoff-race fix) -- without it, this check-in could
+    // race the sweep's appointment handoff pass for the same pet's now-due
+    // appointment, both observing "no active entry" before either commits.
+    const { entry, existingActive } = await this.repository.createEntryIfNoneActive(
+      params.clinicId,
+      parsed.petId,
+      today,
+      {
+        clinicId: params.clinicId,
+        petId: parsed.petId,
+        checkedInBy: params.userId,
+        status: 'WAITING',
+        position: waitingCount + 1,
+        isEmergency: parsed.isEmergency,
+        visitReason: parsed.visitReason,
+        // D-08/D-10: for an organic walk-in, priority time and physical
+        // check-in time are the same instant.
+        queuePriorityAt: new Date(),
+      },
+    );
+
+    if (existingActive || !entry) {
+      const error = new Error('Pet is already in today\'s queue') as Error & { statusCode: number; code: string };
+      error.statusCode = 409;
+      error.code = 'ALREADY_IN_QUEUE';
+      throw error;
+    }
 
     // Broadcast to clinic room
     this.broadcast(params.clinicId, SOCKET_EVENTS.PATIENT_CHECKED_IN, {
       entry,
       timestamp: Date.now(),
     });
+
+    // D-27 trigger 3: check whether this check-in just crossed (or is still
+    // past) the backlog threshold. Wrapped in try/catch -- a notification
+    // failure must never fail the check-in that triggered it (RESEARCH
+    // Pitfall 5 / T-08-45).
+    if (this.pushTriggers) {
+      try {
+        const oldestWaiting = await this.repository.findOldestWaiting(params.clinicId, today);
+        const longestWaitMinutes = oldestWaiting
+          ? Math.max(0, Math.round((Date.now() - oldestWaiting.queuePriorityAt.getTime()) / 60000))
+          : 0;
+        // This check-in's own entry is already WAITING (created above), so
+        // the post-check-in waiting count is waitingCount + 1.
+        await this.pushTriggers.notifyQueueBacklog(params.clinicId, waitingCount + 1, longestWaitMinutes);
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error('QueueService.checkIn: backlog push trigger failed', err);
+      }
+    }
 
     return entry;
   }
@@ -130,6 +159,24 @@ export class QueueService {
     if (parsed.status === QueueStatus.IN_CONSULT) {
       updateData.treatingVetId = params.userId;
       updateData.calledAt = new Date();
+    }
+
+    if (parsed.status === QueueStatus.WAITING) {
+      // D-10/D-11: the only edge into WAITING is EXPECTED -> WAITING (a
+      // sweep-created row whose checkedInAt is still its creation instant,
+      // not the patient's physical arrival time), so stamp checkedInAt with
+      // the real arrival instant here. Do NOT touch queuePriorityAt: it
+      // stays pinned to the slot time set at creation, which is exactly
+      // what makes D-10 hold for an early check-in (D-11). "Fixing" it to
+      // the arrival time here would silently delete the ordering feature.
+      updateData.checkedInAt = new Date();
+
+      // The entry entered the board as EXPECTED with position 0 (Task 3);
+      // now that it is physically in the walk-in line, give it a real
+      // position at the back of today's WAITING queue.
+      const today = QueueRepository.getTodayIST();
+      const waitingCount = await this.repository.countWaiting(entry.clinicId, today);
+      updateData.position = waitingCount + 1;
     }
 
     if (parsed.status === QueueStatus.DONE || parsed.status === QueueStatus.NO_SHOW) {
@@ -196,6 +243,9 @@ export class QueueService {
     }));
 
     return {
+      // D-08/D-13: passed through untransformed -- an EXPECTED entry hasn't
+      // checked in yet, so it has no computed position or estimated wait.
+      expected: board.expected,
       inConsult: board.inConsult,
       waiting: waitingWithEstimates,
       done: board.done,
@@ -210,6 +260,26 @@ export class QueueService {
    */
   async archiveOldEntries(clinicId: string) {
     return this.repository.archiveEntries(QueueRepository.getTodayIST(), clinicId);
+  }
+
+  /**
+   * D-28: removes a stale EXPECTED queue entry for an appointment that was
+   * just cancelled or rescheduled, so the board updates immediately instead
+   * of waiting for the grace-window sweep to flip it to NO_SHOW. Called by
+   * plan 08-07's cancel/reschedule handlers and plan 08-11's wiring. A
+   * queue entry that has already progressed past EXPECTED (the patient
+   * physically arrived through some other path) is never touched -- when
+   * the repository deletes nothing, this does nothing further, no error.
+   */
+  async removeExpectedEntryForAppointment(clinicId: string, appointmentId: string): Promise<void> {
+    const deletedCount = await this.repository.deleteExpectedEntryForAppointment(clinicId, appointmentId);
+
+    if (deletedCount > 0) {
+      this.broadcast(clinicId, SOCKET_EVENTS.QUEUE_UPDATED, {
+        appointmentId,
+        timestamp: Date.now(),
+      });
+    }
   }
 
   /**

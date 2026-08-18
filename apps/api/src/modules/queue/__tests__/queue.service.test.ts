@@ -4,7 +4,7 @@ import type { QueueRepository } from '../queue.repository.js';
 import type { Server } from 'socket.io';
 
 function createMockRepository(): QueueRepository {
-  return {
+  const repo = {
     // D-30: checkIn verifies the pet belongs to the calling clinic first.
     // Default to "found" so the existing check-in cases exercise the paths
     // they were written for; the not-found path is asserted explicitly below.
@@ -19,7 +19,22 @@ function createMockRepository(): QueueRepository {
     getQueueBoard: vi.fn(),
     getAverageConsultDuration: vi.fn(),
     archiveEntries: vi.fn(),
-  } as unknown as QueueRepository;
+    deleteExpectedEntryForAppointment: vi.fn(),
+  };
+  // queue-checkin-handoff-race fix: `QueueService.checkIn` now calls this
+  // single method instead of composing `findTodayActiveEntryForPet` then
+  // `createEntry` itself -- the mock re-composes them the same way the real
+  // (lock-protected) implementation does, so every test above that stubs
+  // those two mocks directly keeps working unchanged.
+  const createEntryIfNoneActive = vi.fn(async (clinicId: string, petId: string, today: Date, data: unknown) => {
+    const existingActive = await repo.findTodayActiveEntryForPet(clinicId, petId, today);
+    if (existingActive) {
+      return { entry: null, existingActive };
+    }
+    const entry = await repo.createEntry(data as never);
+    return { entry, existingActive: null };
+  });
+  return { ...repo, createEntryIfNoneActive } as unknown as QueueRepository;
 }
 
 function createMockIO(): Server {
@@ -33,6 +48,8 @@ const CLINIC_ID = '00000000-0000-0000-0000-000000000001';
 const USER_ID = '00000000-0000-0000-0000-000000000010';
 const PET_ID = '00000000-0000-0000-0000-000000000003';
 const ENTRY_ID = '00000000-0000-0000-0000-000000000100';
+
+const APPOINTMENT_ID = '00000000-0000-0000-0000-000000000200';
 
 const OWNER_ID = '00000000-0000-0000-0000-000000000002';
 const now = new Date();
@@ -83,6 +100,9 @@ const mockEntry = {
   completedAt: null,
   archivedAt: null,
   updatedAt: now,
+  // Phase 8 (D-08, D-10): no schema default, NOT NULL.
+  queuePriorityAt: now,
+  appointmentId: null,
   pet: mockPet,
 };
 
@@ -171,6 +191,25 @@ describe('QueueService', () => {
           petId: PET_ID,
         }),
       ).rejects.toThrow('Pet is already in today\'s queue');
+    });
+
+    it('rejects with ALREADY_IN_QUEUE when the pet has an EXPECTED entry today (D-08, D-13)', async () => {
+      // The front desk should check the existing EXPECTED entry in, not
+      // create a second walk-in entry for the same pet.
+      vi.mocked(repo.findTodayActiveEntryForPet).mockResolvedValue({
+        ...mockEntry,
+        status: 'EXPECTED',
+      } as any);
+
+      await expect(
+        service.checkIn({
+          clinicId: CLINIC_ID,
+          userId: USER_ID,
+          petId: PET_ID,
+        }),
+      ).rejects.toMatchObject({ statusCode: 409, code: 'ALREADY_IN_QUEUE' });
+
+      expect(repo.createEntry).not.toHaveBeenCalled();
     });
 
     it('rejects with PET_NOT_FOUND when the pet is not in the calling clinic (D-30)', async () => {
@@ -410,6 +449,120 @@ describe('QueueService', () => {
         }),
       ).rejects.toThrow('Queue entry not found');
     });
+
+    it('rejects transition from EXPECTED to IN_CONSULT (T-08-13)', async () => {
+      vi.mocked(repo.findEntryById).mockResolvedValue({ ...mockEntry, status: 'EXPECTED' } as any);
+
+      await expect(
+        service.updateStatus({
+          clinicId: CLINIC_ID,
+          entryId: ENTRY_ID,
+          status: 'IN_CONSULT' as any,
+          userId: USER_ID,
+        }),
+      ).rejects.toMatchObject({ statusCode: 400, code: 'INVALID_TRANSITION' });
+    });
+
+    it('rejects transition from WAITING back to EXPECTED (T-08-13)', async () => {
+      vi.mocked(repo.findEntryById).mockResolvedValue({ ...mockEntry, status: 'WAITING' } as any);
+
+      await expect(
+        service.updateStatus({
+          clinicId: CLINIC_ID,
+          entryId: ENTRY_ID,
+          status: 'EXPECTED' as any,
+          userId: USER_ID,
+        }),
+      ).rejects.toMatchObject({ statusCode: 400, code: 'INVALID_TRANSITION' });
+    });
+
+    it('accepts EXPECTED -> WAITING, sets checkedInAt/position and broadcasts (D-10, D-11)', async () => {
+      vi.mocked(repo.findEntryById).mockResolvedValue({
+        ...mockEntry,
+        status: 'EXPECTED',
+        position: 0,
+      } as any);
+      vi.mocked(repo.countWaiting).mockResolvedValue(2);
+      vi.mocked(repo.updateEntry).mockResolvedValue({
+        ...mockEntry,
+        status: 'WAITING',
+        position: 3,
+      } as any);
+
+      await service.updateStatus({
+        clinicId: CLINIC_ID,
+        entryId: ENTRY_ID,
+        status: 'WAITING' as any,
+        userId: USER_ID,
+      });
+
+      expect(repo.updateEntry).toHaveBeenCalledWith(
+        ENTRY_ID,
+        expect.objectContaining({
+          status: 'WAITING',
+          checkedInAt: expect.any(Date),
+          position: 3,
+        }),
+      );
+      expect(io.to).toHaveBeenCalledWith(`clinic:${CLINIC_ID}`);
+    });
+
+    it('accepts EXPECTED -> NO_SHOW and sets completedAt (D-09 grace expiry)', async () => {
+      vi.mocked(repo.findEntryById).mockResolvedValue({ ...mockEntry, status: 'EXPECTED' } as any);
+      vi.mocked(repo.updateEntry).mockResolvedValue({
+        ...mockEntry,
+        status: 'NO_SHOW',
+      } as any);
+
+      await service.updateStatus({
+        clinicId: CLINIC_ID,
+        entryId: ENTRY_ID,
+        status: 'NO_SHOW' as any,
+        userId: USER_ID,
+      });
+
+      expect(repo.updateEntry).toHaveBeenCalledWith(
+        ENTRY_ID,
+        expect.objectContaining({
+          status: 'NO_SHOW',
+          completedAt: expect.any(Date),
+        }),
+      );
+    });
+  });
+
+  describe('archiveOldEntries', () => {
+    it('delegates to repository.archiveEntries scoped to the clinic (EXPECTED excluded, D-09)', async () => {
+      vi.mocked(repo.archiveEntries).mockResolvedValue({ count: 2 } as any);
+
+      await service.archiveOldEntries(CLINIC_ID);
+
+      // The repository is the sole author of the archived-status list and
+      // deliberately never includes EXPECTED (see queue.repository.ts);
+      // this asserts the service scopes the sweep to the calling clinic.
+      expect(repo.archiveEntries).toHaveBeenCalledWith(expect.any(Date), CLINIC_ID);
+    });
+  });
+
+  describe('removeExpectedEntryForAppointment (D-28)', () => {
+    it('deletes an EXPECTED entry for the appointment and broadcasts', async () => {
+      vi.mocked(repo.deleteExpectedEntryForAppointment).mockResolvedValue(1);
+
+      await service.removeExpectedEntryForAppointment(CLINIC_ID, APPOINTMENT_ID);
+
+      expect(repo.deleteExpectedEntryForAppointment).toHaveBeenCalledWith(CLINIC_ID, APPOINTMENT_ID);
+      expect(io.to).toHaveBeenCalledWith(`clinic:${CLINIC_ID}`);
+    });
+
+    it('does nothing when no EXPECTED entry exists for the appointment (already WAITING/IN_CONSULT)', async () => {
+      vi.mocked(repo.deleteExpectedEntryForAppointment).mockResolvedValue(0);
+      vi.mocked(io.to).mockClear();
+
+      await service.removeExpectedEntryForAppointment(CLINIC_ID, APPOINTMENT_ID);
+
+      expect(repo.deleteExpectedEntryForAppointment).toHaveBeenCalledWith(CLINIC_ID, APPOINTMENT_ID);
+      expect(io.to).not.toHaveBeenCalled();
+    });
   });
 
   describe('callNext', () => {
@@ -496,6 +649,25 @@ describe('QueueService', () => {
       expect(result.inConsult).toHaveLength(1);
       expect(result.waiting).toHaveLength(1);
       expect(result.done).toHaveLength(1);
+    });
+
+    it('returns four groups including expected (D-08, D-13)', async () => {
+      const expectedEntry = { ...mockEntry, status: 'EXPECTED', position: 0 };
+      vi.mocked(repo.getQueueBoard).mockResolvedValue({
+        expected: [expectedEntry],
+        inConsult: [],
+        waiting: [],
+        done: [],
+      } as any);
+      vi.mocked(repo.getAverageConsultDuration).mockResolvedValue(600);
+
+      const result = await service.getQueueBoard({ clinicId: CLINIC_ID });
+
+      expect(result).toHaveProperty('expected');
+      expect(result).toHaveProperty('inConsult');
+      expect(result).toHaveProperty('waiting');
+      expect(result).toHaveProperty('done');
+      expect(result.expected).toEqual([expectedEntry]);
     });
 
     it('computes dynamic positions for waiting entries', async () => {

@@ -7,7 +7,7 @@ export const checkInSchema = z.object({
 });
 
 export const queueStatusUpdateSchema = z.object({
-  status: z.enum(['WAITING', 'IN_CONSULT', 'DONE', 'NO_SHOW']),
+  status: z.enum(['EXPECTED', 'WAITING', 'IN_CONSULT', 'DONE', 'NO_SHOW']),
 });
 
 export type CheckInInput = z.infer<typeof checkInSchema>;

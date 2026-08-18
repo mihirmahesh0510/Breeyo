@@ -6,27 +6,23 @@ import type { QueueBoard as QueueBoardType, QueueEntryWithPet } from '@breeyo/ty
 import { QueueCardItem } from './QueueCardItem';
 import { QueueSectionHeader } from './QueueSectionHeader';
 import { useQueueUIStore } from '../store/queueUIStore';
+import {
+  buildQueueSections,
+  isQueueBoardEmpty,
+  getItemPositionInfo,
+  getSectionHeaderProps,
+  getNextStatus,
+  type SectionData,
+} from '../lib/queue-board-utils';
 
 interface QueueBoardProps {
   data: QueueBoardType;
   disabled: boolean;
-  onCardPress?: (petId: string) => void;
+  onCardPress?: (item: QueueEntryWithPet) => void;
   onStatusChange?: (entryId: string, newStatus: QueueStatus) => void;
   onNoShow?: (entryId: string) => void;
   onRefresh?: () => void;
   refreshing?: boolean;
-}
-
-interface SectionData {
-  title: string;
-  status: QueueStatus;
-  data: QueueEntryWithPet[];
-}
-
-function getNextStatus(current: QueueStatus): QueueStatus | null {
-  if (current === QueueStatus.WAITING) return QueueStatus.IN_CONSULT;
-  if (current === QueueStatus.IN_CONSULT) return QueueStatus.DONE;
-  return null;
 }
 
 export function QueueBoard({
@@ -40,31 +36,10 @@ export function QueueBoard({
 }: QueueBoardProps) {
   const { showDoneSection, toggleDoneSection } = useQueueUIStore();
 
-  const sections = useMemo<SectionData[]>(() => {
-    const result: SectionData[] = [];
-    if (data.inConsult.length > 0) {
-      result.push({
-        title: 'In Consult',
-        status: QueueStatus.IN_CONSULT,
-        data: data.inConsult,
-      });
-    }
-    if (data.waiting.length > 0) {
-      result.push({
-        title: 'Waiting',
-        status: QueueStatus.WAITING,
-        data: data.waiting,
-      });
-    }
-    if (data.done.length > 0) {
-      result.push({
-        title: 'Done',
-        status: QueueStatus.DONE,
-        data: showDoneSection ? data.done : [],
-      });
-    }
-    return result;
-  }, [data, showDoneSection]);
+  const sections = useMemo<SectionData[]>(
+    () => buildQueueSections(data, showDoneSection),
+    [data, showDoneSection],
+  );
 
   const handleStatusPress = useCallback(
     (entry: QueueEntryWithPet) => {
@@ -90,12 +65,7 @@ export function QueueBoard({
 
   const renderItem = useCallback(
     ({ item, index, section }: { item: QueueEntryWithPet; index: number; section: SectionData }) => {
-      const position =
-        section.status === QueueStatus.WAITING ? index + 1 : undefined;
-      const estimatedWait =
-        section.status === QueueStatus.WAITING && position
-          ? `${position * 10} min`
-          : undefined;
+      const { position, estimatedWait } = getItemPositionInfo(section, index);
 
       return (
         <QueueCardItem
@@ -103,7 +73,7 @@ export function QueueBoard({
           position={position}
           estimatedWait={estimatedWait}
           disabled={disabled}
-          onPress={() => onCardPress?.(item.pet.id)}
+          onPress={() => onCardPress?.(item)}
           onStatusPress={() => handleStatusPress(item)}
           onLongPress={() => handleLongPress(item)}
         />
@@ -114,35 +84,19 @@ export function QueueBoard({
 
   const renderSectionHeader = useCallback(
     ({ section }: { section: SectionData }) => {
-      const count =
-        section.status === QueueStatus.DONE
-          ? data.done.length
-          : section.data.length;
-
-      return (
-        <QueueSectionHeader
-          title={section.title}
-          count={count}
-          status={section.status}
-          collapsible={section.status === QueueStatus.DONE}
-          collapsed={
-            section.status === QueueStatus.DONE ? !showDoneSection : undefined
-          }
-          onToggleCollapse={
-            section.status === QueueStatus.DONE
-              ? toggleDoneSection
-              : undefined
-          }
-        />
+      const headerProps = getSectionHeaderProps(
+        section,
+        data.done.length,
+        showDoneSection,
+        toggleDoneSection,
       );
+
+      return <QueueSectionHeader {...headerProps} />;
     },
     [data.done.length, showDoneSection, toggleDoneSection],
   );
 
-  const isEmpty =
-    data.inConsult.length === 0 &&
-    data.waiting.length === 0 &&
-    data.done.length === 0;
+  const isEmpty = isQueueBoardEmpty(data);
 
   if (isEmpty) {
     return (

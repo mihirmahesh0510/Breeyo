@@ -52,6 +52,7 @@ import { templateKeyForKind } from './reminder-task.service.js';
 import type { ReminderSourceRepository, ReminderSourceRow } from './reminder-source.repository.js';
 import type { ReminderTaskRepository } from './reminder-task.repository.js';
 import type { ReminderTaskService } from './reminder-task.service.js';
+import type { AppointmentReminderService } from '../../scheduling/reminder.service.js';
 
 export const WA_REMINDER_SWEEP_JOB = 'whatsapp-reminder-sweep';
 
@@ -62,6 +63,10 @@ export interface SweepReport {
   escalated: number;
   capped: number;
   requeued: number;
+  /** Plan 08-10 (D-17, D-18): appointment ADVANCE/ON_DATE tasks upserted
+   * this run. `undefined` when no `appointmentReminders` dependency is
+   * configured (see `ReminderSweepDeps.appointmentReminders`). */
+  appointmentRemindersCreated?: number;
 }
 
 /** The shape `findDispatchable`/`findEscalatable` return: a
@@ -104,6 +109,18 @@ export interface ReminderSweepDeps {
   >;
   whatsAppService: { sendTemplate(input: SendTemplateInput, actor: WaActor): Promise<{ messageId: string }> };
   outboundQueue: WaOutboundQueueLike;
+  /**
+   * Plan 08-10 (D-17, D-18): the fourth reminder discovery source, riding
+   * this same daily sweep rather than the 5-minute scheduling sweep from
+   * plan 08-09. Optional so Phase 7's own pre-Phase-8 tests (constructed
+   * without this) keep exercising the original three-source sweep
+   * unmodified; production wiring (plan 08-11) supplies the real instance.
+   * Unlike `sourceRepo`'s three `find*Due` methods (per-clinic, called from
+   * `processClinic`), `discoverAppointmentReminders` runs ONCE per overall
+   * sweep -- it has no `clinicId` parameter, matching
+   * `AppointmentRepository`'s worker-only sweep-query convention.
+   */
+  appointmentReminders?: Pick<AppointmentReminderService, 'discoverAppointmentReminders'>;
 }
 
 /** Pitfall 2: Redis-coordinated, fires once across N ECS tasks — never an
@@ -327,6 +344,21 @@ export async function runReminderSweep(deps: ReminderSweepDeps): Promise<SweepRe
       // every other clinic (midnight-archive.ts's log-don't-throw
       // precedent).
       console.error(`Reminder sweep failed for clinic ${clinic.id}:`, err);
+    }
+  }
+
+  // Plan 08-10 (D-17, D-18): the appointment ADVANCE/ON_DATE discovery
+  // source, run once across every clinic (see `ReminderSweepDeps.appointmentReminders`'s
+  // doc comment for why this is not inside the per-clinic loop above). Wrapped
+  // in its own try/catch for the same reason every per-clinic block is: a
+  // failure here must never abort the dispatch/escalate/requeue phases below.
+  if (deps.appointmentReminders) {
+    try {
+      const appointmentReport = await deps.appointmentReminders.discoverAppointmentReminders(new Date());
+      report.appointmentRemindersCreated =
+        appointmentReport.advanceCreated + appointmentReport.onDateCreated;
+    } catch (err) {
+      console.error('Appointment reminder discovery failed:', err);
     }
   }
 

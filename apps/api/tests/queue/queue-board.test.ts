@@ -179,6 +179,53 @@ describe('Queue Board', () => {
       expect(board.done).toHaveLength(0);
     });
 
+    it('returns an expected group ordered by queuePriorityAt (D-08, D-13)', async () => {
+      const entry = await registerAndCheckIn(accessToken);
+      const petForOwner = await prisma.pet.findUniqueOrThrow({ where: { id: entry.petId } });
+
+      // Two more pets get EXPECTED entries, later slot inserted first, to
+      // prove ordering isn't insertion order.
+      const petLater = await prisma.pet.create({
+        data: { clinicId, ownerId: petForOwner.ownerId, name: 'Later Pet', species: 'CAT' },
+      });
+      const petEarlier = await prisma.pet.create({
+        data: { clinicId, ownerId: petForOwner.ownerId, name: 'Earlier Pet', species: 'DOG' },
+      });
+
+      const later = await prisma.queueEntry.create({
+        data: {
+          clinicId,
+          petId: petLater.id,
+          checkedInBy: entry.checkedInBy,
+          status: 'EXPECTED',
+          position: 0,
+          isEmergency: false,
+          queuePriorityAt: new Date(Date.now() + 60 * 60 * 1000),
+        },
+      });
+      const earlier = await prisma.queueEntry.create({
+        data: {
+          clinicId,
+          petId: petEarlier.id,
+          checkedInBy: entry.checkedInBy,
+          status: 'EXPECTED',
+          position: 0,
+          isEmergency: false,
+          queuePriorityAt: new Date(Date.now() + 30 * 60 * 1000),
+        },
+      });
+
+      const board = await getBoard(accessToken);
+
+      expect(board).toHaveProperty('expected');
+      expect(board.expected).toHaveLength(2);
+      expect(board.expected[0].id).toBe(earlier.id);
+      expect(board.expected[1].id).toBe(later.id);
+      // The pre-existing WAITING entry from the walk-in is untouched.
+      expect(board.waiting).toHaveLength(1);
+      expect(board.waiting[0].id).toBe(entry.id);
+    });
+
     it('includes pet and owner info on each entry', async () => {
       await registerAndCheckIn(accessToken);
 
@@ -200,6 +247,41 @@ describe('Queue Board', () => {
   });
 
   describe('queue position and estimated wait (QUE-03)', () => {
+    it('EXPECTED entries have no position and do not shift the WAITING position sequence (D-08)', async () => {
+      const owner = await prisma.petOwner.create({
+        data: { clinicId, mobile: `+91${Math.floor(7000000000 + Math.random() * 2999999999)}`, name: 'Sched Owner' },
+      });
+      const scheduledPet = await prisma.pet.create({
+        data: { clinicId, ownerId: owner.id, name: 'Scheduled Pet', species: 'DOG' },
+      });
+
+      const expectedEntry = await prisma.queueEntry.create({
+        data: {
+          clinicId,
+          petId: scheduledPet.id,
+          checkedInBy: (await registerAndCheckIn(accessToken)).checkedInBy,
+          status: 'EXPECTED',
+          position: 0,
+          isEmergency: false,
+          queuePriorityAt: new Date(Date.now() + 60 * 60 * 1000),
+        },
+      });
+
+      await registerAndCheckIn(accessToken);
+
+      const board = await getBoard(accessToken);
+
+      expect(board.expected).toHaveLength(1);
+      expect(board.expected[0].id).toBe(expectedEntry.id);
+      expect(board.expected[0].position).toBe(0);
+      // Two organic walk-ins (the one that generated checkedInBy, plus the
+      // second one) are still positions 1 and 2 -- the EXPECTED row never
+      // entered the WAITING position sequence.
+      expect(board.waiting).toHaveLength(2);
+      expect(board.waiting[0].computedPosition).toBe(1);
+      expect(board.waiting[1].computedPosition).toBe(2);
+    });
+
     it('computes position dynamically based on WAITING entries ahead', async () => {
       // Check in 3 patients
       await registerAndCheckIn(accessToken);

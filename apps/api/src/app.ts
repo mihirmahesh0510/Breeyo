@@ -99,6 +99,15 @@ export async function buildApp(
   // plan landed.
   await app.register(import('./modules/whatsapp/whatsapp.routes.js'), { prefix: '/api/v1' });
 
+  // Phase 8 (plan 08-11): the scheduling module's composition root --
+  // registered after socketPlugin (broadcasts need app.io) and after
+  // notifications (the D-27 push triggers mirror notification.routes.ts's
+  // NotificationBus construction pattern). Also depends on plan 08-04's
+  // queue module and, optionally at runtime, on the WhatsApp module's
+  // reminder/owner-action pieces from plan 08-10 (guarded inside the plugin
+  // itself, per 08-11-SUMMARY.md).
+  await app.register(import('./modules/scheduling/scheduling.routes.js'), { prefix: '/api/v1' });
+
   // Phase 4: EMR & Clinical Records
   await app.register(import('./modules/emr/emr.routes.js'), { prefix: '/api/v1' });
   await app.register(import('./modules/drug/drug.routes.js'), { prefix: '/api/v1' });

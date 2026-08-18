@@ -82,7 +82,29 @@ describe('WA_TEMPLATE_VARIABLE_SCHEMAS', () => {
     for (const key of WA_TEMPLATE_KEYS) {
       expect(WA_TEMPLATE_VARIABLE_SCHEMAS[key]).toBeDefined();
     }
-    expect(Object.keys(WA_TEMPLATE_VARIABLE_SCHEMAS)).toHaveLength(6);
+    expect(Object.keys(WA_TEMPLATE_VARIABLE_SCHEMAS)).toHaveLength(7);
+  });
+
+  it('appointment_reminder accepts the ADVANCE/ON_DATE variable set (Phase 8, D-17/D-18)', () => {
+    const result = WA_TEMPLATE_VARIABLE_SCHEMAS.appointment_reminder.safeParse({
+      owner_name: 'Asha',
+      pet_name: 'Rocky',
+      appointment_date: '20 Aug 2026',
+      appointment_time: '10:00 AM',
+      touch: 'ADVANCE',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('appointment_reminder rejects a touch value outside ADVANCE/ON_DATE', () => {
+    const result = WA_TEMPLATE_VARIABLE_SCHEMAS.appointment_reminder.safeParse({
+      owner_name: 'Asha',
+      pet_name: 'Rocky',
+      appointment_date: '20 Aug 2026',
+      appointment_time: '10:00 AM',
+      touch: 'ESCALATED',
+    });
+    expect(result.success).toBe(false);
   });
 
   it('invoice_delivery accepts the link-only variable set (D-18)', () => {

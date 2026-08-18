@@ -1,0 +1,21 @@
+-- Phase 8 plan 08-10 (D-17, D-18): a fourth WaReminderKind value so
+-- appointment reminders ride Phase 7's existing WhatsAppReminderTask
+-- pipeline instead of a parallel messaging mechanism.
+--
+-- Deviation from the plan's literal directory name
+-- (20260813140000_add_appointment_reminder_kind): that timestamp sorts
+-- BEFORE 20260815000000_add_whatsapp_communication, the migration that
+-- actually CREATEs the "WaReminderKind" type. Applying migrations in
+-- filename order, "ALTER TYPE" at 20260813140000 would run against a type
+-- that does not exist yet (confirmed by running `prisma migrate deploy`
+-- against a disposable database: "type \"WaReminderKind\" does not
+-- exist"). Renamed to 20260816000000, after every migration that exists
+-- on disk at execution time, so it applies once the type is real.
+--
+-- Postgres cannot reference a newly added enum value in the same
+-- transaction that adds it. This migration file contains ONLY the
+-- ALTER TYPE statement (no other statement in this file references
+-- 'APPOINTMENT_REMINDER'), so no transaction split is required --
+-- confirmed by inspection, mirroring the same check plan 08-03's
+-- migration performed for QueueEntryStatus's 'EXPECTED' value.
+ALTER TYPE "WaReminderKind" ADD VALUE 'APPOINTMENT_REMINDER';

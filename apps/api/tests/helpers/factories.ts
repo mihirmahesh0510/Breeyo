@@ -835,6 +835,182 @@ export async function createTestWebhookEvent(
   });
 }
 
+// ─── Phase 8 scheduling factories (plan 08-03) ──────────────────────────
+//
+// SCH-01, SCH-02. clinicId is always the first argument, matching every
+// other factory in this file; further required FKs follow the order the
+// underlying Prisma model's foreign keys appear in schema.prisma, then a
+// trailing overrides = {} object.
+
+export async function createTestVetAvailabilityTemplate(
+  clinicId: string,
+  vetId: string,
+  overrides: Partial<{
+    weekday: number;
+    isClosed: boolean;
+    openMinutes: number | null;
+    closeMinutes: number | null;
+  }> = {},
+) {
+  return prisma.vetAvailabilityTemplate.create({
+    data: {
+      clinicId,
+      vetId,
+      weekday: overrides.weekday ?? 1,
+      isClosed: overrides.isClosed ?? false,
+      // 9:00-18:00, matching getDefaultHours() in
+      // apps/mobile/src/lib/wizard-utils.ts.
+      openMinutes: overrides.openMinutes === undefined ? 540 : overrides.openMinutes,
+      closeMinutes: overrides.closeMinutes === undefined ? 1080 : overrides.closeMinutes,
+    },
+  });
+}
+
+/**
+ * Creates all seven weekday rows for a vet in one call: Sunday closed,
+ * Monday-Saturday open 540-1080 (9:00-18:00), mirroring the mobile setup
+ * wizard's `getDefaultHours()`. Most availability tests need a whole week,
+ * not one day.
+ */
+export async function createTestVetAvailabilityWeek(
+  clinicId: string,
+  vetId: string,
+  overrides: Partial<{
+    openMinutes: number;
+    closeMinutes: number;
+  }> = {},
+) {
+  const openMinutes = overrides.openMinutes ?? 540;
+  const closeMinutes = overrides.closeMinutes ?? 1080;
+
+  const rows = [];
+  for (let weekday = 0; weekday <= 6; weekday++) {
+    const isSunday = weekday === 0;
+    rows.push(
+      await createTestVetAvailabilityTemplate(clinicId, vetId, {
+        weekday,
+        isClosed: isSunday,
+        openMinutes: isSunday ? null : openMinutes,
+        closeMinutes: isSunday ? null : closeMinutes,
+      }),
+    );
+  }
+  return rows;
+}
+
+export async function createTestAvailabilityOverride(
+  clinicId: string,
+  vetId: string,
+  date: Date,
+  overrides: Partial<{
+    isClosed: boolean;
+    openMinutes: number | null;
+    closeMinutes: number | null;
+    reason: string;
+  }> = {},
+) {
+  return prisma.availabilityOverride.create({
+    data: {
+      clinicId,
+      vetId,
+      date,
+      isClosed: overrides.isClosed ?? true,
+      openMinutes: overrides.openMinutes ?? null,
+      closeMinutes: overrides.closeMinutes ?? null,
+      reason: overrides.reason,
+    },
+  });
+}
+
+export async function createTestBlockedPeriod(
+  clinicId: string,
+  vetId: string,
+  date: Date,
+  createdById: string,
+  overrides: Partial<{
+    startMinutes: number;
+    endMinutes: number;
+    reason: 'LUNCH' | 'BREAK' | 'PERSONAL' | 'OFF_SITE' | 'MEETING' | 'OTHER';
+    reasonText: string;
+  }> = {},
+) {
+  return prisma.blockedPeriod.create({
+    data: {
+      clinicId,
+      vetId,
+      date,
+      startMinutes: overrides.startMinutes ?? 780,
+      endMinutes: overrides.endMinutes ?? 840,
+      reason: overrides.reason || 'LUNCH',
+      reasonText: overrides.reasonText,
+      createdById,
+    },
+  });
+}
+
+/** Next whole hour, so a default `scheduledFor` never collides with "now". */
+function nextWholeHour(): Date {
+  const d = new Date();
+  d.setMinutes(0, 0, 0);
+  d.setHours(d.getHours() + 1);
+  return d;
+}
+
+export async function createTestAppointment(
+  clinicId: string,
+  vetId: string,
+  ownerId: string,
+  petIds: string[],
+  createdById: string,
+  overrides: Partial<{
+    status: 'SCHEDULED' | 'CHECKED_IN' | 'COMPLETED' | 'CANCELLED' | 'NO_SHOW';
+    source: 'STAFF' | 'WHATSAPP';
+    durationMinutes: number;
+    scheduledFor: Date;
+    serviceCatalogId: string | null;
+    notes: string;
+  }> = {},
+) {
+  return prisma.appointment.create({
+    data: {
+      clinicId,
+      vetId,
+      ownerId,
+      createdById,
+      status: overrides.status || 'SCHEDULED',
+      source: overrides.source || 'STAFF',
+      durationMinutes: overrides.durationMinutes ?? 15,
+      scheduledFor: overrides.scheduledFor || nextWholeHour(),
+      serviceCatalogId: overrides.serviceCatalogId ?? null,
+      notes: overrides.notes,
+      // D-21: petIds is an array so multi-pet is the default-supported
+      // shape, not an afterthought.
+      pets: { create: petIds.map((petId) => ({ clinicId, petId })) },
+    },
+    include: { pets: true },
+  });
+}
+
+/** D-02: a ServiceCatalog row with an explicit durationMinutes, so
+ * duration-resolution tests have a fixture. */
+export async function createTestServiceForBooking(
+  clinicId: string,
+  overrides: Partial<{
+    name: string;
+    price: number;
+    durationMinutes: number;
+  }> = {},
+) {
+  return prisma.serviceCatalog.create({
+    data: {
+      clinicId,
+      name: overrides.name || 'Vaccination',
+      price: overrides.price ?? 50000,
+      durationMinutes: overrides.durationMinutes ?? 15,
+    },
+  });
+}
+
 export async function createTestTokens(
   app: any,
   userId: string,
@@ -912,6 +1088,20 @@ export async function cleanupTestData() {
     await tx.consultationDraft.deleteMany();
     await tx.consultationLock.deleteMany();
     await tx.consultation.deleteMany();
+
+    // Phase 8 scheduling tables (plan 08-03) must go BEFORE queueEntry, pet,
+    // petOwner, serviceCatalog and clinic below: appointment_pets references
+    // appointments/pets/queue_entries, appointments references pet_owners
+    // and service_catalog with ON DELETE RESTRICT, and
+    // vet_availability_templates/availability_overrides/blocked_periods
+    // reference clinics/users with ON DELETE RESTRICT. Leaving any of these
+    // behind repeats exactly the Phase 3/4 failure mode documented below.
+    await tx.appointmentPet.deleteMany();
+    await tx.appointment.deleteMany();
+    await tx.blockedPeriod.deleteMany();
+    await tx.availabilityOverride.deleteMany();
+    await tx.vetAvailabilityTemplate.deleteMany();
+
     await tx.queueEntry.deleteMany();
     await tx.consentRecord.deleteMany();
     await tx.serviceCatalog.deleteMany();

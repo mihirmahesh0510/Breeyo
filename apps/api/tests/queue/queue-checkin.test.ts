@@ -9,6 +9,7 @@ import {
   prisma,
 } from '../helpers/factories.js';
 import type { FastifyInstance } from 'fastify';
+import { QUEUE_BACKLOG_THRESHOLD, SCHEDULING_TIMEZONE } from '@breeyo/types';
 
 let app: FastifyInstance;
 let token: string;
@@ -177,6 +178,30 @@ describe('Queue Check-in (QUE-01)', () => {
     expect(body.error.code).toBe('ALREADY_IN_QUEUE');
   });
 
+  it('rejects check-in when the pet has an EXPECTED entry today (D-08, D-13)', async () => {
+    const patient = await createTestPatient(app, token);
+    const petId = patient.pet.id;
+
+    // Simulates what plan 08-09's sweep will do: create an EXPECTED row
+    // ahead of the patient's arrival, stamped with the slot time.
+    await prisma.queueEntry.create({
+      data: {
+        clinicId,
+        petId,
+        checkedInBy: userId,
+        status: 'EXPECTED',
+        position: 0,
+        isEmergency: false,
+        queuePriorityAt: new Date(),
+      },
+    });
+
+    const res = await checkIn(token, { petId });
+
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error.code).toBe('ALREADY_IN_QUEUE');
+  });
+
   it('allows re-check-in if pet was already DONE today with confirmation flag (D-40)', async () => {
     const patient = await createTestPatient(app, token);
     const petId = patient.pet.id;
@@ -215,5 +240,70 @@ describe('Queue Check-in (QUE-01)', () => {
     const body = reCheckConfirmedRes.json();
     expect(body.data.petId).toBe(petId);
     expect(body.data.status).toBe('WAITING');
+  });
+});
+
+describe('Queue backlog push trigger wiring (D-27 trigger 3, SCH-05)', () => {
+  beforeEach(async () => {
+    // Unlike the describe block above, this one does NOT also run the raw
+    // `queueEntry`/`pet`/`petOwner` deletes ahead of `cleanupTestData()` --
+    // `cleanupTestData()` already deletes those in FK-safe order (Phase 8's
+    // `appointmentPet`/`appointment` before `pet`/`petOwner`, per its own
+    // comment), and running the raw deletes first can 500 on
+    // `appointment_pets_pet_id_fkey` if any other suite left appointment
+    // fixtures referencing these pets.
+    await cleanupTestData();
+
+    const setup = await setupAuthenticatedUser();
+    token = setup.token;
+    userId = setup.user.id;
+    clinicId = setup.clinic.id;
+  });
+
+  /**
+   * `queue.routes.ts` builds the LIVE `QueueService` behind the real
+   * `POST /api/v1/queue/check-in` endpoint. This exercises that real HTTP
+   * route (not a hand-wired `QueueService` instance, which `tests/scheduling/
+   * push-triggers.test.ts` already covers for the service logic in
+   * isolation) end to end: check in enough distinct pets to cross
+   * `QUEUE_BACKLOG_THRESHOLD`, then assert the Redis debounce key
+   * `PushTriggerService.notifyQueueBacklog` sets actually got created. If
+   * `queue.routes.ts` ever regresses back to `new QueueService(new
+   * QueueRepository(db), fastify.io)` (the `pushTriggers` third argument
+   * omitted, always defaulting to `null`, exactly the bug this test was
+   * added to catch), the `if (this.pushTriggers)` guard in
+   * `queue.service.ts#checkIn` silently no-ops and this key never appears --
+   * this test would go red on that regression, while every assertion above
+   * in this file (which only checks the HTTP response body) would stay
+   * green.
+   */
+  it('checking in enough patients through the real endpoint creates the Redis backlog debounce key', async () => {
+    const todayIST = new Date().toLocaleDateString('en-CA', { timeZone: SCHEDULING_TIMEZONE });
+    const backlogKey = `scheduling:backlog-alert:${clinicId}:${todayIST}`;
+
+    // Sanity: key must not pre-exist so a later `.get` truly proves this
+    // check-in run is what created it.
+    expect(await app.redis.get(backlogKey)).toBeNull();
+
+    for (let i = 0; i < QUEUE_BACKLOG_THRESHOLD; i += 1) {
+      const patient = await createTestPatient(app, token);
+      const res = await checkIn(token, { petId: patient.pet.id });
+      expect(res.statusCode).toBe(201);
+    }
+
+    expect(await app.redis.get(backlogKey)).toBe('1');
+  });
+
+  it('does not create the debounce key when the waiting count stays below the threshold', async () => {
+    const todayIST = new Date().toLocaleDateString('en-CA', { timeZone: SCHEDULING_TIMEZONE });
+    const backlogKey = `scheduling:backlog-alert:${clinicId}:${todayIST}`;
+
+    for (let i = 0; i < QUEUE_BACKLOG_THRESHOLD - 1; i += 1) {
+      const patient = await createTestPatient(app, token);
+      const res = await checkIn(token, { petId: patient.pet.id });
+      expect(res.statusCode).toBe(201);
+    }
+
+    expect(await app.redis.get(backlogKey)).toBeNull();
   });
 });

@@ -1,4 +1,6 @@
 export { colors } from './colors';
+export { vetColors, vetColorForIndex, vetColorForId } from './vetColors';
+export type { VetColor } from './vetColors';
 export { typography } from './typography';
 export { spacing } from './spacing';
 export { elevation } from './elevation';

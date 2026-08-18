@@ -13,3 +13,4 @@ postgres_data
 
 # Ephemeral tooling state (local only)
 .claude-flow/
+.gstack/

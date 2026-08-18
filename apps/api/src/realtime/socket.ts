@@ -2,6 +2,7 @@ import fp from 'fastify-plugin';
 import { Server } from 'socket.io';
 import { createAdapter } from '@socket.io/redis-adapter';
 import type { FastifyInstance } from 'fastify';
+import type { Redis } from 'ioredis';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -19,10 +20,12 @@ export default fp(async function socketPlugin(fastify: FastifyInstance) {
   });
 
   // Redis adapter for horizontal scaling (optional in dev/test)
+  let pubClient: Redis | undefined;
+  let subClient: Redis | undefined;
   if (fastify.redis) {
     try {
-      const pubClient = fastify.redis.duplicate();
-      const subClient = fastify.redis.duplicate();
+      pubClient = fastify.redis.duplicate();
+      subClient = fastify.redis.duplicate();
       io.adapter(createAdapter(pubClient, subClient));
     } catch {
       // Redis adapter is optional — fall back to in-memory for dev/test
@@ -75,5 +78,6 @@ export default fp(async function socketPlugin(fastify: FastifyInstance) {
 
   fastify.addHook('onClose', async () => {
     io.close();
+    await Promise.all([pubClient?.quit().catch(() => undefined), subClient?.quit().catch(() => undefined)]);
   });
 });

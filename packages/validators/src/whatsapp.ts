@@ -78,6 +78,21 @@ const bookingConfirmationVariablesSchema = z.object({
 });
 
 /**
+ * Phase 8 (D-17, D-18): the appointment ADVANCE/ON_DATE two-touch reminder.
+ * `touch` selects which of the two copies `render` below emits — the
+ * ADVANCE touch invites a KEEP/MOVE/CANCEL reply, the ON_DATE touch does
+ * not (D-33's owner replies are still accepted on either touch by the
+ * inbound router, which does not care which touch a reply arrived on).
+ */
+const appointmentReminderVariablesSchema = z.object({
+  owner_name: z.string().max(NAME_MAX),
+  pet_name: z.string().max(NAME_MAX),
+  appointment_date: z.string().max(DATE_MAX),
+  appointment_time: z.string().max(DATE_MAX),
+  touch: z.enum(['ADVANCE', 'ON_DATE']),
+});
+
+/**
  * WHA-02, WHA-05: the single source of truth for every template's variable
  * shape. A param mismatch is a `400` at this boundary rather than a Cloud
  * API `132000` failure later (07-RESEARCH § Pattern 3).
@@ -89,6 +104,7 @@ export const WA_TEMPLATE_VARIABLE_SCHEMAS: Readonly<Record<WaTemplateKey, z.ZodO
   vaccine_due: vaccineDueVariablesSchema,
   deworming_due: dewormingDueVariablesSchema,
   booking_confirmation: bookingConfirmationVariablesSchema,
+  appointment_reminder: appointmentReminderVariablesSchema,
 };
 
 // ─── Request schemas ─────────────────────────────────────────────────────────

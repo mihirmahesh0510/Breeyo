@@ -318,6 +318,9 @@ describe('PatientService', () => {
             completedAt: new Date('2024-01-15'),
             archivedAt: null,
             updatedAt: new Date('2024-01-15'),
+            // Phase 8 (D-08, D-10): no schema default, NOT NULL.
+            queuePriorityAt: new Date('2024-01-15'),
+            appointmentId: null,
           },
         ],
       });

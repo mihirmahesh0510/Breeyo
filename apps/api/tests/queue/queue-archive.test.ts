@@ -189,6 +189,48 @@ describe('Midnight Queue Archive (D-23)', () => {
     expect(preserved?.status).toBe('IN_CONSULT');
   });
 
+  it('does not archive an unresolved EXPECTED entry from a previous day, but does archive a WAITING one (D-09)', async () => {
+    const { accessToken, clinic } = await setupTestContext();
+    const waitingEntry = await registerAndCheckIn(accessToken);
+
+    const owner = await prisma.petOwner.create({
+      data: { clinicId: clinic.id, mobile: `+91${Math.floor(7000000000 + Math.random() * 2999999999)}`, name: 'Sched Owner' },
+    });
+    const scheduledPet = await prisma.pet.create({
+      data: { clinicId: clinic.id, ownerId: owner.id, name: 'Scheduled Pet', species: 'DOG' },
+    });
+    const expectedEntry = await prisma.queueEntry.create({
+      data: {
+        clinicId: clinic.id,
+        petId: scheduledPet.id,
+        checkedInBy: waitingEntry.checkedInBy,
+        status: 'EXPECTED',
+        position: 0,
+        isEmergency: false,
+        queuePriorityAt: new Date(),
+      },
+    });
+
+    // Backdate both to yesterday.
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    await prisma.queueEntry.update({ where: { id: waitingEntry.id }, data: { checkedInAt: yesterday } });
+    await prisma.queueEntry.update({ where: { id: expectedEntry.id }, data: { checkedInAt: yesterday } });
+
+    await app.inject({
+      method: 'POST',
+      url: '/api/v1/queue/archive',
+      headers: { authorization: `Bearer ${accessToken}` },
+    });
+
+    const archivedWaiting = await prisma.queueEntry.findUnique({ where: { id: waitingEntry.id } });
+    const untouchedExpected = await prisma.queueEntry.findUnique({ where: { id: expectedEntry.id } });
+
+    expect(archivedWaiting?.archivedAt).not.toBeNull();
+    expect(untouchedExpected?.archivedAt).toBeNull();
+    expect(untouchedExpected?.status).toBe('EXPECTED');
+  });
+
   it('does not archive entries from current day', async () => {
     const { accessToken } = await setupTestContext();
     const entry = await registerAndCheckIn(accessToken);

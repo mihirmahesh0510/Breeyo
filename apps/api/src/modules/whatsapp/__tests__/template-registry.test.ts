@@ -16,9 +16,9 @@ import {
 } from '../template-registry.js';
 
 describe('template-registry (WHA-02/WHA-05, D-05, D-10, D-18, D-23)', () => {
-  it('has exactly six entries, one per WA_TEMPLATE_KEYS value', () => {
+  it('has exactly seven entries, one per WA_TEMPLATE_KEYS value (Phase 8 adds appointment_reminder, D-17/D-18)', () => {
     const keys = Object.keys(WA_TEMPLATES);
-    expect(keys).toHaveLength(6);
+    expect(keys).toHaveLength(7);
     for (const key of WA_TEMPLATE_KEYS) {
       expect(WA_TEMPLATES[key]).toBeDefined();
       expect(WA_TEMPLATES[key].key).toBe(key);
@@ -36,6 +36,7 @@ describe('template-registry (WHA-02/WHA-05, D-05, D-10, D-18, D-23)', () => {
     expect(WA_TEMPLATES.vaccine_due.staffName).toBe('Vaccine due');
     expect(WA_TEMPLATES.deworming_due.staffName).toBe('Deworming due');
     expect(WA_TEMPLATES.booking_confirmation.staffName).toBe('Booking confirmation');
+    expect(WA_TEMPLATES.appointment_reminder.staffName).toBe('Appointment reminder');
   });
 
   it("each entry's category equals the corresponding WA_TEMPLATE_CATEGORIES value (D-10)", () => {
@@ -44,7 +45,7 @@ describe('template-registry (WHA-02/WHA-05, D-05, D-10, D-18, D-23)', () => {
     }
   });
 
-  it('each entry has cloud metadata with a name, languageCode "en" and metaCategory UTILITY for all six', () => {
+  it('each entry has cloud metadata with a name, languageCode "en" and metaCategory UTILITY for every template', () => {
     for (const key of WA_TEMPLATE_KEYS) {
       const def = WA_TEMPLATES[key];
       expect(typeof def.cloud.name).toBe('string');
@@ -147,6 +148,13 @@ describe('template-registry (WHA-02/WHA-05, D-05, D-10, D-18, D-23)', () => {
           slot_label: 'Tomorrow, 10:00 AM - 10:30 AM',
           booking_reference: 'BK-202608-1234',
         },
+        appointment_reminder: {
+          owner_name: 'Asha Kapoor',
+          pet_name: 'Rocky',
+          appointment_date: '20 Aug 2026',
+          appointment_time: '10:00 AM',
+          touch: 'ADVANCE',
+        },
       };
 
       for (const key of WA_TEMPLATE_KEYS) {
@@ -216,14 +224,15 @@ describe('template-registry (WHA-02/WHA-05, D-05, D-10, D-18, D-23)', () => {
     }
   });
 
-  it('WA_REMINDER_KIND_TO_TEMPLATE maps only the three automated reminder kinds, never payment_reminder (D-05)', () => {
+  it('WA_REMINDER_KIND_TO_TEMPLATE maps only the four automated reminder kinds, never payment_reminder (D-05, D-17/D-18)', () => {
     const expected: Record<WaReminderKind, WaTemplateKey> = {
       FOLLOW_UP: 'follow_up_reminder',
       VACCINE_DUE: 'vaccine_due',
       DEWORMING_DUE: 'deworming_due',
+      APPOINTMENT_REMINDER: 'appointment_reminder',
     };
     expect(WA_REMINDER_KIND_TO_TEMPLATE).toEqual(expected);
-    expect(Object.keys(WA_REMINDER_KIND_TO_TEMPLATE)).toHaveLength(3);
+    expect(Object.keys(WA_REMINDER_KIND_TO_TEMPLATE)).toHaveLength(4);
     expect(Object.values(WA_REMINDER_KIND_TO_TEMPLATE)).not.toContain('payment_reminder');
   });
 

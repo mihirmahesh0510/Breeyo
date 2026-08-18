@@ -4,13 +4,17 @@
  * A8, D-09).
  *
  * There is deliberately no NLP anywhere in this file. Text is matched
- * against an exact two-keyword allowlist (`STOP`, `BOOK`); button and list
- * payloads are matched against `WA_BUTTON_PAYLOAD_PATTERN`, a structural
- * allowlist that has no entry for the cancel or move booking actions (D-09)
- * — moving or cancelling a confirmed booking is staff-only, via an
- * authenticated API endpoint, and is not even expressible as an inbound
- * payload. Anything outside both allowlists is recorded as a plain inbound
- * message and dispatches to no handler.
+ * against an exact keyword allowlist (`STOP`, `BOOK`, and — D-15/D-16/D-33 —
+ * `KEEP`/`MOVE`/`CANCEL`, the exact words `template-registry.ts`'s
+ * `appointment_reminder` template instructs the owner to send); button and
+ * list payloads are matched against `WA_BUTTON_PAYLOAD_PATTERN`, a
+ * structural allowlist that has no entry for the cancel or move BOOKING
+ * actions (D-09) — moving or cancelling a confirmed WhatsApp *booking* is
+ * staff-only, via an authenticated API endpoint, and is not even expressible
+ * as an inbound payload. That restriction is unrelated to the KEEP/MOVE/
+ * CANCEL *appointment*-reminder reply below, which is owner-self-service by
+ * design (see `owner-action.service.ts`). Anything outside both allowlists
+ * is recorded as a plain inbound message and dispatches to no handler.
  *
  * The booking flow (07-10) and the reminder task service (07-11) land in the
  * NEXT wave, after this plan. `BookingInboundHandler` and
@@ -29,6 +33,17 @@ import type { WaInboundEvent } from './providers/wa-provider.port.js';
 
 /** The 24h customer-service-window duration (07-RESEARCH § Pattern 1 / D-16). */
 const SERVICE_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * D-15/D-16/D-33: the exact `WhatsAppReminderTask.sourceType`/`kind` values
+ * `reminder.service.ts`'s own (unexported) `SOURCE_TYPE`/`REMINDER_KIND`
+ * constants write when it creates an `APPOINTMENT_REMINDER` task — mirrored
+ * here (this file stays wave-independent, per the header, with zero import
+ * from `scheduling/`) so a free-text KEEP/MOVE/CANCEL reply can be
+ * attributed back to the appointment that reminder was about.
+ */
+const APPOINTMENT_REMINDER_SOURCE_TYPE = 'APPOINTMENT';
+const APPOINTMENT_REMINDER_KIND = 'APPOINTMENT_REMINDER';
 
 /**
  * How far back a bare-text reply (no `replyToProviderMessageId`) may still
@@ -70,6 +85,16 @@ export interface ReminderReplyHandler {
   markReplied(ctx: ReminderReplyContext): Promise<void>;
 }
 
+/**
+ * Supplied by plan 08-10 Task 3. A no-op default keeps this file
+ * wave-independent (identical convention to `BookingInboundHandler`/
+ * `ReminderReplyHandler` above) — Phase 8's `OwnerActionService` is the real
+ * implementation, injected at route-composition time.
+ */
+export interface AppointmentActionHandler {
+  handleAction(ctx: InboundRouteContext, action: 'KEEP' | 'MOVE' | 'CANCEL', appointmentId: string): Promise<void>;
+}
+
 const noopBookingHandler: BookingInboundHandler = {
   async startBooking() {
     // No-op default (see file header) — 07-10 supplies the real handler.
@@ -85,6 +110,13 @@ const noopReminderReplyHandler: ReminderReplyHandler = {
   },
 };
 
+const noopAppointmentActionHandler: AppointmentActionHandler = {
+  async handleAction() {
+    // No-op default — plan 08-10 Task 3 supplies the real handler
+    // (`OwnerActionService`) at route-composition time (plan 08-11).
+  },
+};
+
 export interface InboundRouterDeps {
   repository: WhatsAppRepository;
   // The admin `PrismaClient`, matching `WhatsAppRepository`/
@@ -94,6 +126,7 @@ export interface InboundRouterDeps {
   deliveryStatusService: DeliveryStatusService;
   bookingHandler?: BookingInboundHandler;
   reminderHandler?: ReminderReplyHandler;
+  appointmentActionHandler?: AppointmentActionHandler;
 }
 
 function isUniqueConstraintViolation(err: unknown): boolean {
@@ -147,10 +180,12 @@ function bodyOf(event: WaInboundEvent): string {
 export class InboundRouterService {
   private readonly bookingHandler: BookingInboundHandler;
   private readonly reminderHandler: ReminderReplyHandler;
+  private readonly appointmentActionHandler: AppointmentActionHandler;
 
   constructor(private readonly deps: InboundRouterDeps) {
     this.bookingHandler = deps.bookingHandler ?? noopBookingHandler;
     this.reminderHandler = deps.reminderHandler ?? noopReminderReplyHandler;
+    this.appointmentActionHandler = deps.appointmentActionHandler ?? noopAppointmentActionHandler;
   }
 
   /**
@@ -279,6 +314,8 @@ export class InboundRouterService {
         await this.optOut(ctx);
       } else if (keyword === 'BOOK') {
         await this.bookingHandler.startBooking(ctx);
+      } else if (keyword === 'KEEP' || keyword === 'MOVE' || keyword === 'CANCEL') {
+        await this.dispatchOwnerActionKeyword(keyword, ctx);
       }
       // Anything else is free text: Beta exposes no NLP (Anti-Pattern A8) —
       // it is recorded as a plain inbound message (already done above) and
@@ -321,9 +358,63 @@ export class InboundRouterService {
       return;
     }
 
+    // Phase 8 plan 08-10 Task 3 (D-15, D-16): the owner KEEP/MOVE/CANCEL
+    // bridge — `appointment:keep:<uuid>`, `appointment:move:<uuid>` and
+    // `appointment:cancel:<uuid>` all dispatch to `OwnerActionService` via
+    // the injected `AppointmentActionHandler`, never to `bookingHandler`,
+    // which knows nothing about real `Appointment` rows.
+    if (payload.startsWith('appointment:keep:')) {
+      await this.appointmentActionHandler.handleAction(ctx, 'KEEP', payload.slice('appointment:keep:'.length));
+      return;
+    }
+    if (payload.startsWith('appointment:move:')) {
+      await this.appointmentActionHandler.handleAction(ctx, 'MOVE', payload.slice('appointment:move:'.length));
+      return;
+    }
+    if (payload.startsWith('appointment:cancel:')) {
+      await this.appointmentActionHandler.handleAction(ctx, 'CANCEL', payload.slice('appointment:cancel:'.length));
+      return;
+    }
+
     // Only `booking:confirm:<uuid>` / `booking:slot:<uuid>` remain in the
     // grammar at this point — both are in-flow booking payloads.
     await this.bookingHandler.handlePayload(ctx, payload);
+  }
+
+  /**
+   * D-15/D-16/D-33: resolves a free-text KEEP/MOVE/CANCEL reply to the
+   * appointment it is about. `appointment_reminder`'s template body (see
+   * `template-registry.ts`) instructs the owner to send exactly these three
+   * words as plain text — there is no button/list payload carrying an
+   * appointment id for this flow, so the id has to be attributed the same
+   * way `attributeReminderTask` below attributes a reply to a reminder task:
+   * the most recently SENT `APPOINTMENT_REMINDER` task for this owner,
+   * bounded to `REMINDER_ATTRIBUTION_WINDOW_MS`. A reply with no matching
+   * outstanding reminder (stale, or the owner texted out of the blue) is
+   * silently dropped, exactly like an unattributable `dispatchPayload` hit —
+   * there is nothing this handler could act on.
+   */
+  private async dispatchOwnerActionKeyword(
+    keyword: 'KEEP' | 'MOVE' | 'CANCEL',
+    ctx: InboundRouteContext,
+  ): Promise<void> {
+    const windowStart = new Date(ctx.occurredAt.getTime() - REMINDER_ATTRIBUTION_WINDOW_MS);
+    const task = await this.deps.prisma.whatsAppReminderTask.findFirst({
+      where: {
+        clinicId: ctx.clinicId,
+        ownerId: ctx.ownerId,
+        sourceType: APPOINTMENT_REMINDER_SOURCE_TYPE,
+        kind: APPOINTMENT_REMINDER_KIND as never,
+        state: 'SENT',
+        lastAttemptAt: { gte: windowStart, lte: ctx.occurredAt },
+      },
+      orderBy: { lastAttemptAt: 'desc' },
+    });
+    if (!task) {
+      return;
+    }
+
+    await this.appointmentActionHandler.handleAction(ctx, keyword, task.sourceId as string);
   }
 
   /** D-10/D-11: a single global per-owner reminder opt-out, audited (T-07-09-05 adjacent compliance trail). */

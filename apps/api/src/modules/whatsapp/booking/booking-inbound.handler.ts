@@ -74,6 +74,7 @@ const FULLY_BOOKED_REPLY =
 const NO_PETS_REPLY =
   "We couldn't find a pet on file for you. Please call the clinic to book a visit.";
 const SLOT_TAKEN_REPLY = 'Sorry, that time was just taken. Please pick another time below.';
+const SLOT_UNAVAILABLE_REPLY = "Sorry, that time isn't available anymore. Please pick another time below.";
 const PICK_PET_BODY = 'Which pet is this appointment for?';
 const PICK_SLOT_BODY = 'Great — pick a time for the appointment:';
 
@@ -235,6 +236,19 @@ export function createBookingInboundHandler(deps: BookingInboundHandlerDeps): Bo
     if (result.outcome === 'SLOT_TAKEN') {
       await sendText(ctx, SLOT_TAKEN_REPLY);
       await offerSlotList(ctx, meta.bookingId);
+      return;
+    }
+
+    // D-12: the real per-vet availability check declined the slot (the
+    // offer and the confirm raced against a change in real availability —
+    // e.g. a blocked period or another booking landed in between). Without
+    // this branch the owner got no reply at all and the booking sat in
+    // AWAITING_SLOT_CHOICE forever — same recovery as SLOT_TAKEN, re-offer
+    // rather than leaving the flow stuck.
+    if (result.outcome === 'UNAVAILABLE') {
+      await sendText(ctx, SLOT_UNAVAILABLE_REPLY);
+      await offerSlotList(ctx, meta.bookingId);
+      return;
     }
     // CONFIRMED: BookingService.confirmSlot already queued the
     // booking_confirmation template send — nothing further to do here.

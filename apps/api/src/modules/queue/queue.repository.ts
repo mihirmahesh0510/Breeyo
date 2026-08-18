@@ -1,6 +1,17 @@
-import type { QueueEntryStatus } from '@prisma/client';
+import type { Prisma, PrismaClient, QueueEntryStatus } from '@prisma/client';
 import type { DbClient } from '../../lib/prisma-rls.js';
-import { getTodayIST } from '../../lib/ist-date.js';
+import { getTodayIST, istDayBounds } from '../../lib/ist-date.js';
+import { ACTIVE_QUEUE_STATUSES, CLOSED_QUEUE_STATUSES } from '@breeyo/types';
+import type { CreateEntryParams } from './queue.types.js';
+
+/**
+ * `DbClient` (the tenant-scoped or admin `PrismaClient`) or a Prisma
+ * interactive-transaction client -- lets `findTodayActiveEntryForPet`/
+ * `createEntry` run inside a caller's own transaction (e.g.
+ * `QueueHandoffService`'s per-appointment `prisma.$transaction`) instead of
+ * always going through this repository's own `this.prisma` connection.
+ */
+type Db = DbClient | Prisma.TransactionClient;
 
 const PET_OWNER_INCLUDE = {
   pet: {
@@ -25,15 +36,19 @@ export class QueueRepository {
   }
 
   /**
-   * Finds an active queue entry (WAITING or IN_CONSULT) for a pet today.
+   * Finds an active queue entry (EXPECTED, WAITING or IN_CONSULT) for a pet
+   * today. Including EXPECTED is deliberate (D-13): a scheduled patient
+   * already has a board entry, so a second walk-in check-in for the same
+   * pet is a duplicate -- the correct staff action is to check the existing
+   * EXPECTED entry in, not create a second row.
    */
-  async findTodayActiveEntryForPet(clinicId: string, petId: string, today: Date) {
-    return this.prisma.queueEntry.findFirst({
+  async findTodayActiveEntryForPet(clinicId: string, petId: string, today: Date, client: Db = this.prisma) {
+    return client.queueEntry.findFirst({
       where: {
         clinicId,
         petId,
         checkedInAt: { gte: today },
-        status: { in: ['WAITING', 'IN_CONSULT'] },
+        status: { in: ACTIVE_QUEUE_STATUSES as unknown as QueueEntryStatus[] },
         archivedAt: null,
       },
     });
@@ -85,16 +100,8 @@ export class QueueRepository {
   /**
    * Creates a new queue entry with pet and owner included in the response.
    */
-  async createEntry(data: {
-    clinicId: string;
-    petId: string;
-    checkedInBy: string;
-    status: QueueEntryStatus;
-    position: number;
-    isEmergency: boolean;
-    visitReason?: string;
-  }) {
-    return this.prisma.queueEntry.create({
+  async createEntry(data: CreateEntryParams, client: Db = this.prisma) {
+    return client.queueEntry.create({
       data: {
         clinicId: data.clinicId,
         petId: data.petId,
@@ -102,10 +109,64 @@ export class QueueRepository {
         status: data.status,
         position: data.position,
         isEmergency: data.isEmergency,
+        queuePriorityAt: data.queuePriorityAt ?? new Date(),
         ...(data.visitReason && { visitReason: data.visitReason }),
+        ...(data.appointmentId !== undefined && { appointmentId: data.appointmentId }),
       },
       include: PET_OWNER_INCLUDE,
     });
+  }
+
+  /**
+   * `QueueService.checkIn` (a walk-in) and `QueueHandoffService`'s sweep
+   * handoff pass each need "no active entry for this pet today, so create
+   * one" -- calling `findTodayActiveEntryForPet` then `createEntry`
+   * separately lets both paths observe "not active yet" before either
+   * commits, producing two simultaneous active rows for the same pet. This
+   * wraps the check-then-create in one `pg_advisory_xact_lock` (the same
+   * mechanism `AppointmentService`'s D-34 vet+slot lock uses), keyed on
+   * `(clinicId, petId, day)`, so the two paths serialize against each other
+   * regardless of which repository instance/connection either runs on.
+   *
+   * `client`, when supplied, runs the lock+check+create inside the caller's
+   * own transaction (`QueueHandoffService`'s per-appointment transaction) so
+   * it commits atomically with that transaction's other writes; omitted, a
+   * fresh transaction is opened just for this call (`QueueService.checkIn`,
+   * which has no other writes to join).
+   */
+  async createEntryIfNoneActive(
+    clinicId: string,
+    petId: string,
+    today: Date,
+    data: CreateEntryParams,
+    client?: Db,
+  ): Promise<{
+    entry: Awaited<ReturnType<QueueRepository['createEntry']>> | null;
+    existingActive: Awaited<ReturnType<QueueRepository['findTodayActiveEntryForPet']>> | null;
+  }> {
+    const run = async (tx: Db) => {
+      const lockKey = `queue-checkin|${clinicId}|${petId}|${today.toISOString().slice(0, 10)}`;
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`;
+
+      const existingActive = await this.findTodayActiveEntryForPet(clinicId, petId, today, tx);
+      if (existingActive) {
+        return { entry: null, existingActive };
+      }
+
+      const entry = await this.createEntry(data, tx);
+      return { entry, existingActive: null };
+    };
+
+    if (client) {
+      return run(client);
+    }
+    // Cast per the established `tx as unknown as never` pattern
+    // (`booking.service.ts`) for crossing the tenant-vs-admin transaction
+    // typing boundary -- at runtime `this.prisma` may be the `TenantPrismaClient`
+    // proxy from `prisma-rls.ts`, whose own `$transaction` trap still fires
+    // (and still binds the `app.clinic_id` GUC) regardless of the static type
+    // used to access it here.
+    return (this.prisma as unknown as PrismaClient).$transaction((tx) => run(tx));
   }
 
   /**
@@ -130,7 +191,33 @@ export class QueueRepository {
   }
 
   /**
-   * Finds the next WAITING entry: emergency first, then FIFO by check-in time.
+   * Phase 8 (D-27 trigger 3): the single oldest WAITING entry today, by the
+   * same ordering `findNextWaiting`/the board's waiting branch already use --
+   * its `queuePriorityAt` is the "longest wait" reference point for the
+   * queue-backlog push. A narrow `select` rather than reusing
+   * `getQueueBoard` (which would load the whole board) since `checkIn`'s hot
+   * path only needs this one timestamp.
+   */
+  async findOldestWaiting(clinicId: string, today: Date): Promise<{ queuePriorityAt: Date } | null> {
+    return this.prisma.queueEntry.findFirst({
+      where: {
+        clinicId,
+        status: 'WAITING',
+        checkedInAt: { gte: today },
+        archivedAt: null,
+      },
+      orderBy: [
+        { isEmergency: 'desc' },
+        { queuePriorityAt: 'asc' },
+        { checkedInAt: 'asc' },
+      ],
+      select: { queuePriorityAt: true },
+    });
+  }
+
+  /**
+   * Finds the next WAITING entry: emergency first, then by queue priority
+   * time (D-10), then FIFO by check-in time as a tiebreak (D-34).
    */
   async findNextWaiting(clinicId: string, today: Date) {
     return this.prisma.queueEntry.findFirst({
@@ -142,6 +229,7 @@ export class QueueRepository {
       },
       orderBy: [
         { isEmergency: 'desc' },
+        { queuePriorityAt: 'asc' },
         { checkedInAt: 'asc' },
       ],
       include: PET_OWNER_INCLUDE,
@@ -150,12 +238,33 @@ export class QueueRepository {
 
   /**
    * Returns the queue board: entries grouped by status.
+   * - expected: scheduled patients for today who haven't checked in yet (D-08, D-13)
    * - inConsult: currently being seen (no date filter, only non-archived)
-   * - waiting: checked in today, ordered by emergency first then FIFO
+   * - waiting: checked in today, ordered by emergency first, then queue
+   *   priority time (D-10), then FIFO check-in time as a tiebreak (D-34)
    * - done: completed today
    */
   async getQueueBoard(clinicId: string, today: Date) {
-    const [inConsult, waiting, done] = await Promise.all([
+    // D-08/D-13: the EXPECTED group is scoped to the same IST calendar day
+    // as the rest of the board, filtered on queuePriorityAt (the slot time)
+    // rather than checkedInAt -- an EXPECTED row's checkedInAt is still its
+    // sweep-creation instant, not a meaningful "which day" signal.
+    const { start, end } = istDayBounds(today);
+
+    const [expected, inConsult, waiting, done] = await Promise.all([
+      this.prisma.queueEntry.findMany({
+        where: {
+          clinicId,
+          status: 'EXPECTED',
+          queuePriorityAt: { gte: start, lt: end },
+          archivedAt: null,
+        },
+        include: PET_OWNER_INCLUDE,
+        orderBy: [
+          { isEmergency: 'desc' },
+          { queuePriorityAt: 'asc' },
+        ],
+      }),
       this.prisma.queueEntry.findMany({
         where: {
           clinicId,
@@ -173,15 +282,21 @@ export class QueueRepository {
           archivedAt: null,
         },
         include: PET_OWNER_INCLUDE,
+        // D-10: queue priority time (an EXPECTED patient's slot time, or a
+        // walk-in's check-in time) is the primary sort key after emergency,
+        // so call-next and this board branch can never disagree; D-34:
+        // checkedInAt is the tiebreak when two entries share an identical
+        // queuePriorityAt (double-booked slots).
         orderBy: [
           { isEmergency: 'desc' },
+          { queuePriorityAt: 'asc' },
           { checkedInAt: 'asc' },
         ],
       }),
       this.prisma.queueEntry.findMany({
         where: {
           clinicId,
-          status: { in: ['DONE', 'NO_SHOW'] },
+          status: { in: CLOSED_QUEUE_STATUSES as unknown as QueueEntryStatus[] },
           checkedInAt: { gte: today },
           archivedAt: null,
         },
@@ -190,7 +305,7 @@ export class QueueRepository {
       }),
     ]);
 
-    return { inConsult, waiting, done };
+    return { expected, inConsult, waiting, done };
   }
 
   /**
@@ -223,6 +338,10 @@ export class QueueRepository {
    * Omit clinicId for the global midnight sweep; pass it to scope an
    * authenticated request to a single clinic.
    * D-39: IN_CONSULT entries persist past midnight.
+   * D-09: EXPECTED is deliberately NOT in this list. An unresolved EXPECTED
+   * entry means the no-show sweep hasn't yet flipped it to NO_SHOW;
+   * archiving it here would strand the underlying appointment in
+   * SCHEDULED forever with no visible queue trace.
    */
   async archiveEntries(beforeDate: Date, clinicId?: string) {
     return this.prisma.queueEntry.updateMany({
@@ -234,5 +353,25 @@ export class QueueRepository {
       },
       data: { archivedAt: new Date() },
     });
+  }
+
+  /**
+   * D-28: deletes a stale EXPECTED queue entry for an appointment that was
+   * just cancelled or rescheduled, so the board updates immediately instead
+   * of waiting for the grace-window sweep to flip it to NO_SHOW. Deliberately
+   * scoped to `status: 'EXPECTED'` -- a queue entry that has already
+   * progressed to WAITING/IN_CONSULT means the patient physically arrived
+   * through some other path, and an appointment-side cancel must never
+   * touch that row.
+   */
+  async deleteExpectedEntryForAppointment(clinicId: string, appointmentId: string): Promise<number> {
+    const result = await this.prisma.queueEntry.deleteMany({
+      where: {
+        clinicId,
+        appointmentId,
+        status: 'EXPECTED',
+      },
+    });
+    return result.count;
   }
 }

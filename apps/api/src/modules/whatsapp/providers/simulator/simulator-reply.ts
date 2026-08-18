@@ -53,6 +53,11 @@ const TEMPLATE_ACK_TEXT: Record<WaTemplateKey, string> = {
   vaccine_due: 'Thanks for the reminder, noted!',
   deworming_due: 'Thanks for the reminder, noted!',
   booking_confirmation: 'Thanks, noted!',
+  // Phase 8 (D-17/D-18): the simulator's deterministic auto-reply for the
+  // appointment reminder template. A generic acknowledgement, not KEEP --
+  // the simulator's auto-reply worker answers with a plain ack for every
+  // template it does not have dedicated D-15 button logic for.
+  appointment_reminder: 'Thanks for the reminder, noted!',
 };
 
 /**

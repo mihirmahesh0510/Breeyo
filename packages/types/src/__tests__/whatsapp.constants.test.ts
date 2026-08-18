@@ -17,7 +17,7 @@ import { SOCKET_EVENTS } from '../constants/socket-events.js';
 // ─── WA_TEMPLATE_KEYS (WHA-04) ───────────────────────────────────────────────
 
 describe('WA_TEMPLATE_KEYS', () => {
-  it('has exactly the six Beta template keys', () => {
+  it('has exactly the seven Beta template keys (Phase 8 adds appointment_reminder, D-17/D-18)', () => {
     expect(WA_TEMPLATE_KEYS).toEqual([
       'invoice_delivery',
       'payment_reminder',
@@ -25,8 +25,9 @@ describe('WA_TEMPLATE_KEYS', () => {
       'vaccine_due',
       'deworming_due',
       'booking_confirmation',
+      'appointment_reminder',
     ]);
-    expect(WA_TEMPLATE_KEYS).toHaveLength(6);
+    expect(WA_TEMPLATE_KEYS).toHaveLength(7);
   });
 });
 
@@ -41,6 +42,7 @@ describe('WA_TEMPLATE_STAFF_NAMES', () => {
       vaccine_due: 'Vaccine due',
       deworming_due: 'Deworming due',
       booking_confirmation: 'Booking confirmation',
+      appointment_reminder: 'Appointment reminder',
     });
   });
 
@@ -99,12 +101,13 @@ describe('WA_STATUS_RANK', () => {
 
 // ─── WA_REMINDER_LEAD_DAYS / WA_ESCALATION (D-01, D-02, D-03) ────────────────
 
-describe('WA_REMINDER_LEAD_DAYS — D-01, D-02', () => {
-  it('equals { FOLLOW_UP: 1, VACCINE_DUE: 3, DEWORMING_DUE: 3 }', () => {
+describe('WA_REMINDER_LEAD_DAYS — D-01, D-02, D-18', () => {
+  it('equals { FOLLOW_UP: 1, VACCINE_DUE: 3, DEWORMING_DUE: 3, APPOINTMENT_REMINDER: 1 }', () => {
     expect(WA_REMINDER_LEAD_DAYS).toEqual({
       FOLLOW_UP: 1,
       VACCINE_DUE: 3,
       DEWORMING_DUE: 3,
+      APPOINTMENT_REMINDER: 1,
     });
   });
 });
@@ -196,6 +199,19 @@ describe('WA_BUTTON_PAYLOAD_PATTERN — D-09', () => {
     expect(
       WA_BUTTON_PAYLOAD_PATTERN.test('booking:move:3f2504e0-4f89-11d3-9a0c-0305e82c3301'),
     ).toBe(false);
+  });
+
+  it('matches well-formed appointment:keep|move|cancel:<uuid> payloads (Phase 8, D-15/D-16)', () => {
+    const uuid = '3f2504e0-4f89-11d3-9a0c-0305e82c3301';
+    expect(WA_BUTTON_PAYLOAD_PATTERN.test(`appointment:keep:${uuid}`)).toBe(true);
+    expect(WA_BUTTON_PAYLOAD_PATTERN.test(`appointment:move:${uuid}`)).toBe(true);
+    expect(WA_BUTTON_PAYLOAD_PATTERN.test(`appointment:cancel:${uuid}`)).toBe(true);
+  });
+
+  it('does NOT match an unregistered appointment:<action> or a malformed uuid', () => {
+    const uuid = '3f2504e0-4f89-11d3-9a0c-0305e82c3301';
+    expect(WA_BUTTON_PAYLOAD_PATTERN.test('appointment:frobnicate:' + uuid)).toBe(false);
+    expect(WA_BUTTON_PAYLOAD_PATTERN.test('appointment:cancel:not-a-uuid')).toBe(false);
   });
 });
 

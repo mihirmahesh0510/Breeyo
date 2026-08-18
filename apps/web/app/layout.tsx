@@ -1,3 +1,6 @@
+import '@breeyo/ui/src/theme/portal.css';
+import { Providers } from './providers';
+
 export const metadata = {
   title: 'Breeyo - Veterinary Practice Management',
   description: 'Owner portal for veterinary clinics',
@@ -10,7 +13,9 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <Providers>{children}</Providers>
+      </body>
     </html>
   );
 }

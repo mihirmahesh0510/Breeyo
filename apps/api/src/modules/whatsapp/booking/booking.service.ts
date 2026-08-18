@@ -29,12 +29,15 @@
 
 import { customAlphabet } from 'nanoid';
 import type { PrismaClient } from '@prisma/client';
-import { getTodayIST } from '../../../lib/ist-date.js';
+import { AppointmentSource } from '@breeyo/types';
+import { getTodayIST, minutesToIstDate } from '../../../lib/ist-date.js';
 import { writeAuditLog, AuditEvent } from '../../../lib/audit-log.js';
 import { formatSlotLabel } from './slot.service.js';
 import { assertBookingTransition } from './booking.state.js';
 import type { BookingRepository, SlotInput } from './booking.repository.js';
 import type { WhatsAppService } from '../whatsapp.service.js';
+import type { AppointmentService } from '../../scheduling/appointment.service.js';
+import type { AvailabilityService } from '../../scheduling/availability.service.js';
 
 const referenceSuffix = customAlphabet('ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', 4);
 
@@ -56,6 +59,19 @@ export interface BookingServiceDeps {
   // see the identical comment in whatsapp.service.ts.
   prisma: PrismaClient;
   whatsAppService: WhatsAppService;
+  /**
+   * Plan 08-10 Task 3 (D-12): when BOTH `appointmentService` and
+   * `availability` are supplied, `confirmSlot` creates a real `Appointment`
+   * (checked against real per-vet availability) instead of only flipping
+   * this booking's own state — retiring the standalone slot-blocking
+   * stopgap for the CONFIRMATION step specifically. Optional so Phase 7's
+   * own pre-Phase-8 unit tests (constructed without these) keep exercising
+   * the original hold-and-flip-state-only code path unmodified; production
+   * wiring (plan 08-11, which is also where `AppointmentService` is first
+   * constructed in this codebase) supplies both real instances.
+   */
+  appointmentService?: Pick<AppointmentService, 'createAppointment' | 'cancelAppointment'>;
+  availability?: Pick<AvailabilityService, 'listVets'>;
 }
 
 export interface StartBookingInput {
@@ -66,7 +82,12 @@ export interface StartBookingInput {
 
 export type ConfirmSlotResult =
   | { outcome: 'CONFIRMED'; booking: Awaited<ReturnType<BookingRepository['confirmBooking']>> }
-  | { outcome: 'SLOT_TAKEN' };
+  | { outcome: 'SLOT_TAKEN' }
+  // Plan 08-10 (D-12): the real per-vet availability check (only run when
+  // `appointmentService`/`availability` are configured) refused the slot —
+  // surfaced as a decline reply, never a confirmed booking with no real
+  // appointment behind it.
+  | { outcome: 'UNAVAILABLE'; reason: string };
 
 export type MoveBookingResult =
   | { outcome: 'CONFIRMED'; booking: Awaited<ReturnType<BookingRepository['confirmBooking']>> }
@@ -112,6 +133,19 @@ export class BookingService {
    * on the hold insert (another request already took this slot) is the
    * business outcome SLOT_TAKEN — no partial state survives because the
    * whole transaction rolls back.
+   *
+   * Plan 08-10 (D-12): when `appointmentService`/`availability` are
+   * configured, a real `Appointment` is created FIRST — before any Phase 7
+   * state changes — through `AppointmentService.createAppointment`, which
+   * revalidates timing/availability/blocked-periods/double-booking exactly
+   * like a staff booking. `AppointmentService.createAppointment` runs its
+   * own `prisma.$transaction` internally (D-34's advisory lock), so it
+   * cannot be nested inside this method's OWN transaction below — the two
+   * steps run sequentially instead: create the appointment, then (only on
+   * success) run the existing hold-then-confirm transaction. A failure at
+   * the appointment step leaves no Phase 7 state changed at all (an early,
+   * clean decline); a failure at the hold step (a genuine SLOT_TAKEN race)
+   * compensates by cancelling the appointment just created.
    */
   async confirmSlot(
     clinicId: string,
@@ -123,6 +157,15 @@ export class BookingService {
       throw bookingNotFoundError();
     }
     assertBookingTransition(booking.state as never, 'CONFIRMED' as never);
+
+    let createdAppointmentId: string | null = null;
+    if (this.deps.appointmentService && this.deps.availability) {
+      const outcome = await this.createRealAppointmentForBooking(clinicId, bookingId, booking, slot);
+      if (outcome.outcome === 'UNAVAILABLE') {
+        return outcome;
+      }
+      createdAppointmentId = outcome.appointmentId;
+    }
 
     try {
       const confirmed = await this.deps.prisma.$transaction(async (tx) => {
@@ -144,15 +187,103 @@ export class BookingService {
         );
       });
 
+      // D-12: if Phase 7 shipped `supersededByAppointmentId`, link the
+      // booking request to the real appointment it produced — a direct
+      // update rather than widening `BookingRepository.confirmBooking`'s
+      // typed input, which is out of this task's declared file scope.
+      if (createdAppointmentId) {
+        await this.deps.prisma.whatsAppBookingRequest.update({
+          where: { id: bookingId },
+          data: { supersededByAppointmentId: createdAppointmentId },
+        });
+      }
+
       await this.sendConfirmationTemplate(clinicId, confirmed);
 
       return { outcome: 'CONFIRMED', booking: confirmed };
     } catch (err) {
+      // D-12 compensation: the real appointment was already created above
+      // (its own availability check passed), but the hold-then-confirm
+      // transaction failed -- for ANY reason, not just the P2002 SLOT_TAKEN
+      // race -- so it must be cancelled rather than left orphaned behind a
+      // booking that never reached CONFIRMED.
+      if (createdAppointmentId && this.deps.appointmentService) {
+        await this.deps.appointmentService.cancelAppointment({
+          clinicId,
+          userId: booking.actedByUserId as string | null ?? (booking.ownerId as string),
+          appointmentId: createdAppointmentId,
+          scope: 'ONE',
+          reason: 'WhatsApp slot lost the confirmation race',
+        } as never);
+      }
+
       // P2002 = unique violation => another request took this slot first (D-07).
       if (isPrismaError(err, 'P2002')) {
         return { outcome: 'SLOT_TAKEN' };
       }
       throw err;
+    }
+  }
+
+  /**
+   * D-12: resolves a real vet (Phase 7's booking flow has no vet concept of
+   * its own — `AvailabilityService.listVets`, the SAME id-sorted vet list
+   * plan 08-05's UI already depends on, supplies the first one) and creates
+   * a real `Appointment` via `AppointmentService.createAppointment`,
+   * checked against that vet's real availability/horizon/blocked-periods.
+   * Any domain error from that check (VET_NOT_AVAILABLE, SLOT_BLOCKED,
+   * SLOT_IN_PAST, BOOKING_HORIZON_EXCEEDED, SLOT_DOUBLE_BOOKED) is
+   * translated into a decline outcome rather than thrown — the whole point
+   * of this method existing separately from the try/catch below, which is
+   * reserved for the SLOT_TAKEN race.
+   */
+  private async createRealAppointmentForBooking(
+    clinicId: string,
+    bookingId: string,
+    booking: { ownerId: unknown; petId: unknown },
+    slot: SlotInput & { durationMinutes: number },
+  ): Promise<{ outcome: 'CREATED'; appointmentId: string } | { outcome: 'UNAVAILABLE'; reason: string }> {
+    const vets = await this.deps.availability!.listVets(clinicId);
+    const vet = vets[0];
+    if (!vet) {
+      return { outcome: 'UNAVAILABLE', reason: 'NO_VET_CONFIGURED' };
+    }
+
+    const scheduledFor = minutesToIstDate(slot.date, slot.startMinutes);
+
+    try {
+      const result = await this.deps.appointmentService!.createAppointment({
+        clinicId,
+        // No staff actor exists for an owner-confirmed WhatsApp booking;
+        // the resolved vet doubles as the createdById (a real User in the
+        // clinic), matching OwnerActionService's identical "no owner User
+        // row exists" resolution for cancelAppointment's userId (see
+        // owner-action.service.ts).
+        userId: vet.id,
+        ownerId: booking.ownerId as string,
+        petIds: [booking.petId as string],
+        vetId: vet.id,
+        scheduledFor,
+        allowDoubleBook: false,
+        source: AppointmentSource.WHATSAPP,
+        whatsappBookingRequestId: bookingId,
+      } as never);
+      const appointment = result.appointments[0];
+      return { outcome: 'CREATED', appointmentId: appointment.id };
+    } catch (err) {
+      const code = (err as { code?: string }).code ?? 'UNKNOWN';
+      // A genuine domain decline (VET_NOT_AVAILABLE, SLOT_BLOCKED,
+      // SLOT_IN_PAST, BOOKING_HORIZON_EXCEEDED, SLOT_DOUBLE_BOOKED) is
+      // expected and self-explanatory from `reason` alone in the caller's
+      // reply — but this catch-all also swallows a Zod validation failure or
+      // a raw DB/connection error, mapping either into the identical
+      // business UNAVAILABLE outcome with no server-side trace at all. Log
+      // unconditionally (this file has no logger dependency of its own — see
+      // the codebase's established `console.error` convention, e.g.
+      // `appointment.service.ts`'s `runChangeHook`) so an infra failure here
+      // is still visible even though the owner only ever sees "not available".
+      console.error('BookingService.createRealAppointmentForBooking failed', { bookingId, code, err });
+      return { outcome: 'UNAVAILABLE', reason: code };
     }
   }
 

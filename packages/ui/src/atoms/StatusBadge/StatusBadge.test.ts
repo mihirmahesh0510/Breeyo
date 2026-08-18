@@ -16,10 +16,14 @@ describe('StatusBadge', () => {
       'unpaid',
       'overdue',
       'processing',
+      'expected',
+      'checkedIn',
+      'cancelled',
+      'completed',
     ];
 
-    it('should have exactly 8 status variants', () => {
-      expect(Object.keys(STATUS_CONFIG)).toHaveLength(8);
+    it('should have exactly 12 status variants', () => {
+      expect(Object.keys(STATUS_CONFIG)).toHaveLength(12);
     });
 
     it('should contain all expected status keys', () => {
@@ -90,6 +94,43 @@ describe('StatusBadge', () => {
       expect(STATUS_CONFIG.unpaid.defaultLabel).toBe('Unpaid');
       expect(STATUS_CONFIG.overdue.defaultLabel).toBe('Overdue');
       expect(STATUS_CONFIG.processing.defaultLabel).toBe('Processing...');
+    });
+
+    it('should have a config entry for every StatusVariant (D-08/D-13/D-20)', () => {
+      const expectedVariants: StatusVariant[] = [...allStatuses];
+      expect(Object.keys(STATUS_CONFIG).sort()).toEqual(
+        [...expectedVariants].sort(),
+      );
+    });
+
+    it('should map expected to the calm secondary container (D-08/D-13)', () => {
+      expect(STATUS_CONFIG.expected.bgColor).toBe('secondaryContainer');
+      expect(STATUS_CONFIG.expected.textColor).toBe('onSecondaryContainer');
+      expect(STATUS_CONFIG.expected.defaultLabel).toBe('Expected');
+    });
+
+    it('should map checkedIn to the primary container pair (D-20)', () => {
+      expect(STATUS_CONFIG.checkedIn.bgColor).toBe('primaryContainer');
+      expect(STATUS_CONFIG.checkedIn.textColor).toBe('onPrimaryContainer');
+      expect(STATUS_CONFIG.checkedIn.defaultLabel).toBe('Checked in');
+    });
+
+    it('should map cancelled and completed to the neutral surface pair', () => {
+      expect(STATUS_CONFIG.cancelled.bgColor).toBe('surfaceVariant');
+      expect(STATUS_CONFIG.cancelled.textColor).toBe('onSurfaceVariant');
+      expect(STATUS_CONFIG.cancelled.defaultLabel).toBe('Cancelled');
+
+      expect(STATUS_CONFIG.completed.bgColor).toBe('surfaceVariant');
+      expect(STATUS_CONFIG.completed.textColor).toBe('onSurfaceVariant');
+      expect(STATUS_CONFIG.completed.defaultLabel).toBe('Completed');
+    });
+
+    it('should never use a hex literal for bgColor or textColor', () => {
+      for (const status of Object.keys(STATUS_CONFIG) as StatusVariant[]) {
+        const config = STATUS_CONFIG[status];
+        expect(config.bgColor).not.toMatch(/^#/);
+        expect(config.textColor).not.toMatch(/^#/);
+      }
     });
   });
 
