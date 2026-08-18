@@ -63,3 +63,15 @@ export class ApiClientError extends Error {
     this.name = 'ApiClientError';
   }
 }
+
+/**
+ * Distinguishes "the session is invalid" from every other request failure.
+ * `AuthProvider`'s `hydrateSession`/`refreshSession` need this: a SESSION_EXPIRED
+ * error from the wizard-status check must not fall through to "wizard status
+ * unknown, authenticate anyway" — that would race the `sessionExpiredHandler`
+ * (`logout()`) apiClient already fired, and could leave `isAuthenticated: true`
+ * if hydration's own `setState` happened to run after logout's.
+ */
+export function isSessionExpiredError(error: unknown): boolean {
+  return error instanceof ApiClientError && error.code === 'SESSION_EXPIRED';
+}

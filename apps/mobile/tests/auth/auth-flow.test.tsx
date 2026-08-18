@@ -50,7 +50,7 @@ import {
   storeAuthTokens,
   clearAuthStorage,
 } from '../../src/lib/auth-storage';
-import { apiClient, ApiClientError, setSessionExpiredHandler } from '../../src/lib/api';
+import { apiClient, ApiClientError, isSessionExpiredError, setSessionExpiredHandler } from '../../src/lib/api';
 
 // We cannot render React components easily without a renderer in node/vitest,
 // so we test the AuthProvider logic by testing the underlying functions and
@@ -223,6 +223,22 @@ describe('apiClient session-expired handler', () => {
 
     await expect(apiClient('/api/v1/patients/recent')).rejects.toThrow(ApiClientError);
     expect(handler).not.toHaveBeenCalled();
+  });
+});
+
+describe('isSessionExpiredError', () => {
+  it('identifies a SESSION_EXPIRED ApiClientError', () => {
+    expect(isSessionExpiredError(new ApiClientError('x', 'SESSION_EXPIRED', 401))).toBe(true);
+  });
+
+  it('rejects any other ApiClientError code', () => {
+    expect(isSessionExpiredError(new ApiClientError('x', 'INVALID_CREDENTIALS', 401))).toBe(false);
+  });
+
+  it('rejects non-ApiClientError values', () => {
+    expect(isSessionExpiredError(new Error('boom'))).toBe(false);
+    expect(isSessionExpiredError(null)).toBe(false);
+    expect(isSessionExpiredError(undefined)).toBe(false);
   });
 });
 
