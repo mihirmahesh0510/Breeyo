@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Keyboard, View, StyleSheet } from 'react-native';
 import { Text } from 'react-native-paper';
 import { useAppTheme } from '../../theme/types';
@@ -36,6 +36,19 @@ export function BottomSheet({
   title,
   testID,
 }: BottomSheetProps) {
+  // Dismiss any keyboard left open by a field underneath the sheet — without
+  // this, a previously-focused input keeps receiving keystrokes typed into
+  // the sheet's own fields (e.g. Inventory's category/unit picker corrupting
+  // the Selling Price field behind it). Gated on the `visible` transition
+  // (not the render body) so typing inside the sheet — which re-renders this
+  // component on every keystroke without `visible` changing — doesn't
+  // re-fire Keyboard.dismiss() and blur the very field being typed into.
+  useEffect(() => {
+    if (visible) {
+      Keyboard.dismiss();
+    }
+  }, [visible]);
+
   const theme = useAppTheme();
   const colors = theme.colors as Record<string, string>;
   // Defensive fallbacks: on some render paths (observed via web preview,
@@ -51,12 +64,6 @@ export function BottomSheet({
   if (!visible) {
     return null;
   }
-
-  // Dismiss any keyboard left open by a field underneath the sheet — without
-  // this, a previously-focused input keeps receiving keystrokes typed into
-  // the sheet's own fields (e.g. Inventory's category/unit picker corrupting
-  // the Selling Price field behind it).
-  Keyboard.dismiss();
 
   const styles = StyleSheet.create({
     backdrop: {

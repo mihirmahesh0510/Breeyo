@@ -8,7 +8,13 @@ const reactMock = {
   useCallback: vi.fn((fn: any) => fn),
   useMemo: vi.fn((fn: any) => fn()),
   useRef: vi.fn((init: any) => ({ current: init })),
-  useEffect: vi.fn(),
+  // Matches `useMemo`'s mock above: invoke immediately rather than staying a
+  // pure no-op, so components that rely on an effect's side effect (e.g.
+  // BottomSheet's Keyboard.dismiss) are actually exercised under test. This
+  // ignores the dependency array — real React's own dependency-diffing (which
+  // this mock does not attempt to reproduce) is what guarantees the effect
+  // doesn't re-run on every render in production.
+  useEffect: vi.fn((fn: any) => fn()),
 };
 
 // `import React from 'react'; React.createElement(...)` needs a default
