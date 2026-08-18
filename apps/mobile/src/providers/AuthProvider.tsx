@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { apiClient, ApiClientError } from '../lib/api';
+import { apiClient, ApiClientError, setSessionExpiredHandler } from '../lib/api';
 import {
   getAccessToken,
   getRefreshToken,
@@ -212,6 +212,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       wizardCompleted: null,
     });
   }, []);
+
+  // E2E-BUG-FIX-PLAN.md §1.1: any request that surfaces SESSION_EXPIRED --
+  // e.g. tenantContext's existence check rejecting a stale session -- forces
+  // the same cleanup a manual logout does, rather than leaving the app stuck
+  // mid-screen on a session the server has already invalidated.
+  useEffect(() => {
+    setSessionExpiredHandler(() => {
+      void logout();
+    });
+    return () => setSessionExpiredHandler(null);
+  }, [logout]);
 
   useEffect(() => {
     async function hydrateSession() {

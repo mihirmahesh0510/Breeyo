@@ -123,10 +123,12 @@ describe('Tenant Isolation', () => {
       headers: { authorization: `Bearer ${crossToken}` },
     });
 
-    expect(crossResponse.statusCode).toBe(200);
-    const crossBody = crossResponse.json();
-    // User A is NOT a member of Clinic B, so should have NO permissions
-    expect(crossBody.data.permissions).toEqual([]);
+    // User A is NOT a member of Clinic B. Post E2E-BUG-FIX-PLAN.md §1.1,
+    // `tenantContext` rejects this as an invalid session (401) rather than
+    // silently answering with an empty permission list (200) -- the token's
+    // clinic claim doesn't correspond to any real membership at all.
+    expect(crossResponse.statusCode).toBe(401);
+    expect(crossResponse.json().error.code).toBe('SESSION_EXPIRED');
   });
 
   // ----------------------------------------------------------------
@@ -322,7 +324,9 @@ describe('Tenant Isolation', () => {
     // FrontDesk should have VIEW_PATIENTS
     expect(permsCInA).toContain('VIEW_PATIENTS');
 
-    // User C attempts to access Clinic B -- should get no permissions
+    // User C attempts to access Clinic B -- not a member at all, so post
+    // E2E-BUG-FIX-PLAN.md §1.1 this is a rejected session (401), not a
+    // 200 with an empty permission list.
     const tokenCForB = app.jwt.sign(
       { sub: userC.id, clinicId: clinicB.id, type: 'access' },
       { expiresIn: '15m' },
@@ -334,10 +338,10 @@ describe('Tenant Isolation', () => {
       headers: { authorization: `Bearer ${tokenCForB}` },
     });
 
-    expect(responseCInB.statusCode).toBe(200);
-    expect(responseCInB.json().data.permissions).toEqual([]);
+    expect(responseCInB.statusCode).toBe(401);
+    expect(responseCInB.json().error.code).toBe('SESSION_EXPIRED');
 
-    // User C attempts to access Clinic C -- should get no permissions
+    // Same for Clinic C.
     const tokenCForC = app.jwt.sign(
       { sub: userC.id, clinicId: clinicC.id, type: 'access' },
       { expiresIn: '15m' },
@@ -349,8 +353,8 @@ describe('Tenant Isolation', () => {
       headers: { authorization: `Bearer ${tokenCForC}` },
     });
 
-    expect(responseCInC.statusCode).toBe(200);
-    expect(responseCInC.json().data.permissions).toEqual([]);
+    expect(responseCInC.statusCode).toBe(401);
+    expect(responseCInC.json().error.code).toBe('SESSION_EXPIRED');
 
     // User C lists clinics -- should only see Clinic A
     const clinicsC = await app.inject({
@@ -403,15 +407,18 @@ describe('Tenant Isolation', () => {
       await app.redis.del(...cacheKeys);
     }
 
-    // User C should now get no permissions for Clinic A
+    // User C's session is now stale -- E2E-BUG-FIX-PLAN.md §1.1 rejects this
+    // as an invalid session (401) rather than silently answering 200 with an
+    // empty permission list, which is exactly the "stale session lets you
+    // jump right in" bug this fix closes.
     const afterResponse = await app.inject({
       method: 'GET',
       url: '/api/v1/auth/permissions',
       headers: { authorization: `Bearer ${tokenCForA}` },
     });
 
-    expect(afterResponse.statusCode).toBe(200);
-    expect(afterResponse.json().data.permissions).toEqual([]);
+    expect(afterResponse.statusCode).toBe(401);
+    expect(afterResponse.json().error.code).toBe('SESSION_EXPIRED');
 
     // User C should no longer see Clinic A in their clinic list
     const clinicsResponse = await app.inject({

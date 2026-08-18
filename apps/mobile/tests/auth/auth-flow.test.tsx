@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest';
 import React from 'react';
 
 // ---------------------------------------------------------------------------
@@ -50,7 +50,7 @@ import {
   storeAuthTokens,
   clearAuthStorage,
 } from '../../src/lib/auth-storage';
-import { apiClient, ApiClientError } from '../../src/lib/api';
+import { apiClient, ApiClientError, setSessionExpiredHandler } from '../../src/lib/api';
 
 // We cannot render React components easily without a renderer in node/vitest,
 // so we test the AuthProvider logic by testing the underlying functions and
@@ -174,6 +174,55 @@ describe('apiClient', () => {
 
     const calledHeaders = mockFetch.mock.calls[0][1].headers;
     expect(calledHeaders.Authorization).toBe('Bearer my-token');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// E2E-BUG-FIX-PLAN.md §1.1 (mobile side): AuthProvider registers itself here
+// to force a stale session back to login the moment ANY request surfaces
+// SESSION_EXPIRED — e.g. tenantContext's new existence check rejecting a
+// session whose account/clinic membership no longer exists.
+// ---------------------------------------------------------------------------
+describe('apiClient session-expired handler', () => {
+  afterEach(() => {
+    setSessionExpiredHandler(null);
+  });
+
+  it('calls the registered handler when the server answers SESSION_EXPIRED', async () => {
+    const handler = vi.fn();
+    setSessionExpiredHandler(handler);
+    mockApiError('SESSION_EXPIRED', 'Session expired -- please log in again', 401);
+
+    await expect(apiClient('/api/v1/patients/recent')).rejects.toThrow(ApiClientError);
+    expect(handler).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not call the handler for an unrelated 401', async () => {
+    const handler = vi.fn();
+    setSessionExpiredHandler(handler);
+    mockApiError('INVALID_CREDENTIALS', 'Invalid email or password', 401);
+
+    await expect(apiClient('/api/v1/auth/login', { method: 'POST' })).rejects.toThrow(
+      ApiClientError,
+    );
+    expect(handler).not.toHaveBeenCalled();
+  });
+
+  it('does nothing when no handler is registered', async () => {
+    setSessionExpiredHandler(null);
+    mockApiError('SESSION_EXPIRED', 'Session expired -- please log in again', 401);
+
+    await expect(apiClient('/api/v1/patients/recent')).rejects.toThrow(ApiClientError);
+  });
+
+  it('stops calling a handler after it is unregistered', async () => {
+    const handler = vi.fn();
+    setSessionExpiredHandler(handler);
+    setSessionExpiredHandler(null);
+    mockApiError('SESSION_EXPIRED', 'Session expired -- please log in again', 401);
+
+    await expect(apiClient('/api/v1/patients/recent')).rejects.toThrow(ApiClientError);
+    expect(handler).not.toHaveBeenCalled();
   });
 });
 

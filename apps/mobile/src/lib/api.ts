@@ -4,6 +4,19 @@ interface RequestOptions extends RequestInit {
   token?: string;
 }
 
+// E2E-BUG-FIX-PLAN.md §1.1 (mobile side): a stale session (account/clinic
+// membership removed after the token was issued) now gets rejected with
+// SESSION_EXPIRED by the API on the very first request that reaches
+// tenantContext -- not just on refresh. AuthProvider registers itself here
+// on mount so ANY request surfacing that code forces the app back to login,
+// the same way it already reacts to logout.
+type SessionExpiredHandler = () => void;
+let sessionExpiredHandler: SessionExpiredHandler | null = null;
+
+export function setSessionExpiredHandler(handler: SessionExpiredHandler | null): void {
+  sessionExpiredHandler = handler;
+}
+
 export async function apiClient<T>(
   path: string,
   options: RequestOptions = {},
@@ -22,9 +35,15 @@ export async function apiClient<T>(
   const data = await response.json();
 
   if (!response.ok) {
+    const code = data.error?.code || 'UNKNOWN_ERROR';
+
+    if (code === 'SESSION_EXPIRED') {
+      sessionExpiredHandler?.();
+    }
+
     throw new ApiClientError(
       data.error?.message || 'Request failed',
-      data.error?.code || 'UNKNOWN_ERROR',
+      code,
       response.status,
       data.error?.details,
     );

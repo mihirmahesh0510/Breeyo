@@ -4,6 +4,7 @@ import { Stack, useRouter } from 'expo-router';
 import { ClinicSwitcher } from '../../src/components/ClinicSwitcher';
 import { LogoutAction } from '../../src/components/LogoutAction';
 import { useAuth } from '../../src/providers/AuthProvider';
+import { shouldRedirectToLogin } from '../../src/lib/auth-route-guard';
 
 function HeaderRight() {
   return (
@@ -19,6 +20,10 @@ export default function AppLayout() {
   const router = useRouter();
 
   useEffect(() => {
+    if (shouldRedirectToLogin({ isLoading, isAuthenticated })) {
+      router.replace('/(auth)/login');
+      return;
+    }
     if (!isLoading && isAuthenticated && wizardCompleted === false) {
       router.replace('/setup-wizard/clinic-profile');
     }
