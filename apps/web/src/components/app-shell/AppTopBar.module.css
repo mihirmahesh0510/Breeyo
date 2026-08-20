@@ -1,0 +1,42 @@
+.topBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+  padding: var(--spacing-md) var(--spacing-lg);
+  background: var(--color-surface-variant);
+  position: sticky;
+  top: 0;
+}
+
+.clinicSwitcher {
+  font-size: var(--font-size-subheading);
+  font-weight: var(--font-weight-subheading);
+  color: var(--color-on-surface);
+}
+
+.searchSlot {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+}
+
+.identity {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.userName {
+  font-size: var(--font-size-body);
+  color: var(--color-on-surface);
+}
+
+.roleBadge {
+  font-size: var(--font-size-label);
+  font-weight: var(--font-weight-label);
+  color: var(--color-on-primary-container);
+  background: var(--color-primary-container);
+  border-radius: var(--radius-sm);
+  padding: 2px var(--spacing-sm);
+}

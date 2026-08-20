@@ -13,7 +13,14 @@
     "preview:mobile": "bash scripts/preview-mobile.sh"
   },
   "devDependencies": {
+    "@testing-library/jest-dom": "6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.5",
+    "@vitejs/plugin-react": "^4.7.0",
+    "happy-dom": "^15.11.7",
     "prisma": "^6.2.0",
+    "react": "^18.3.0",
+    "react-dom": "^18.3.0",
     "turbo": "latest",
     "vitest": "^3.0.0"
   }
