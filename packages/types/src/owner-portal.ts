@@ -3,8 +3,6 @@
 // 09-06, 09-07) build against instead of re-deriving magic-link, session, or
 // checkout rules per module.
 
-import { createHash } from 'node:crypto';
-
 /** Overall validity state of a magic-link session (D-64, D-67, OWN-04, OWN-06). */
 export type OwnerPortalSessionState = 'VALIDATING' | 'READY' | 'EXPIRED' | 'INVALID';
 
@@ -76,15 +74,6 @@ export const OWNER_PORTAL_MAGIC_LINK_TTL_SECONDS = 7 * 24 * 60 * 60;
 
 /** D-82: self-service WhatsApp reissue is capped at 3 requests/owner/day. */
 export const OWNER_PORTAL_REISSUE_DAILY_LIMIT = 3;
-
-/**
- * Hashes a raw magic-link token for persistence lookup. Raw tokens are never
- * stored (T-09-02) — only this hash is compared against `tokenHash` in
- * `OwnerPortalMagicLink`.
- */
-export function hashMagicLinkToken(rawToken: string): string {
-  return createHash('sha256').update(rawToken).digest('hex');
-}
 
 /** Computes the exact 7-day expiry instant for a link issued at `issuedAt`. */
 export function computeMagicLinkExpiry(issuedAt: Date): Date {

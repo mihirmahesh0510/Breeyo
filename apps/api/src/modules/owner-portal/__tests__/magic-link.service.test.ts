@@ -5,10 +5,10 @@
 import { describe, it, expect } from 'vitest';
 import {
   OWNER_PORTAL_MAGIC_LINK_TTL_SECONDS,
-  hashMagicLinkToken,
   computeMagicLinkExpiry,
   resolveOwnerPortalSessionState,
 } from '@breeyo/types';
+import { hashMagicLinkToken } from '../../../lib/magic-link-hash.js';
 
 describe('magic-link token hashing (T-09-02: raw tokens are never persisted)', () => {
   it('hashes a raw token deterministically without ever returning it verbatim', () => {

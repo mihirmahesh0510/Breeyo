@@ -9,7 +9,6 @@ import {
 } from '../owner-portal.js';
 import {
   OWNER_PORTAL_MAGIC_LINK_TTL_SECONDS,
-  hashMagicLinkToken,
   computeMagicLinkExpiry,
   resolveOwnerPortalSessionState,
 } from '@breeyo/types';
@@ -22,24 +21,6 @@ const PET_ID = 'c1d2e3f4-5a6b-7c8d-9e0f-1a2b3c4d5e6f';
 describe('OWNER_PORTAL_MAGIC_LINK_TTL_SECONDS (D-64, OWN-04)', () => {
   it('encodes the exact 7-day expiry window', () => {
     expect(OWNER_PORTAL_MAGIC_LINK_TTL_SECONDS).toBe(7 * 24 * 60 * 60);
-  });
-});
-
-describe('hashMagicLinkToken', () => {
-  it('produces a deterministic hash for the same raw token', () => {
-    const hash1 = hashMagicLinkToken('raw-token-abc');
-    const hash2 = hashMagicLinkToken('raw-token-abc');
-    expect(hash1).toBe(hash2);
-  });
-
-  it('never returns the raw token itself (no raw-token persistence)', () => {
-    const hash = hashMagicLinkToken('raw-token-abc');
-    expect(hash).not.toBe('raw-token-abc');
-    expect(hash).toMatch(/^[a-f0-9]{64}$/);
-  });
-
-  it('produces different hashes for different raw tokens', () => {
-    expect(hashMagicLinkToken('token-a')).not.toBe(hashMagicLinkToken('token-b'));
   });
 });
 
