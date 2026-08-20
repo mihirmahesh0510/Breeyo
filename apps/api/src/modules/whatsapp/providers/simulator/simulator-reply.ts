@@ -58,6 +58,9 @@ const TEMPLATE_ACK_TEXT: Record<WaTemplateKey, string> = {
   // the simulator's auto-reply worker answers with a plain ack for every
   // template it does not have dedicated D-15 button logic for.
   appointment_reminder: 'Thanks for the reminder, noted!',
+  // Phase 9 (09-05 Task 2): the owner-portal magic-link (re)issue template.
+  // Same generic-ack posture as every other non-booking template here.
+  owner_portal_link: 'Thanks, got it!',
 };
 
 /**

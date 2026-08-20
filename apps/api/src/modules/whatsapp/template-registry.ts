@@ -112,6 +112,14 @@ function renderDewormingDue(v: Record<string, string>): string {
   );
 }
 
+/** Phase 9 (09-05 Task 2, OWN-04, D-67, D-82): the (re)issued portal-link message. */
+function renderOwnerPortalLink(v: Record<string, string>): string {
+  return (
+    `Hi ${v.owner_name}, here's your secure Breeyo pet portal link — valid for 7 days, no login needed.\n\n` +
+    `${v.portal_link}`
+  );
+}
+
 function renderBookingConfirmation(v: Record<string, string>): string {
   return (
     `Hi ${v.owner_name}, ${v.pet_name}'s appointment is confirmed for ` +
@@ -215,6 +223,15 @@ export const WA_TEMPLATES: Readonly<Record<WaTemplateKey, WaTemplateDefinition>>
     // `appointment:keep|move|cancel:<uuid>` payload namespace is already
     // reachable from `InboundRouterService.dispatchPayload` for any caller
     // (a real button tap, or 08-15's manual QA simulation) that produces it.
+    supportsMedia: false,
+  },
+  owner_portal_link: {
+    key: 'owner_portal_link',
+    staffName: WA_TEMPLATE_STAFF_NAMES.owner_portal_link,
+    category: WA_TEMPLATE_CATEGORIES.owner_portal_link,
+    variables: WA_TEMPLATE_VARIABLE_SCHEMAS.owner_portal_link,
+    render: renderOwnerPortalLink,
+    cloud: { name: 'owner_portal_link', languageCode: 'en', metaCategory: 'UTILITY' },
     supportsMedia: false,
   },
 } satisfies Record<WaTemplateKey, WaTemplateDefinition>);

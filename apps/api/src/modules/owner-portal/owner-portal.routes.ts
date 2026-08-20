@@ -1,13 +1,25 @@
+import { Queue } from 'bullmq';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { createTenantClient, getBasePrisma, type TenantPrismaClient } from '../../lib/prisma-rls.js';
+import { InvoiceRepository } from '../billing/invoice.repository.js';
+import { PaymentService } from '../billing/payment.service.js';
+import { StockMovementService } from '../inventory/stock-movement.service.js';
+import { StockValidatorService } from '../billing/stock-validator.service.js';
+import { WhatsAppRepository } from '../whatsapp/whatsapp.repository.js';
+import { SendAuthorizationService } from '../whatsapp/send-authorization.service.js';
+import { WhatsAppService } from '../whatsapp/whatsapp.service.js';
 import { AccessScopeService, type OwnerPortalTokenScope } from './access-scope.service.js';
 import { MagicLinkService } from './magic-link.service.js';
 import { PortalSessionService } from './portal-session.service.js';
 import { PortalRecordsService } from './portal-records.service.js';
 import { PortalInvoicesService } from './portal-invoices.service.js';
+import { PortalCheckoutService } from './portal-checkout.service.js';
+import { PortalReissueService } from './portal-reissue.service.js';
 import { createSessionController } from './session.controller.js';
 import { createRecordsController } from './records.controller.js';
 import { createInvoicesController } from './invoices.controller.js';
+import { createCheckoutController } from './checkout.controller.js';
+import { createReissueController } from './reissue.controller.js';
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -45,9 +57,47 @@ export default async function ownerPortalRoutes(fastify: FastifyInstance) {
   const buildPortalInvoicesService = (db: TenantPrismaClient) =>
     new PortalInvoicesService(db, new AccessScopeService());
 
+  /**
+   * The billing side, built exactly like `billing.routes.ts`'s own
+   * `buildPaymentService` — this is the payment source of truth
+   * `PortalCheckoutService` delegates to rather than a second one
+   * (OWN-03, D-66).
+   */
+  const buildPortalCheckoutService = (db: TenantPrismaClient) => {
+    const stockValidator = new StockValidatorService(db, new StockMovementService(db));
+    const paymentService = new PaymentService(new InvoiceRepository(db, stockValidator), db);
+    return new PortalCheckoutService(db, new AccessScopeService(), paymentService);
+  };
+
+  // ─── WhatsApp send pipeline, admin-scoped (D-30 exemption) — feeds ONLY
+  // `PortalReissueService.reissue`'s delegated send, mirroring
+  // `whatsapp.routes.ts`'s own admin-scoped `WhatsAppService` construction.
+  // A second `Queue('whatsapp-outbound', ...)` handle is intentional and
+  // safe: BullMQ queues are lightweight named handles over the same
+  // Redis-backed queue, not a singleton-per-process resource — the existing
+  // `outbound.worker.ts` consumer processes jobs regardless of which
+  // plugin's `Queue` instance produced them.
+  const whatsAppRepository = new WhatsAppRepository(fastify.prisma);
+  const outboundQueue = new Queue('whatsapp-outbound', { connection: fastify.redis });
+  fastify.addHook('onClose', async () => {
+    await outboundQueue.close();
+  });
+  const whatsAppService = new WhatsAppService(
+    whatsAppRepository,
+    new SendAuthorizationService(whatsAppRepository),
+    fastify.prisma,
+    outboundQueue,
+    fastify.io ?? null,
+  );
+  const portalBaseUrl = `${process.env.WEB_URL || 'http://localhost:3001'}/portal`;
+  const buildPortalReissueService = (db: TenantPrismaClient) =>
+    new PortalReissueService(db, whatsAppService, portalBaseUrl);
+
   const sessionController = createSessionController(buildPortalSessionService);
   const recordsController = createRecordsController(buildPortalRecordsService);
   const invoicesController = createInvoicesController(buildPortalInvoicesService);
+  const checkoutController = createCheckoutController(buildPortalCheckoutService);
+  const reissueController = createReissueController(magicLinkService, buildPortalReissueService);
 
   /**
    * The shared "magic-link middleware" every `READY`-only route hangs off
@@ -91,5 +141,17 @@ export default async function ownerPortalRoutes(fastify: FastifyInstance) {
   fastify.get('/owner-portal/:token/invoices', {
     preHandler: requirePortalScope,
     handler: invoicesController.getInvoicesHandler,
+  });
+
+  fastify.post('/owner-portal/:token/checkout', {
+    preHandler: requirePortalScope,
+    handler: checkoutController.createCheckoutHandler,
+  });
+
+  // No `requirePortalScope` preHandler — reissue is the one route that must
+  // accept an `EXPIRED` link (that is the whole point of it). See
+  // `reissue.controller.ts` for its own token resolution.
+  fastify.post('/owner-portal/:token/reissue', {
+    handler: reissueController.reissueHandler,
   });
 }

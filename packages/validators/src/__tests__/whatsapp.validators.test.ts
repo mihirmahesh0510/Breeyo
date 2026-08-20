@@ -82,7 +82,7 @@ describe('WA_TEMPLATE_VARIABLE_SCHEMAS', () => {
     for (const key of WA_TEMPLATE_KEYS) {
       expect(WA_TEMPLATE_VARIABLE_SCHEMAS[key]).toBeDefined();
     }
-    expect(Object.keys(WA_TEMPLATE_VARIABLE_SCHEMAS)).toHaveLength(7);
+    expect(Object.keys(WA_TEMPLATE_VARIABLE_SCHEMAS)).toHaveLength(8);
   });
 
   it('appointment_reminder accepts the ADVANCE/ON_DATE variable set (Phase 8, D-17/D-18)', () => {

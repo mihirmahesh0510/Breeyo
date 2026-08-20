@@ -17,7 +17,7 @@ import { SOCKET_EVENTS } from '../constants/socket-events.js';
 // ─── WA_TEMPLATE_KEYS (WHA-04) ───────────────────────────────────────────────
 
 describe('WA_TEMPLATE_KEYS', () => {
-  it('has exactly the seven Beta template keys (Phase 8 adds appointment_reminder, D-17/D-18)', () => {
+  it('has exactly the eight Beta template keys (Phase 8 adds appointment_reminder D-17/D-18; Phase 9 adds owner_portal_link OWN-04/D-67/D-82)', () => {
     expect(WA_TEMPLATE_KEYS).toEqual([
       'invoice_delivery',
       'payment_reminder',
@@ -26,8 +26,9 @@ describe('WA_TEMPLATE_KEYS', () => {
       'deworming_due',
       'booking_confirmation',
       'appointment_reminder',
+      'owner_portal_link',
     ]);
-    expect(WA_TEMPLATE_KEYS).toHaveLength(7);
+    expect(WA_TEMPLATE_KEYS).toHaveLength(8);
   });
 });
 
@@ -43,6 +44,7 @@ describe('WA_TEMPLATE_STAFF_NAMES', () => {
       deworming_due: 'Deworming due',
       booking_confirmation: 'Booking confirmation',
       appointment_reminder: 'Appointment reminder',
+      owner_portal_link: 'Owner portal link',
     });
   });
 

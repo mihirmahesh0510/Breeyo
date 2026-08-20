@@ -19,7 +19,10 @@ export type WaProviderId = 'simulator' | 'cloud-api';
  * The Beta message templates (WHA-04, D-10). `appointment_reminder` is
  * Phase 8's addition (D-17, D-18) to Phase 7's existing template set --
  * added here rather than in a new file, per D-17's ban on a parallel
- * messaging mechanism.
+ * messaging mechanism. `owner_portal_link` is Phase 9's addition (09-05
+ * Task 2, OWN-04, D-67, D-82): the owner-portal magic-link reissue flow
+ * delegates to this SAME template pipeline rather than inventing a second
+ * one, and this is the template key it sends.
  */
 export type WaTemplateKey =
   | 'invoice_delivery'
@@ -28,7 +31,8 @@ export type WaTemplateKey =
   | 'vaccine_due'
   | 'deworming_due'
   | 'booking_confirmation'
-  | 'appointment_reminder';
+  | 'appointment_reminder'
+  | 'owner_portal_link';
 
 /** D-10: reminder-category templates are STOP-silenceable; transactional are not. */
 export type WaTemplateCategory = 'REMINDER' | 'TRANSACTIONAL';
