@@ -134,6 +134,13 @@ export async function buildApp(
   // one route instead of breaking JSON parsing everywhere else.
   await app.register(import('./modules/billing/webhook.routes.js'), { prefix: '/api/v1' });
 
+  // Phase 9 (plan 09-02): the web dashboard's browser access policy,
+  // operations cockpit, panel-order preferences, and admin user-management
+  // summary. Registered after every module it aggregates over (queue,
+  // scheduling, billing, inventory) so its own composition root can be read
+  // top-to-bottom without forward references.
+  await app.register(import('./modules/web-dashboard/web-dashboard.routes.js'), { prefix: '/api/v1' });
+
   // Midnight archive cron (skip in test environment)
   if (!isTest) {
     scheduleMidnightArchive(app.prisma, app.io);
