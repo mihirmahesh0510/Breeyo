@@ -59,6 +59,22 @@ export const markPaidBodySchema = z.object({
 });
 
 /**
+ * Plan 09-04: the browser billing workbench's cash quick-collection action.
+ * Deliberately as narrow as `markPaidBodySchema` above and for the same
+ * reason -- omitting `amountPaise` means "settle the balance", derived
+ * server-side by `PaymentService.recordCashPayment`, never sent as a client
+ * -computed figure.
+ */
+export const collectPaymentBodySchema = z.object({
+  amountPaise: z.number().int().positive().optional(),
+});
+
+/** Plan 09-04: browser billing workbench board query -- see `queue.schema.ts`'s `webQueueBoardQuerySchema` for the identical D-40 rationale. */
+export const webBillingWorkbenchQuerySchema = z.object({
+  knownVersion: z.coerce.number().int().nonnegative().optional(),
+});
+
+/**
  * D-13 "View Receipt". Both ids are validated: the receipt is looked up by
  * `(id, clinicId, invoiceId)` so a valid receipt id from another invoice — or
  * another clinic — cannot be read through this route.

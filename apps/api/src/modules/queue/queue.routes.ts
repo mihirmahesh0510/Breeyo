@@ -2,6 +2,9 @@ import type { FastifyInstance } from 'fastify';
 import { QueueRepository } from './queue.repository.js';
 import { QueueService } from './queue.service.js';
 import { createQueueController } from './queue.controller.js';
+import { WebQueueService } from './web-queue.service.js';
+import { createWebQueueController } from './web-queue.controller.js';
+import { BrowserSyncService } from '../../realtime/browser-sync.service.js';
 import { authenticate } from '../../middleware/authenticate.js';
 import { tenantContext } from '../../middleware/tenant-context.js';
 import type { TenantPrismaClient } from '../../lib/prisma-rls.js';
@@ -38,6 +41,19 @@ export default async function queueRoutes(fastify: FastifyInstance) {
 
   const controller = createQueueController(buildService);
 
+  // Plan 09-04: the browser queue workbench (D-07, D-40, D-41, D-43). Shares
+  // `fastify.io` as its realtime transport with `QueueService` above
+  // (`BrowserSyncService` publishes on its own browser-only channel,
+  // `socket.events.ts`, not `SOCKET_EVENTS`), and wraps a fresh
+  // `QueueService` per request from the same tenant-scoped handle (D-30) --
+  // it does not reach across requests for the one `buildService` closure
+  // above, keeping this plugin-scope block free of any shared mutable state
+  // beyond the two intentional singletons it already had.
+  const browserSyncService = new BrowserSyncService(fastify.io);
+  const buildWebQueueService = (db: TenantPrismaClient) =>
+    new WebQueueService(db, new QueueService(new QueueRepository(db), fastify.io, pushTriggers), browserSyncService);
+  const webQueueController = createWebQueueController(buildWebQueueService);
+
   const preHandler = [authenticate, tenantContext];
 
   // Get queue board (QUE-03)
@@ -68,5 +84,17 @@ export default async function queueRoutes(fastify: FastifyInstance) {
   fastify.post('/queue/archive', {
     preHandler,
     handler: controller.archiveEntriesHandler,
+  });
+
+  // Plan 09-04: browser queue workbench. Registered after the fixed
+  // `/queue/archive` path but before nothing that could shadow it -- neither
+  // segment is parametric, so Fastify's radix router cannot confuse them.
+  fastify.get('/queue/web/board', {
+    preHandler,
+    handler: webQueueController.getBoardHandler,
+  });
+  fastify.post('/queue/web/entries/:queueEntryId/status', {
+    preHandler,
+    handler: webQueueController.updateEntryStatusHandler,
   });
 }

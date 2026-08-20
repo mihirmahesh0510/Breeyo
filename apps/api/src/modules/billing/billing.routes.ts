@@ -21,6 +21,10 @@ import { createInvoiceController } from './invoice.controller.js';
 import { createPaymentController } from './payment.controller.js';
 import { createRefundController } from './refund.controller.js';
 import { createCreditNoteController } from './credit-note.controller.js';
+import { BillingWorkbenchService } from './billing-workbench.service.js';
+import { createWorkbenchController } from './workbench.controller.js';
+import { AccessPolicyService } from '../web-dashboard/access-policy.service.js';
+import { BrowserSyncService } from '../../realtime/browser-sync.service.js';
 
 /**
  * Billing routes — the first consumer of `requirePermission` outside auth.
@@ -113,6 +117,32 @@ export default async function billingRoutes(fastify: FastifyInstance) {
   /** D-29 settings, including the per-clinic Razorpay credentials. */
   const buildSettingsService = (db: TenantPrismaClient) => new BillingSettingsService(db);
 
+  /**
+   * Plan 09-04 browser billing workbench (D-22, D-40, D-42, D-43). Built the
+   * same way as every other service above -- per request, from the tenant
+   * handle (D-30) -- and composed from fresh instances of the exact same
+   * `InvoiceService`/`PaymentService`/`RefundService` construction used
+   * elsewhere in this file, so the workbench never diverges from the
+   * mobile-facing money-state invariants those classes already enforce.
+   * `AccessPolicyService` is the D-19/D-83 fresh role-resolution this
+   * workbench's D-22 Admin-only gate depends on; `BrowserSyncService`
+   * shares `fastify.io` as its realtime transport with `QueueService`
+   * (D-30 exemption: the Socket.IO server is transport, not tenant data).
+   */
+  const browserSyncService = new BrowserSyncService(fastify.io);
+  const buildWorkbenchService = (db: TenantPrismaClient) => {
+    const stockValidator = new StockValidatorService(db, new StockMovementService(db));
+    const invoiceRepository = new InvoiceRepository(db, stockValidator);
+    return new BillingWorkbenchService(
+      db,
+      new AccessPolicyService(db),
+      new InvoiceService(invoiceRepository, stockValidator, db),
+      new PaymentService(new InvoiceRepository(db, stockValidator), db),
+      new RefundService(new InvoiceRepository(db, stockValidator), db, fastify.log),
+      browserSyncService,
+    );
+  };
+
   const controller = createInvoiceController(buildService);
   const dashboardController = createDashboardController(buildDashboardService);
   const serviceCatalogController = createServiceCatalogController(buildServiceCatalogService);
@@ -120,6 +150,7 @@ export default async function billingRoutes(fastify: FastifyInstance) {
   const paymentController = createPaymentController(buildPaymentService);
   const refundController = createRefundController(buildRefundService);
   const creditNoteController = createCreditNoteController(buildCreditNoteService);
+  const workbenchController = createWorkbenchController(buildWorkbenchService);
 
   // `requirePermission` reads `request.server.permissionService`, and Fastify's
   // plugin encapsulation means auth.routes.ts's decoration never reaches this
@@ -250,4 +281,17 @@ export default async function billingRoutes(fastify: FastifyInstance) {
   fastify.post('/billing/invoices/:invoiceId/credit-notes', { preHandler: payHandler, handler: creditNoteController.issueCreditNoteHandler });
   fastify.get('/billing/invoices/:invoiceId/credit-notes', { preHandler: readHandler, handler: creditNoteController.listCreditNotesHandler });
   fastify.get('/billing/credit-notes/:creditNoteId', { preHandler: readHandler, handler: creditNoteController.getCreditNoteHandler });
+
+  // Plan 09-04: browser billing workbench (D-22, D-40, D-42, D-43). All four
+  // sit behind `payHandler` (`MANAGE_PAYMENTS`) like the mobile
+  // collect/refund/void routes above -- Front Desk and Admin both pass this
+  // gate (D-05). D-22's Admin-only narrowing of refund/void happens one
+  // layer down, inside `BillingWorkbenchService`, which is what turns a
+  // Front Desk request into a 403 rather than a second permission string
+  // this module would have to introduce and keep in sync with
+  // `AccessPolicyService`'s browser role resolution.
+  fastify.get('/billing/web/workbench', { preHandler: readHandler, handler: workbenchController.getWorkbenchHandler });
+  fastify.post('/billing/web/invoices/:invoiceId/collect-payment', { preHandler: payHandler, handler: workbenchController.collectPaymentHandler });
+  fastify.post('/billing/web/invoices/:invoiceId/refund', { preHandler: payHandler, handler: workbenchController.refundHandler });
+  fastify.post('/billing/web/invoices/:invoiceId/void', { preHandler: payHandler, handler: workbenchController.voidHandler });
 }
