@@ -13,6 +13,7 @@
     "preview:mobile": "bash scripts/preview-mobile.sh"
   },
   "devDependencies": {
+    "prisma": "^6.2.0",
     "turbo": "latest",
     "vitest": "^3.0.0"
   }
