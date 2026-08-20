@@ -28,6 +28,12 @@ export default defineConfig({
       // Plan 09-03: browser inventory workbench verify commands.
       'apps/api/src/modules/inventory/**/__tests__/*.test.ts',
       'apps/web/src/features/inventory/**/__tests__/*.test.tsx',
+      // Plan 09-04: browser queue/billing workbench + browser-sync verify commands.
+      'apps/api/src/modules/queue/**/__tests__/*.test.ts',
+      'apps/api/src/modules/billing/**/__tests__/*.test.ts',
+      'apps/api/src/realtime/**/__tests__/*.test.ts',
+      'apps/web/src/features/queue/**/__tests__/*.test.tsx',
+      'apps/web/src/features/billing/**/__tests__/*.test.tsx',
     ],
   },
 });
