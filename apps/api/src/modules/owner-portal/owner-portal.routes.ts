@@ -15,11 +15,14 @@ import { PortalRecordsService } from './portal-records.service.js';
 import { PortalInvoicesService } from './portal-invoices.service.js';
 import { PortalCheckoutService } from './portal-checkout.service.js';
 import { PortalReissueService } from './portal-reissue.service.js';
+import { PortalCareDatesService } from './portal-care-dates.service.js';
+import { VaccinationRepository } from '../vaccination/vaccination.repository.js';
 import { createSessionController } from './session.controller.js';
 import { createRecordsController } from './records.controller.js';
 import { createInvoicesController } from './invoices.controller.js';
 import { createCheckoutController } from './checkout.controller.js';
 import { createReissueController } from './reissue.controller.js';
+import { createCareDatesController } from './care-dates.controller.js';
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -56,6 +59,8 @@ export default async function ownerPortalRoutes(fastify: FastifyInstance) {
     new PortalRecordsService(db, new AccessScopeService());
   const buildPortalInvoicesService = (db: TenantPrismaClient) =>
     new PortalInvoicesService(db, new AccessScopeService());
+  const buildPortalCareDatesService = (db: TenantPrismaClient) =>
+    new PortalCareDatesService(db, new AccessScopeService(), new VaccinationRepository(db));
 
   /**
    * The billing side, built exactly like `billing.routes.ts`'s own
@@ -96,6 +101,7 @@ export default async function ownerPortalRoutes(fastify: FastifyInstance) {
   const sessionController = createSessionController(buildPortalSessionService);
   const recordsController = createRecordsController(buildPortalRecordsService);
   const invoicesController = createInvoicesController(buildPortalInvoicesService);
+  const careDatesController = createCareDatesController(buildPortalCareDatesService);
   const checkoutController = createCheckoutController(buildPortalCheckoutService);
   const reissueController = createReissueController(magicLinkService, buildPortalReissueService);
 
@@ -141,6 +147,14 @@ export default async function ownerPortalRoutes(fastify: FastifyInstance) {
   fastify.get('/owner-portal/:token/invoices', {
     preHandler: requirePortalScope,
     handler: invoicesController.getInvoicesHandler,
+  });
+
+  // OWN-07: upcoming vaccination/deworming due dates + next scheduled
+  // appointment, scoped by the same `requirePortalScope` middleware as
+  // session/records/invoices (T-09-21).
+  fastify.get('/owner-portal/:token/care-dates', {
+    preHandler: requirePortalScope,
+    handler: careDatesController.getCareDatesHandler,
   });
 
   fastify.post('/owner-portal/:token/checkout', {
