@@ -1,0 +1,47 @@
+.card {
+  background: var(--color-surface-variant, #f5f0eb);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.sectionHeading {
+  margin: 0;
+  font-size: var(--font-size-caption, 14px);
+  font-weight: var(--font-weight-subheading);
+  color: var(--color-on-surface-variant);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.dueAmount {
+  margin: 0;
+  font-size: var(--font-size-heading2, 20px);
+  font-weight: var(--font-weight-subheading);
+  color: var(--color-tertiary, #e65100);
+}
+
+.dueMeta {
+  margin: 0;
+  font-size: var(--font-size-body);
+  color: var(--color-on-surface-variant);
+}
+
+.recentVisitText {
+  margin: 0;
+  font-size: var(--font-size-body);
+}
+
+.divider {
+  border: none;
+  border-top: 1px solid var(--color-outline-variant, #e0e0e0);
+  margin: 0;
+}

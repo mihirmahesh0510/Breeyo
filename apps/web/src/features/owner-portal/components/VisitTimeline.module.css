@@ -1,0 +1,25 @@
+.timeline {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.empty {
+  text-align: center;
+  padding: var(--spacing-xl) var(--spacing-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.emptyHeading {
+  margin: 0;
+  font-size: var(--font-size-heading2, 20px);
+  font-weight: var(--font-weight-subheading);
+}
+
+.emptyBody {
+  margin: 0;
+  font-size: var(--font-size-body);
+  color: var(--color-on-surface-variant);
+}

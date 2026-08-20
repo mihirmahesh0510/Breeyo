@@ -1,0 +1,45 @@
+.petGrid {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-md);
+}
+
+.petCard {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--color-surface, #fffbf5);
+  border: 1px solid var(--color-outline-variant, #e0e0e0);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-sm) var(--spacing-md);
+}
+
+.petName {
+  margin: 0;
+  font-size: var(--font-size-subheading);
+  font-weight: var(--font-weight-subheading);
+}
+
+.petSpecies {
+  margin: 0;
+  font-size: var(--font-size-caption, 14px);
+  color: var(--color-on-surface-variant);
+}
+
+.unpaidBadge {
+  font-size: var(--font-size-caption, 14px);
+  font-weight: var(--font-weight-subheading);
+  color: var(--color-tertiary, #e65100);
+}
+
+.tabBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.stateText {
+  font-size: var(--font-size-body);
+  color: var(--color-on-surface-variant);
+}

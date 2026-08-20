@@ -34,6 +34,8 @@ export default defineConfig({
       'apps/api/src/realtime/**/__tests__/*.test.ts',
       'apps/web/src/features/queue/**/__tests__/*.test.tsx',
       'apps/web/src/features/billing/**/__tests__/*.test.tsx',
+      // Plan 09-06: owner-portal web shell, records, and invoice/checkout flow.
+      'apps/web/src/features/owner-portal/**/__tests__/*.test.tsx',
     ],
   },
 });
