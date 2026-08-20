@@ -1,0 +1,49 @@
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--color-surface-variant);
+  border-radius: var(--radius-md);
+  margin-bottom: var(--spacing-lg);
+}
+
+.table th,
+.table td {
+  text-align: left;
+  padding: var(--spacing-sm) var(--spacing-md);
+  font-size: var(--font-size-body, 16px);
+  border-bottom: 1px solid var(--color-outline-variant, #e0e0e0);
+}
+
+.table th {
+  font-size: var(--font-size-label, 14px);
+  font-weight: 500;
+  color: var(--color-on-surface-variant);
+}
+
+.lowStockRow td {
+  color: var(--color-warning, #e65100);
+}
+
+.inlineForm {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.quantityInput {
+  width: 64px;
+  min-height: 44px;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border-radius: var(--radius-sm, 4px);
+  border: 1px solid var(--color-outline-variant, #e0e0e0);
+}
+
+.actionButton {
+  min-height: 44px;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border-radius: var(--radius-sm, 4px);
+  border: 1px solid var(--color-outline-variant, #e0e0e0);
+  background: var(--color-surface, #fffbf5);
+  font-size: var(--font-size-label, 14px);
+  cursor: pointer;
+}

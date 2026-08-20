@@ -1,0 +1,60 @@
+.panel {
+  background: var(--color-surface-variant);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-lg);
+  margin-bottom: var(--spacing-xl);
+}
+
+.actions {
+  display: flex;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-md);
+}
+
+.actionButton {
+  min-height: 44px;
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-radius: var(--radius-sm, 4px);
+  border: 1px solid var(--color-outline-variant, #e0e0e0);
+  background: var(--color-surface, #fffbf5);
+  font-size: var(--font-size-label, 14px);
+  cursor: pointer;
+}
+
+.emptyText {
+  font-size: var(--font-size-body, 16px);
+  color: var(--color-on-surface-variant);
+}
+
+.group {
+  margin-bottom: var(--spacing-md);
+}
+
+.groupTitle {
+  font-size: var(--font-size-heading2);
+  font-weight: var(--font-weight-heading2);
+  margin: 0 0 var(--spacing-sm) 0;
+}
+
+.list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  padding: var(--spacing-sm) 0;
+  border-bottom: 1px solid var(--color-outline-variant, #e0e0e0);
+}
+
+.itemName {
+  font-weight: 500;
+}
+
+.itemMeta {
+  color: var(--color-on-surface-variant);
+  flex: 1;
+}
