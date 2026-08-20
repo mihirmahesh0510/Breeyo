@@ -4,12 +4,12 @@ import {
   dashboardPanelOrderSchema,
   cockpitResponseSchema,
   staleStateEnvelopeSchema,
-} from '../schemas.js';
+} from '../web-dashboard.js';
 import {
   DASHBOARD_PANEL_ORDER,
   DEFAULT_BROWSER_ACCESS_BY_ROLE,
   getVisibleModules,
-} from '../types.js';
+} from '@breeyo/types';
 
 const CLINIC_ID = '3f1d6a2e-8c4b-4d7a-9e21-5b8f0c3a7d64';
 const USER_ID = '7a2c9d1b-4e63-4f80-b5a7-1c9e6d0f2a38';

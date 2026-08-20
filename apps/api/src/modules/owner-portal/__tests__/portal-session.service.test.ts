@@ -1,14 +1,13 @@
 // Wave 0 scaffold (09-01-PLAN.md Task 1): exercises the shared session-state
-// and session-restore contracts from `@breeyo/shared/owner-portal` that a
-// later plan (09-05) wires into an actual Prisma-backed
-// `portal-session.service.ts`. No DB access happens here — Task 3 (blocking
-// schema push) has not run yet.
+// and session-restore contracts from `@breeyo/validators` that a later plan
+// (09-05) wires into an actual Prisma-backed `portal-session.service.ts`.
+// No DB access happens here — Task 3 (blocking schema push) has not run yet.
 import { describe, it, expect } from 'vitest';
 import {
   ownerPortalSessionSchema,
   ownerPortalCheckoutSchema,
   sessionRestoreStateSchema,
-} from '@breeyo/shared/owner-portal';
+} from '@breeyo/validators';
 
 const MAGIC_LINK_ID = '3f1d6a2e-8c4b-4d7a-9e21-5b8f0c3a7d64';
 const INVOICE_ID_1 = '7a2c9d1b-4e63-4f80-b5a7-1c9e6d0f2a38';

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { DASHBOARD_PANEL_ORDER } from './types.js';
+import { DASHBOARD_PANEL_ORDER } from '@breeyo/types';
 
 const uuidSchema = z.string().uuid();
 const browserRoleCodeSchema = z.enum(['ADMIN', 'FRONT_DESK', 'CLINICIAN']);

@@ -6,13 +6,13 @@ import {
   deepLinkRequestSchema,
   sessionRestoreStateSchema,
   reissueRequestSchema,
-} from '../schemas.js';
+} from '../owner-portal.js';
 import {
   OWNER_PORTAL_MAGIC_LINK_TTL_SECONDS,
   hashMagicLinkToken,
   computeMagicLinkExpiry,
   resolveOwnerPortalSessionState,
-} from '../types.js';
+} from '@breeyo/types';
 
 const MAGIC_LINK_ID = '3f1d6a2e-8c4b-4d7a-9e21-5b8f0c3a7d64';
 const INVOICE_ID_1 = '7a2c9d1b-4e63-4f80-b5a7-1c9e6d0f2a38';

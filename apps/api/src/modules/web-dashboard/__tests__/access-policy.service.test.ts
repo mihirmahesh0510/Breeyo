@@ -1,15 +1,15 @@
 // Wave 0 scaffold (09-01-PLAN.md Task 1): exercises the shared browser-access
-// contracts from `@breeyo/shared/web-dashboard` that a later plan (09-02)
-// wires into an actual Prisma-backed `access-policy.service.ts`. No DB
-// access happens here — Task 3 (blocking schema push) has not run yet, so
+// contracts from `@breeyo/types` and `@breeyo/validators` that a later plan
+// (09-02) wires into an actual Prisma-backed `access-policy.service.ts`. No
+// DB access happens here — Task 3 (blocking schema push) has not run yet, so
 // anything requiring a generated Prisma client must wait for 09-02.
 import { describe, it, expect } from 'vitest';
 import {
   DEFAULT_BROWSER_ACCESS_BY_ROLE,
   getVisibleModules,
-  browserAccessPolicySchema,
   type ClinicBrowserAccessPolicy,
-} from '@breeyo/shared/web-dashboard';
+} from '@breeyo/types';
+import { browserAccessPolicySchema } from '@breeyo/validators';
 
 const CLINIC_ID = '3f1d6a2e-8c4b-4d7a-9e21-5b8f0c3a7d64';
 const ADMIN_USER_ID = '7a2c9d1b-4e63-4f80-b5a7-1c9e6d0f2a38';

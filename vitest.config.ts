@@ -11,7 +11,8 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     include: [
-      'packages/shared/src/**/__tests__/*.test.ts',
+      'packages/validators/src/__tests__/web-dashboard.test.ts',
+      'packages/validators/src/__tests__/owner-portal.test.ts',
       'apps/api/src/modules/web-dashboard/**/__tests__/*.test.ts',
       'apps/api/src/modules/owner-portal/**/__tests__/*.test.ts',
     ],

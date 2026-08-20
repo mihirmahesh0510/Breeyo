@@ -1,14 +1,14 @@
 // Wave 0 scaffold (09-01-PLAN.md Task 1): exercises the shared magic-link
-// contracts from `@breeyo/shared/owner-portal` that a later plan (09-05)
-// wires into an actual Prisma-backed `magic-link.service.ts`. No DB access
-// happens here — Task 3 (blocking schema push) has not run yet.
+// contracts from `@breeyo/types` that a later plan (09-05) wires into an
+// actual Prisma-backed `magic-link.service.ts`. No DB access happens here —
+// Task 3 (blocking schema push) has not run yet.
 import { describe, it, expect } from 'vitest';
 import {
   OWNER_PORTAL_MAGIC_LINK_TTL_SECONDS,
   hashMagicLinkToken,
   computeMagicLinkExpiry,
   resolveOwnerPortalSessionState,
-} from '@breeyo/shared/owner-portal';
+} from '@breeyo/types';
 
 describe('magic-link token hashing (T-09-02: raw tokens are never persisted)', () => {
   it('hashes a raw token deterministically without ever returning it verbatim', () => {
