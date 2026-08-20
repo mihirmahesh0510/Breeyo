@@ -37,6 +37,8 @@ export interface PortalSessionData {
   totalDuePaise: number;
   deepLink: OwnerPortalDeepLinkTarget | null;
   restore: PortalSessionRestoreState;
+  /** D-52, D-79: the clinic's contact number, for real `tel:`/`wa.me` help-bar links. */
+  clinicPhone: string;
 }
 
 type SessionEnvelope = { state: 'READY'; data: PortalSessionData } | { state: 'EXPIRED' };

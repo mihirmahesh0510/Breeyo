@@ -84,11 +84,12 @@ Infrastructure that must exist before the task it blocks can turn from ❌ to �
 - [ ] `apps/web/package.json` — replace the `test` echo with `vitest run`; add `@breeyo/validators`, `@breeyo/ui`, `@tanstack/react-query`, `zustand`, `socket.io-client` and matching test devDependencies
 - [ ] `apps/web/tests/setup.ts` — `@testing-library/jest-dom` import, `portal.css` stub
 - [ ] `apps/web/next.config.js` — portal security headers (does not exist yet)
-- [ ] `apps/api/tests/owner-portal/` and `apps/api/tests/web-dashboard/` directories with shared factories extending `tests/helpers/factories.ts` (owner/pet/link factories)
+- [x] `apps/api/tests/owner-portal/` directory with a real (non-mocked) integration test — `reissue-route.test.ts`, added during Plan 09-06's review. It's also the test that caught the `breeyo_app` grant gap below; `apps/api/tests/web-dashboard/` still has no equivalent yet.
 - [ ] `apps/api/tests/rls/clinic-scope.test.ts` — first repo test that actually exercises `breeyo_app` + RLS
 - [ ] `apps/web/lighthouserc.owner-portal.json` — 4G mobile profile, FCP budget 3000ms
 - [ ] `apps/api/tests/owner-portal/reissue-rate-limit.test.ts` — proves D-82's 3/day cap
 - [ ] `apps/api/tests/web-dashboard/browser-permissions.test.ts` — proves D-83's immediate-effect access revocation
+- [x] Re-run `apps/api/prisma/post-migrate.sql` after 09-01 Task 3's `db push` — `db push` creates the five new Phase 9 tables owned by `breeyo_admin` with no grants to `breeyo_app`, so every route using `request.db`/`createTenantClient` against them 500s with a real Postgres `permission denied` error until this idempotent script re-runs. No unit test catches this (they all mock Prisma); only `reissue-route.test.ts`'s real-DB integration test did. Fixed in this worktree and folded into 09-01-PLAN.md Task 3's acceptance criteria for any future rebuild.
 
 ---
 

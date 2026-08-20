@@ -23,6 +23,16 @@ export interface PortalSessionData {
   totalDuePaise: number;
   deepLink: OwnerPortalDeepLinkTarget | null;
   restore: SessionRestoreState;
+  /**
+   * D-52, D-79: the clinic's own public contact number, so `Call Clinic` /
+   * `WhatsApp Clinic` in the portal help bar are real `tel:`/`wa.me` links
+   * rather than inert placeholders. Safe to return here specifically
+   * because this is the READY path -- the owner already received this
+   * link from this exact clinic, so naming it back to them leaks nothing
+   * an attacker with a tampered/guessed token (the INVALID path, which
+   * never reaches this service) could use.
+   */
+  clinicPhone: string;
 }
 
 /**
@@ -38,8 +48,9 @@ export class PortalSessionService {
   constructor(private readonly db: TenantPrismaClient) {}
 
   async getSession(scope: OwnerPortalTokenScope): Promise<PortalSessionData> {
-    const [owner, pets, invoices, restore] = await Promise.all([
+    const [owner, clinic, pets, invoices, restore] = await Promise.all([
       this.db.petOwner.findUnique({ where: { id: scope.ownerId }, select: { name: true } }),
+      this.db.clinic.findUnique({ where: { id: scope.clinicId }, select: { contactPhone: true } }),
       this.db.pet.findMany({
         where: { id: { in: scope.allowedPetIds } },
         select: { id: true, name: true, species: true, photoUrl: true },
@@ -95,6 +106,7 @@ export class PortalSessionService {
       totalDuePaise,
       deepLink,
       restore,
+      clinicPhone: (clinic as { contactPhone: string } | null)?.contactPhone ?? '',
     };
   }
 

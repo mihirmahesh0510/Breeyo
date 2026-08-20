@@ -35,6 +35,9 @@ function buildDb(overrides: Record<string, unknown> = {}) {
     petOwner: {
       findUnique: vi.fn().mockResolvedValue({ name: 'Asha Rao' }),
     },
+    clinic: {
+      findUnique: vi.fn().mockResolvedValue({ contactPhone: '+919876543210' }),
+    },
     pet: {
       findMany: vi.fn().mockResolvedValue([
         { id: PET_1, name: 'Rocky', species: 'DOG', photoUrl: null },
@@ -80,6 +83,28 @@ describe('PortalSessionService.getSession — overview assembly (D-46 to D-56)',
       },
     ]);
     expect(session.totalDuePaise).toBe(50000);
+  });
+
+  it('includes the clinic contact number for D-52/D-79 help-bar actions', async () => {
+    const db = buildDb();
+    const service = new PortalSessionService(db as never);
+
+    const session = await service.getSession(scope());
+
+    expect(session.clinicPhone).toBe('+919876543210');
+    expect(db.clinic.findUnique).toHaveBeenCalledWith({
+      where: { id: CLINIC },
+      select: { contactPhone: true },
+    });
+  });
+
+  it('falls back to an empty clinicPhone rather than throwing if the clinic row is somehow missing', async () => {
+    const db = buildDb({ clinic: { findUnique: vi.fn().mockResolvedValue(null) } });
+    const service = new PortalSessionService(db as never);
+
+    const session = await service.getSession(scope());
+
+    expect(session.clinicPhone).toBe('');
   });
 
   it('touches lastViewedAt on the magic-link row (best-effort)', async () => {

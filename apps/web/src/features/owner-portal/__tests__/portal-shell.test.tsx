@@ -46,6 +46,7 @@ function readySession(overrides: Record<string, unknown> = {}) {
       pets: [{ petId: 'pet-1', name: 'Rocky', species: 'DOG', photoUrl: null, hasUnpaidInvoice: false }],
       totalDuePaise: 0,
       deepLink: null,
+      clinicPhone: '+919876543210',
       restore: {
         lastTab: null,
         lastPetId: null,
@@ -163,22 +164,24 @@ describe('PortalShell pet switcher (D-58)', () => {
 });
 
 describe('PortalShell persistent help actions (D-52, D-79)', () => {
-  it('shows Call Clinic and WhatsApp Clinic on the ready screen', async () => {
+  it('shows Call Clinic and WhatsApp Clinic on the ready screen, wired to the clinic\'s real number', async () => {
     mockSessionFetch(readySession());
     renderShell();
 
     await screen.findByTestId('active-tab');
-    expect(screen.getByRole('link', { name: /call clinic/i })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /whatsapp clinic/i })).toBeInTheDocument();
+    const callLink = screen.getByRole('link', { name: /call clinic/i });
+    const whatsappLink = screen.getByRole('link', { name: /whatsapp clinic/i });
+    expect(callLink).toHaveAttribute('href', 'tel:+919876543210');
+    expect(whatsappLink).toHaveAttribute('href', 'https://wa.me/919876543210');
   });
 
-  it('shows Call Clinic and WhatsApp Clinic on the invalid screen', async () => {
+  it('shows Call Clinic and WhatsApp Clinic on the invalid screen as non-navigating placeholders (no clinic identity is ever available for an invalid token)', async () => {
     mockSessionFetch({ state: 'INVALID' }, 403);
     renderShell();
 
     await waitFor(() => expect(screen.getByText(/this link is invalid/i)).toBeInTheDocument());
-    expect(screen.getByRole('link', { name: /call clinic/i })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /whatsapp clinic/i })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /call clinic/i })).toHaveAttribute('href', '#');
+    expect(screen.getByRole('link', { name: /whatsapp clinic/i })).toHaveAttribute('href', '#');
   });
 
   it('shows Call Clinic and WhatsApp Clinic on the expired screen', async () => {
