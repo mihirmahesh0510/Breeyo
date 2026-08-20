@@ -9,12 +9,10 @@ import { InvoiceDetailSheet } from '../components/InvoiceDetailSheet';
 import { CheckoutHandoffSheet } from '../components/CheckoutHandoffSheet';
 import { PaymentResultBanner } from '../components/PaymentResultBanner';
 import { ExpiredLinkState } from '../components/ExpiredLinkState';
-import { cachePortalMagicLinkId } from '../hooks/usePortalSession';
 
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
-  window.localStorage.clear();
 });
 
 function jsonResponse(status: number, body: unknown) {
@@ -207,12 +205,9 @@ describe('PaymentResultBanner return states (D-71, D-72)', () => {
 });
 
 describe('ExpiredLinkState reissue path (D-64, D-67, D-78, D-81, D-82)', () => {
-  it('requests a new link when a magicLinkId is cached for this token, and shows clinic help throughout', async () => {
-    cachePortalMagicLinkId('tok-1', 'link-1');
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => jsonResponse(200, { status: 'REISSUED', whatsappMessageId: 'wa-1' })),
-    );
+  it('requests a new link using only the route token, and shows clinic help throughout', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse(200, { status: 'REISSUED', whatsappMessageId: 'wa-1' }));
+    vi.stubGlobal('fetch', fetchMock);
 
     render(<ExpiredLinkState token="tok-1" />);
 
@@ -222,10 +217,13 @@ describe('ExpiredLinkState reissue path (D-64, D-67, D-78, D-81, D-82)', () => {
     fireEvent.click(screen.getByRole('button', { name: /request new link/i }));
 
     await waitFor(() => expect(screen.getByText(/on its way/i)).toBeInTheDocument());
+
+    // No body is ever sent — the route's own :token is the sole identifier.
+    const [, options] = fetchMock.mock.calls[0];
+    expect(options?.body).toBeUndefined();
   });
 
   it('falls back to clinic-contact messaging when the daily reissue cap is reached (D-82)', async () => {
-    cachePortalMagicLinkId('tok-2', 'link-2');
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => jsonResponse(429, { status: 'LIMIT_REACHED' })),
@@ -237,12 +235,17 @@ describe('ExpiredLinkState reissue path (D-64, D-67, D-78, D-81, D-82)', () => {
     await waitFor(() => expect(screen.getByText(/contact.*clinic/i)).toBeInTheDocument());
   });
 
-  it('falls back to clinic contact when no magicLinkId was ever cached for this token', () => {
+  it('falls back to clinic contact when the reissue request otherwise fails', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => jsonResponse(400, { status: 'NOT_EXPIRED' })),
+    );
+
     render(<ExpiredLinkState token="tok-never-seen" />);
 
     fireEvent.click(screen.getByRole('button', { name: /request new link/i }));
 
-    expect(screen.getByRole('alert')).toHaveTextContent(/contact.*clinic/i);
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/contact.*clinic/i));
     expect(screen.getByRole('link', { name: /call clinic/i })).toBeInTheDocument();
   });
 });

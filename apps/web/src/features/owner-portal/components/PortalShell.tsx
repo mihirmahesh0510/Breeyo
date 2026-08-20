@@ -3,8 +3,8 @@
 // Plan 09-06 Task 1/2: the owner-portal shell state matrix (D-46, D-52,
 // D-56 to D-65, D-79, OWN-01 to OWN-06). Task 2 moved the expired-state
 // rendering into the standalone `ExpiredLinkState` component (same
-// copy/test ids as Task 1's inline version, now with LIMIT_REACHED and
-// no-cached-id fallback handling) -- see that component's header comment.
+// copy/test ids as Task 1's inline version, now with LIMIT_REACHED
+// fallback handling) -- see that component's header comment.
 import type { ReactNode } from 'react';
 import type { OwnerPortalTabId } from '@breeyo/types';
 import { usePortalSession, type PortalSessionData } from '../hooks/usePortalSession';

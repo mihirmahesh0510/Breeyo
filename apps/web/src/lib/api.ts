@@ -12,7 +12,12 @@ export async function apiClient<T>(
 
   const response = await fetch(`${API_BASE_URL}${path}`, {
     headers: {
-      'Content-Type': 'application/json',
+      // Only set this when a body is actually being sent. Fastify's default
+      // JSON body parser rejects an empty body under `Content-Type:
+      // application/json` (`FST_ERR_CTP_EMPTY_JSON_BODY`) -- a bodyless POST
+      // like `owner-portal/:token/reissue` (Plan 09-06 review) needs no
+      // Content-Type at all, and sending one anyway 400s the request.
+      ...(rest.body ? { 'Content-Type': 'application/json' } : {}),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...headers,
     },

@@ -185,8 +185,13 @@ describe('sessionRestoreStateSchema (D-53)', () => {
 });
 
 describe('reissueRequestSchema (D-67, D-82)', () => {
-  it('accepts a reissue request identified by the expired magic link id', () => {
-    const result = reissueRequestSchema.safeParse({ expiredMagicLinkId: MAGIC_LINK_ID });
+  it('accepts an empty body — the route token alone identifies the expired link', () => {
+    const result = reissueRequestSchema.safeParse({});
     expect(result.success).toBe(true);
+  });
+
+  it('rejects an unexpected field (no client-supplied id is ever accepted or needed)', () => {
+    const result = reissueRequestSchema.safeParse({ expiredMagicLinkId: MAGIC_LINK_ID });
+    expect(result.success).toBe(false);
   });
 });

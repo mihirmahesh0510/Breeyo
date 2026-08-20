@@ -77,7 +77,13 @@ export const sessionRestoreStateSchema = z.object({
   lastReturnState: ownerPortalCheckoutReturnStateSchema.nullable(),
 });
 
-/** D-67, D-82: self-service reissue request, identified by the expired link. */
-export const reissueRequestSchema = z.object({
-  expiredMagicLinkId: uuidSchema,
-});
+/**
+ * D-67, D-82: self-service reissue request. Takes no fields — the raw
+ * `:token` in the route itself is the sole identifier once hash-validated
+ * server-side (`MagicLinkService.validate`), the same as every other
+ * portal route. A body-level `expiredMagicLinkId` field was considered and
+ * rejected: it added no security the token doesn't already provide, while
+ * requiring the client to know an id that OWN-04/OWN-06 forbid the EXPIRED
+ * session response from ever carrying.
+ */
+export const reissueRequestSchema = z.object({}).strict();

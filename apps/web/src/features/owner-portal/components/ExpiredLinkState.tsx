@@ -2,18 +2,17 @@
 
 // Plan 09-06 Task 2: extracts the expired-link reissue flow out of
 // `PortalShell.tsx`'s Task 1 inline version into its own component, adding
-// the LIMIT_REACHED (D-82) and no-cached-id fallback handling. `PortalShell`
-// now renders this instead of its own inline `ExpiredScreen`.
+// the LIMIT_REACHED (D-82) fallback handling. `PortalShell` now renders this
+// instead of its own inline `ExpiredScreen`.
 import { useState } from 'react';
 import { apiClient, ApiClientError } from '../../../lib/api';
-import { readCachedPortalMagicLinkId } from '../hooks/usePortalSession';
 import styles from './ExpiredLinkState.module.css';
 
 export interface ExpiredLinkStateProps {
   token: string;
 }
 
-type ReissueStatus = 'idle' | 'requesting' | 'requested' | 'limit-reached' | 'no-cached-id' | 'error';
+type ReissueStatus = 'idle' | 'requesting' | 'requested' | 'limit-reached' | 'error';
 
 /**
  * D-64, D-67: expired links get a dedicated screen with a built-in
@@ -23,32 +22,23 @@ type ReissueStatus = 'idle' | 'requesting' | 'requested' | 'limit-reached' | 'no
  * D-82: a 429 from `POST /reissue` (the daily cap) routes the owner to
  * clinic contact instead of retrying self-service, per D-78/D-81.
  *
- * Known gap (see `usePortalSession.ts` and 09-06-SUMMARY.md
- * "Deviations"): `POST /reissue` requires `expiredMagicLinkId`, but the
- * `/session` `EXPIRED` response never carries it (no-data-leak by design).
- * This component can only self-serve a reissue when this browser cached
- * that id from an earlier `READY` visit to this exact token. When nothing
- * is cached -- e.g. a WhatsApp link opened for the very first time after it
- * has already expired -- self-service is not possible against the current
- * API, and this falls back directly to clinic contact rather than issuing
- * a request that cannot succeed.
+ * `POST /reissue` takes no body — the raw `:token` in the URL is already
+ * hash-validated server-side and is sufficient on its own to identify which
+ * expired link to reissue, exactly like every other portal route. (An
+ * earlier version of this component needed a `magicLinkId` cached in
+ * localStorage from an earlier `READY` visit, because the backend used to
+ * require a client-supplied id the EXPIRED response never carried — fixed
+ * at the API layer, not worked around here, since it made self-service
+ * reissue impossible for a link opened for the very first time after it
+ * had already expired.)
  */
 export function ExpiredLinkState({ token }: ExpiredLinkStateProps) {
   const [status, setStatus] = useState<ReissueStatus>('idle');
 
   const handleRequestNewLink = async () => {
-    const cachedMagicLinkId = readCachedPortalMagicLinkId(token);
-    if (!cachedMagicLinkId) {
-      setStatus('no-cached-id');
-      return;
-    }
-
     setStatus('requesting');
     try {
-      await apiClient(`/api/v1/owner-portal/${token}/reissue`, {
-        method: 'POST',
-        body: JSON.stringify({ expiredMagicLinkId: cachedMagicLinkId }),
-      });
+      await apiClient(`/api/v1/owner-portal/${token}/reissue`, { method: 'POST' });
       setStatus('requested');
     } catch (err) {
       if (err instanceof ApiClientError && err.status === 429) {
@@ -59,7 +49,7 @@ export function ExpiredLinkState({ token }: ExpiredLinkStateProps) {
     }
   };
 
-  const showFallbackToClinic = status === 'limit-reached' || status === 'no-cached-id' || status === 'error';
+  const showFallbackToClinic = status === 'limit-reached' || status === 'error';
 
   return (
     <div className={styles.wrap} data-testid="expired-link-state">

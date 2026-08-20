@@ -1,5 +1,4 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { reissueRequestSchema } from '@breeyo/validators';
 import { createTenantClient, type TenantPrismaClient } from '../../lib/prisma-rls.js';
 import type { MagicLinkService } from './magic-link.service.js';
 import type { PortalReissueService } from './portal-reissue.service.js';
@@ -14,9 +13,15 @@ import type { PortalReissueService } from './portal-reissue.service.js';
  * case; `INVALID`/`READY` are answered directly, with no clinicId to scope
  * a handle to for `INVALID` in the first place.
  *
- * `body.expiredMagicLinkId` is cross-checked against the id the token
- * itself resolved to — never trusted alone (T-09-15): an owner cannot claim
- * a different link's id than the one their own (expired) token names.
+ * Takes no request body: the raw `:token` is already the sole bearer
+ * credential (hash-validated by `magicLinkService.validate` below, exactly
+ * like every other portal route), so it alone is sufficient to identify
+ * which link to reissue. An earlier version of this handler also required
+ * a client-supplied `expiredMagicLinkId` in the body as a "cross-check" —
+ * that added no security (the token already fully authenticates) while
+ * making the endpoint impossible to call correctly from a browser that has
+ * no legitimate way to learn its own magicLinkId (by design, OWN-04/OWN-06
+ * forbid the EXPIRED session response from carrying it). Removed.
  */
 export function createReissueController(
   magicLinkService: MagicLinkService,
@@ -26,13 +31,6 @@ export function createReissueController(
     async reissueHandler(request: FastifyRequest, reply: FastifyReply) {
       const { token } = request.params as { token: string };
 
-      const body = reissueRequestSchema.safeParse(request.body);
-      if (!body.success) {
-        return reply.status(400).send({
-          error: { code: 'VALIDATION_ERROR', message: body.error.errors.map((e) => e.message).join(', ') },
-        });
-      }
-
       const resolution = await magicLinkService.validate(token);
 
       if (resolution.state === 'INVALID') {
@@ -40,9 +38,6 @@ export function createReissueController(
       }
       if (resolution.state === 'READY') {
         return reply.status(400).send({ status: 'NOT_EXPIRED' });
-      }
-      if (resolution.magicLinkId !== body.data.expiredMagicLinkId) {
-        return reply.status(403).send({ status: 'INVALID' });
       }
 
       const db = createTenantClient(resolution.clinicId);
