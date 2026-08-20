@@ -13,6 +13,7 @@
     "preview:mobile": "bash scripts/preview-mobile.sh"
   },
   "devDependencies": {
-    "turbo": "latest"
+    "turbo": "latest",
+    "vitest": "^3.0.0"
   }
 }
