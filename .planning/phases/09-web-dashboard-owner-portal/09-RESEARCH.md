@@ -149,7 +149,9 @@ The four convention mismatches raised in the review brief are all **CONFIRMED**,
 
 ## Blocking Findings
 
-These are ordered by how badly they break planning. Each verdict is empirical.
+> **Note on currency (added 2026-08-20 during `/breeyo-build --review phase 9`):** BF-1, BF-2, BF-4, and BF-5 below were verified empirically against the codebase and live dev database as they stood on the date this research was written. Phases 5 (Inventory), 6 (Invoicing), 7 (WhatsApp), and 8 (Scheduling) have since been planned and implemented — `apps/api/prisma/schema.prisma` now defines `InventoryItem`, `StockBatch`, `Invoice`, `Payment`, `WhatsAppThread`, `Appointment`, and related models; migrations `20260813000000_add_phase_5_inventory_management` through `20260816000000_add_appointment_reminder_kind` are applied; `emr.controller.ts` and other Phase 4+ controllers now consume `request.db` (the tenant-scoped client) directly, and `prisma-rls.ts` now issues parameterised `set_config('app.clinic_id', ...)` inside an explicit transaction rather than a bare `SET LOCAL`. **BF-1, BF-2, BF-4, and BF-5 are therefore stale and should not be treated as current blockers** — re-verify empirically (as this document originally did) before relying on this note alone, but do not assume Tier A/Tier B descoping is still required for that reason. **BF-3 (`OWN-01`..`OWN-07` undefined in `REQUIREMENTS.md`) was re-verified as still true and has been closed separately** — see `REQUIREMENTS.md`'s Owner Portal section and traceability table, updated 2026-08-20. The canonical, current validation contract for this phase is `09-VALIDATION.md`, not the § Validation Architecture section further below in this document.
+
+These are ordered by how badly they break planning. Each verdict is empirical **as of the original research date** — see the currency note above before acting on BF-1, BF-2, BF-4, or BF-5.
 
 ### BF-1: Live database contains only Phase 1 tables — Phase 3/4 schema was never applied [VERIFIED: psql against `breeyo-postgres-1`]
 

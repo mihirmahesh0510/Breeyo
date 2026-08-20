@@ -115,6 +115,10 @@ Build Breeyo's browser-based admin surface and owner web portal on top of the al
 - **D-79:** Clinic contact actions should be available from anywhere in the portal as escalation paths.
 - **D-80:** The portal should not add a direct structured correction-request workflow for records or invoices in Phase 9.
 - **D-81:** The portal should try to be helpful first with clear wording and retry options, then fall back to human clinic support.
+- **D-82:** WhatsApp link reissue is capped at 3 requests per owner per day. Once the cap is hit within a rolling 24-hour window, the portal stops self-service reissue and routes the owner to clinic contact (D-79/D-81) instead of generating another link. (Added 2026-08-20 during Phase 9 plan review, resolving 09-RESEARCH.md Open Question 5.)
+
+### Browser Access And Permissions (addendum)
+- **D-83:** When an Admin disables a user's browser access (or a role's module toggle) while that user has an active browser session, the change takes effect immediately, not on next login. The user's live session is treated the same as any other server-authoritative access check: their next request/action against a now-unauthorized module is rejected and the browser redirects them to the first module they still have access to (or to a locked-out screen if none remain), consistent with D-20's "hidden, not shown as locked" posture. (Added 2026-08-20 during Phase 9 plan review.)
 
 ### the agent's Discretion
 - Exact browser information density, visual layout, and component composition can follow the Phase 2 design system and the later UI design contract for this phase.
