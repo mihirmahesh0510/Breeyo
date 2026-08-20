@@ -36,6 +36,7 @@ import { InvoiceDetailSheet } from '../../../src/features/owner-portal/component
 import { CheckoutHandoffSheet } from '../../../src/features/owner-portal/components/CheckoutHandoffSheet';
 import { PaymentResultBanner } from '../../../src/features/owner-portal/components/PaymentResultBanner';
 import { usePortalCheckout } from '../../../src/features/owner-portal/hooks/usePortalCheckout';
+import { usePortalCareDates } from '../../../src/features/owner-portal/hooks/usePortalCareDates';
 import styles from './portal-page.module.css';
 
 interface RecordsResponse {
@@ -130,6 +131,7 @@ export interface PortalBodyProps {
 
 export function PortalBody({ token, context, initialOpenInvoiceId }: PortalBodyProps) {
   const { visits, isLoading: visitsLoading } = usePetRecords(token, context.selectedPetId);
+  const { careDates } = usePortalCareDates(token, context.selectedPetId);
   const [invoiceRefetchKey, setInvoiceRefetchKey] = useState(0);
   const { invoices, isLoading: invoicesLoading } = usePetInvoices(token, context.selectedPetId, invoiceRefetchKey);
   const [openInvoiceId, setOpenInvoiceId] = useState<string | null>(initialOpenInvoiceId ?? null);
@@ -234,6 +236,7 @@ export function PortalBody({ token, context, initialOpenInvoiceId }: PortalBodyP
               }
             : null
         }
+        careDates={careDates}
       />
     </div>
   );
