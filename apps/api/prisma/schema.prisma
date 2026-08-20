@@ -1720,7 +1720,7 @@ model AppointmentPet {
 /// D-17, D-18, D-19, D-21, D-22). One row per (clinicId, roleCode) — access
 /// is configured through per-role module toggles, not per-user custom rules.
 /// `roleCode` mirrors `BrowserRoleCode` in
-/// `packages/shared/src/web-dashboard/types.ts` (ADMIN | FRONT_DESK |
+/// `packages/types/src/web-dashboard.ts` (ADMIN | FRONT_DESK |
 /// CLINICIAN).
 model ClinicBrowserAccessPolicy {
   id                     String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
@@ -1765,7 +1765,7 @@ model OwnerPortalMagicLink {
   id                     String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   clinicId               String    @map("clinic_id") @db.Uuid
   ownerId                String    @map("owner_id") @db.Uuid
-  tokenHash              String    @map("token_hash")
+  tokenHash              String    @unique @map("token_hash")
   defaultTab             String    @map("default_tab") // OVERVIEW | RECORDS | INVOICES
   deepLinkType           String?   @map("deep_link_type") // OVERVIEW | INVOICE | VISIT
   deepLinkEntityId       String?   @map("deep_link_entity_id") @db.Uuid
@@ -1778,7 +1778,6 @@ model OwnerPortalMagicLink {
   latestReissueLinkId    String?   @map("latest_reissue_link_id") @db.Uuid
   lastViewedAt           DateTime? @map("last_viewed_at")
 
-  @@index([tokenHash])
   @@index([ownerId, expiresAt])
   @@map("owner_portal_magic_links")
 }
