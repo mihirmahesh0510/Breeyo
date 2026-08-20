@@ -1,21 +1,17 @@
 'use client';
 
-// Plan 09-06 Task 1: the owner-portal shell state matrix (D-46, D-52, D-56
-// to D-65, D-79, OWN-01 to OWN-06). Task 2 replaces the inline expired-state
-// rendering below with the standalone `ExpiredLinkState` component (same
-// copy/test ids, now with the real reissue call wired in) -- see that
-// component's header comment.
-import { useState, type ReactNode } from 'react';
+// Plan 09-06 Task 1/2: the owner-portal shell state matrix (D-46, D-52,
+// D-56 to D-65, D-79, OWN-01 to OWN-06). Task 2 moved the expired-state
+// rendering into the standalone `ExpiredLinkState` component (same
+// copy/test ids as Task 1's inline version, now with LIMIT_REACHED and
+// no-cached-id fallback handling) -- see that component's header comment.
+import type { ReactNode } from 'react';
 import type { OwnerPortalTabId } from '@breeyo/types';
-import {
-  usePortalSession,
-  readCachedPortalMagicLinkId,
-  type PortalSessionData,
-} from '../hooks/usePortalSession';
-import { apiClient } from '../../../lib/api';
+import { usePortalSession, type PortalSessionData } from '../hooks/usePortalSession';
 import { TrustBanner } from './TrustBanner';
 import { PortalTabBar } from './PortalTabBar';
 import { PetSwitcher } from './PetSwitcher';
+import { ExpiredLinkState } from './ExpiredLinkState';
 import styles from './PortalShell.module.css';
 
 export interface PortalShellRenderContext {
@@ -82,67 +78,6 @@ function InvalidScreen() {
 }
 
 /**
- * D-64, D-67: a built-in reissue path. Reissue is only possible when this
- * browser previously cached `magicLinkId` for this exact token from an
- * earlier `READY` visit (see `usePortalSession.ts`'s cache header comment) --
- * `POST /reissue`'s body requires that id and the `/session` `EXPIRED`
- * response never carries it. When nothing is cached, self-service reissue
- * genuinely is not possible against the current API and this falls back to
- * clinic contact only, per D-78/D-81's "helpful first, then human support".
- */
-function ExpiredScreen({ token }: { token: string }) {
-  const [status, setStatus] = useState<'idle' | 'requesting' | 'requested' | 'error'>('idle');
-  const cachedMagicLinkId = readCachedPortalMagicLinkId(token);
-
-  const handleRequestNewLink = async () => {
-    if (!cachedMagicLinkId) {
-      setStatus('error');
-      return;
-    }
-    setStatus('requesting');
-    try {
-      await apiClient(`/api/v1/owner-portal/${token}/reissue`, {
-        method: 'POST',
-        body: JSON.stringify({ expiredMagicLinkId: cachedMagicLinkId }),
-      });
-      setStatus('requested');
-    } catch {
-      setStatus('error');
-    }
-  };
-
-  return (
-    <div className={styles.centered} data-testid="portal-expired">
-      <h1 className={styles.centeredHeading}>Your link has expired</h1>
-      <p className={styles.centeredBody}>
-        Owner-portal links stay valid for 7 days. Request a new WhatsApp link below, or contact your clinic
-        for help.
-      </p>
-      {status === 'requested' ? (
-        <p className={styles.centeredBody} role="status">
-          A new link is on its way to you on WhatsApp.
-        </p>
-      ) : (
-        <button
-          type="button"
-          className={styles.requestLinkButton}
-          onClick={handleRequestNewLink}
-          disabled={status === 'requesting'}
-        >
-          {status === 'requesting' ? 'Requesting…' : 'Request New Link'}
-        </button>
-      )}
-      {status === 'error' ? (
-        <p className={styles.centeredBody} role="alert">
-          We couldn&rsquo;t request a new link automatically. Please contact your clinic below.
-        </p>
-      ) : null}
-      <PortalHelpBar />
-    </div>
-  );
-}
-
-/**
  * D-46, D-56 to D-65, D-79: the owner-portal shell. Owns `usePortalSession`
  * directly so it can resolve token state and the D-60 deep-link target
  * BEFORE anything renders, then delegates the per-tab body to `children`.
@@ -163,7 +98,7 @@ export function PortalShell({ token, children }: PortalShellProps) {
   }
 
   if (portal.state === 'expired') {
-    return <ExpiredScreen token={token} />;
+    return <ExpiredLinkState token={token} />;
   }
 
   if (!portal.session) {

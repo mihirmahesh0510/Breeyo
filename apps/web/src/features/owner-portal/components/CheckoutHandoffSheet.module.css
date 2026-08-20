@@ -1,0 +1,72 @@
+.sheet {
+  background: var(--color-surface, #fffbf5);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.heading {
+  margin: 0;
+  font-size: var(--font-size-heading2, 20px);
+  font-weight: var(--font-weight-subheading);
+}
+
+.amount {
+  margin: 0;
+  font-size: var(--font-size-heading2, 20px);
+  font-weight: var(--font-weight-subheading);
+  color: var(--color-primary);
+}
+
+.breakdownList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.breakdownRow {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--font-size-body);
+}
+
+.secureNote {
+  margin: 0;
+  font-size: var(--font-size-caption, 14px);
+  color: var(--color-on-surface-variant);
+}
+
+.actions {
+  display: flex;
+  gap: var(--spacing-sm);
+}
+
+.cancelButton {
+  flex: 1;
+  min-height: 44px;
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-outline-variant, #e0e0e0);
+  background: none;
+  font-size: var(--font-size-subheading);
+  font-weight: var(--font-weight-subheading);
+  cursor: pointer;
+}
+
+.confirmButton {
+  flex: 2;
+  min-height: 44px;
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-radius: var(--radius-md);
+  border: none;
+  background: var(--color-primary);
+  color: var(--color-on-primary, #fff);
+  font-size: var(--font-size-subheading);
+  font-weight: var(--font-weight-subheading);
+  cursor: pointer;
+}
