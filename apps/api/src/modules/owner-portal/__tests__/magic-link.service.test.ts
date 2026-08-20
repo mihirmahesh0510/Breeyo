@@ -1,75 +1,135 @@
-// Wave 0 scaffold (09-01-PLAN.md Task 1): exercises the shared magic-link
-// contracts from `@breeyo/types` that a later plan (09-05) wires into an
-// actual Prisma-backed `magic-link.service.ts`. No DB access happens here —
-// Task 3 (blocking schema push) has not run yet.
-import { describe, it, expect } from 'vitest';
-import {
-  OWNER_PORTAL_MAGIC_LINK_TTL_SECONDS,
-  computeMagicLinkExpiry,
-  resolveOwnerPortalSessionState,
-} from '@breeyo/types';
+// Plan 09-05 Task 1: replaces the Wave 0 scaffold (09-01-PLAN.md Task 1),
+// which only exercised the pure `@breeyo/types` helpers. These tests drive
+// the real `MagicLinkService` against a mocked admin Prisma client (the
+// `invoice.service.test.ts` "mocked collaborators" style — no real DB).
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { hashMagicLinkToken } from '../../../lib/magic-link-hash.js';
+import { AccessScopeService } from '../access-scope.service.js';
+import { MagicLinkService } from '../magic-link.service.js';
 
-describe('magic-link token hashing (T-09-02: raw tokens are never persisted)', () => {
-  it('hashes a raw token deterministically without ever returning it verbatim', () => {
-    const rawToken = 'wa-issued-raw-token-123';
-    const hash = hashMagicLinkToken(rawToken);
+const CLINIC = '11111111-1111-4111-8111-111111111111';
+const OWNER = '22222222-2222-4222-8222-222222222222';
+const LINK_ID = '33333333-3333-4333-8333-333333333333';
+const PET_1 = '44444444-4444-4444-8444-444444444444';
+const PET_2 = '55555555-5555-4555-8555-555555555555';
+const INVOICE_1 = '66666666-6666-4666-8666-666666666666';
 
-    expect(hash).not.toBe(rawToken);
-    expect(hashMagicLinkToken(rawToken)).toBe(hash);
-  });
+function linkRow(overrides: Record<string, unknown> = {}) {
+  const issuedAt = new Date('2026-08-01T00:00:00.000Z');
+  return {
+    id: LINK_ID,
+    clinicId: CLINIC,
+    ownerId: OWNER,
+    tokenHash: hashMagicLinkToken('raw-token-abc'),
+    defaultTab: 'OVERVIEW',
+    deepLinkType: null,
+    deepLinkEntityId: null,
+    allowedPetIdsJson: [PET_1, PET_2],
+    allowedInvoiceIdsJson: [INVOICE_1],
+    issuedAt,
+    expiresAt: new Date(issuedAt.getTime() + 7 * 24 * 60 * 60 * 1000),
+    revokedAt: null,
+    reissuedFromLinkId: null,
+    latestReissueLinkId: null,
+    lastViewedAt: null,
+    ...overrides,
+  };
+}
 
-  it('produces distinct hashes for distinct raw tokens (lookup by hash must not collide in tests)', () => {
-    expect(hashMagicLinkToken('token-one')).not.toBe(hashMagicLinkToken('token-two'));
-  });
-});
+function buildPrisma(row: ReturnType<typeof linkRow> | null) {
+  return {
+    ownerPortalMagicLink: {
+      findUnique: vi.fn().mockResolvedValue(row),
+    },
+  };
+}
 
-describe('7-day expiry window (D-64, OWN-04)', () => {
-  it('encodes exactly 7 * 24 * 60 * 60 seconds', () => {
-    expect(OWNER_PORTAL_MAGIC_LINK_TTL_SECONDS).toBe(604800);
-  });
+describe('MagicLinkService.validate — hashed lookup (T-09-02)', () => {
+  it('hashes the raw token and looks up by hash, never by the raw value', async () => {
+    const row = linkRow();
+    const prisma = buildPrisma(row);
+    const service = new MagicLinkService(prisma as never, new AccessScopeService());
 
-  it('computes expiresAt as issuedAt + 7 days, no more and no less', () => {
-    const issuedAt = new Date('2026-08-01T00:00:00.000Z');
-    const expiresAt = computeMagicLinkExpiry(issuedAt);
-    expect(expiresAt.toISOString()).toBe('2026-08-08T00:00:00.000Z');
-  });
-});
+    await service.validate('raw-token-abc');
 
-describe('EXPIRED link state (D-64)', () => {
-  it('resolves to EXPIRED once now() is past the 7-day expiry, even with a matching hash', () => {
-    const issuedAt = new Date('2026-01-01T00:00:00.000Z');
-    const expiresAt = computeMagicLinkExpiry(issuedAt);
-    const now = new Date('2026-02-01T00:00:00.000Z'); // well past 7 days
-
-    const state = resolveOwnerPortalSessionState({ matchesHash: true, revokedAt: null, expiresAt, now });
-
-    expect(state).toBe('EXPIRED');
-  });
-});
-
-describe('INVALID link state — scope mismatch and no-data behavior (OWN-06, T-09-02)', () => {
-  it('resolves to INVALID when the presented token does not match the stored hash', () => {
-    const issuedAt = new Date();
-    const expiresAt = computeMagicLinkExpiry(issuedAt);
-
-    const state = resolveOwnerPortalSessionState({ matchesHash: false, revokedAt: null, expiresAt });
-
-    expect(state).toBe('INVALID');
-  });
-
-  it('resolves to INVALID for a revoked link, indistinguishable from a plain hash mismatch', () => {
-    const issuedAt = new Date();
-    const expiresAt = computeMagicLinkExpiry(issuedAt);
-
-    const revoked = resolveOwnerPortalSessionState({
-      matchesHash: true,
-      revokedAt: new Date(),
-      expiresAt,
+    expect(prisma.ownerPortalMagicLink.findUnique).toHaveBeenCalledWith({
+      where: { tokenHash: hashMagicLinkToken('raw-token-abc') },
     });
-    const mismatched = resolveOwnerPortalSessionState({ matchesHash: false, revokedAt: null, expiresAt });
+    const callArgs = prisma.ownerPortalMagicLink.findUnique.mock.calls[0][0];
+    expect(callArgs.where.tokenHash).not.toBe('raw-token-abc');
+  });
+});
 
-    expect(revoked).toBe('INVALID');
-    expect(mismatched).toBe('INVALID');
+describe('MagicLinkService.validate — READY (D-64, OWN-04)', () => {
+  it('resolves READY and derives explicit pet/invoice scope from the link row', async () => {
+    const now = new Date('2026-08-02T00:00:00.000Z');
+    const row = linkRow();
+    const prisma = buildPrisma(row);
+    const service = new MagicLinkService(prisma as never, new AccessScopeService());
+
+    const result = await service.validate('raw-token-abc', now);
+
+    expect(result.state).toBe('READY');
+    if (result.state !== 'READY') throw new Error('expected READY');
+    expect(result.data.magicLinkId).toBe(LINK_ID);
+    expect(result.data.clinicId).toBe(CLINIC);
+    expect(result.data.ownerId).toBe(OWNER);
+    expect(result.data.allowedPetIds).toEqual([PET_1, PET_2]);
+    expect(result.data.allowedInvoiceIds).toEqual([INVOICE_1]);
+    expect(result.data.defaultTab).toBe('OVERVIEW');
+  });
+});
+
+describe('MagicLinkService.validate — EXPIRED (D-64)', () => {
+  it('resolves EXPIRED once now() is past the 7-day expiry, without leaking scope data', async () => {
+    const row = linkRow();
+    const prisma = buildPrisma(row);
+    const service = new MagicLinkService(prisma as never, new AccessScopeService());
+
+    const farFuture = new Date(row.expiresAt.getTime() + 1000);
+    const result = await service.validate('raw-token-abc', farFuture);
+
+    expect(result.state).toBe('EXPIRED');
+    if (result.state !== 'EXPIRED') throw new Error('expected EXPIRED');
+    // Internal-only fields for the reissue path — not part of any public envelope.
+    expect(result.magicLinkId).toBe(LINK_ID);
+    expect(result.clinicId).toBe(CLINIC);
+    expect(result.ownerId).toBe(OWNER);
+    expect((result as unknown as { data?: unknown }).data).toBeUndefined();
+  });
+});
+
+describe('MagicLinkService.validate — INVALID no-data behavior (OWN-06, T-09-02)', () => {
+  let prisma: ReturnType<typeof buildPrisma>;
+
+  beforeEach(() => {
+    prisma = buildPrisma(null);
+  });
+
+  it('resolves INVALID with no data when no row matches the hashed token', async () => {
+    const service = new MagicLinkService(prisma as never, new AccessScopeService());
+
+    const result = await service.validate('tampered-token');
+
+    expect(result).toEqual({ state: 'INVALID' });
+  });
+
+  it('resolves INVALID for a revoked link, indistinguishable from a hash mismatch', async () => {
+    const row = linkRow({ revokedAt: new Date('2026-08-01T12:00:00.000Z') });
+    const revokedPrisma = buildPrisma(row);
+    const service = new MagicLinkService(revokedPrisma as never, new AccessScopeService());
+
+    const result = await service.validate('raw-token-abc');
+
+    expect(result).toEqual({ state: 'INVALID' });
+  });
+
+  it('resolves INVALID for an empty token without ever querying the database', async () => {
+    const service = new MagicLinkService(prisma as never, new AccessScopeService());
+
+    const result = await service.validate('');
+
+    expect(result).toEqual({ state: 'INVALID' });
+    expect(prisma.ownerPortalMagicLink.findUnique).not.toHaveBeenCalled();
   });
 });
