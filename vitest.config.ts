@@ -25,6 +25,9 @@ export default defineConfig({
       'apps/api/src/modules/web-dashboard/**/__tests__/*.test.ts',
       'apps/api/src/modules/owner-portal/**/__tests__/*.test.ts',
       'apps/web/src/features/dashboard/**/__tests__/*.test.tsx',
+      // Plan 09-03: browser inventory workbench verify commands.
+      'apps/api/src/modules/inventory/**/__tests__/*.test.ts',
+      'apps/web/src/features/inventory/**/__tests__/*.test.tsx',
     ],
   },
 });

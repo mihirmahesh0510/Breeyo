@@ -4,6 +4,13 @@ import { InventoryItemService } from './inventory-item.service.js';
 import { StockReceiptService } from './stock-receipt.service.js';
 import { BarcodeLookupService } from './barcode-lookup.service.js';
 import { InventoryController } from './inventory-item.controller.js';
+import { StockMovementService } from './stock-movement.service.js';
+import { ParLevelAlertService } from './par-level-alert.service.js';
+import { WantListService } from './want-list.service.js';
+import { StockAdjustmentService } from './stock-adjustment.service.js';
+import { InventoryWebService } from './inventory-web.service.js';
+import { InventoryWebController } from './inventory-web.controller.js';
+import { AccessPolicyService } from '../web-dashboard/access-policy.service.js';
 import { PermissionService } from '../auth/permission.service.js';
 import { authenticate } from '../../middleware/authenticate.js';
 import { tenantContext } from '../../middleware/tenant-context.js';
@@ -28,6 +35,25 @@ export default async function inventoryRoutes(fastify: FastifyInstance) {
   };
 
   const controller = new InventoryController(buildServices);
+
+  // Plan 09-03: the browser inventory workbench (D-26, D-30 to D-37). Its own
+  // factory, built alongside `buildServices` above rather than folded into
+  // it, since none of these services are used by the mobile-facing handlers.
+  const buildWebServices = (db: TenantPrismaClient) => {
+    const stockMovementService = new StockMovementService(db);
+    const parLevelAlertService = new ParLevelAlertService(db);
+    return {
+      inventoryWebService: new InventoryWebService(
+        db,
+        new AccessPolicyService(db),
+        parLevelAlertService,
+        new WantListService(parLevelAlertService, db),
+        new StockAdjustmentService(db, stockMovementService),
+      ),
+    };
+  };
+
+  const webController = new InventoryWebController(buildWebServices);
 
   // Fastify's plugin encapsulation means auth.routes.ts's own
   // `fastify.decorate('permissionService', ...)` never reaches this sibling
@@ -76,4 +102,16 @@ export default async function inventoryRoutes(fastify: FastifyInstance) {
   // Barcode lookup + offline catalog sync (INV-04, D-19)
   fastify.get('/inventory/barcode-lookup', { preHandler: viewInventory, handler: controller.lookupBarcode });
   fastify.get('/inventory/barcode-catalog', { preHandler: viewInventory, handler: controller.getBarcodeCatalog });
+
+  // Browser inventory workbench (Plan 09-03, D-26, D-30 to D-37). Read
+  // endpoints share the same `viewInventory` gate as the rest of this
+  // module; `adjust-stock` additionally enforces the D-18 browser-specific
+  // `inventoryWriteEnabled` check inside `InventoryWebService.adjustStock`
+  // on top of the existing `manageStock` RBAC gate below -- Front Desk keeps
+  // `manageStock` for mobile, but D-18 requires browser inventory to stay
+  // view-only for that same role unless an Admin separately grants it.
+  fastify.get('/inventory/web/workbench', { preHandler: viewInventory, handler: webController.getWorkbench });
+  fastify.post('/inventory/web/items/:itemId/adjust-stock', { preHandler: manageStock, handler: webController.adjustStock });
+  fastify.get('/inventory/web/exports/analytics.csv', { preHandler: viewInventory, handler: webController.exportAnalyticsCsv });
+  fastify.get('/inventory/web/exports/analytics.pdf', { preHandler: viewInventory, handler: webController.exportAnalyticsPdf });
 }
