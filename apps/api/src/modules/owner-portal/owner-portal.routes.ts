@@ -16,6 +16,7 @@ import { PortalInvoicesService } from './portal-invoices.service.js';
 import { PortalCheckoutService } from './portal-checkout.service.js';
 import { PortalReissueService } from './portal-reissue.service.js';
 import { PortalCareDatesService } from './portal-care-dates.service.js';
+import { PortalReceiptService } from './portal-receipt.service.js';
 import { VaccinationRepository } from '../vaccination/vaccination.repository.js';
 import { createSessionController } from './session.controller.js';
 import { createRecordsController } from './records.controller.js';
@@ -23,6 +24,7 @@ import { createInvoicesController } from './invoices.controller.js';
 import { createCheckoutController } from './checkout.controller.js';
 import { createReissueController } from './reissue.controller.js';
 import { createCareDatesController } from './care-dates.controller.js';
+import { createReceiptController } from './receipt.controller.js';
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -65,14 +67,22 @@ export default async function ownerPortalRoutes(fastify: FastifyInstance) {
   /**
    * The billing side, built exactly like `billing.routes.ts`'s own
    * `buildPaymentService` — this is the payment source of truth
-   * `PortalCheckoutService` delegates to rather than a second one
-   * (OWN-03, D-66).
+   * `PortalCheckoutService` (OWN-03, D-66) and, since finding 9.3,
+   * `PortalReceiptService` both delegate to, rather than either building a
+   * second one.
    */
-  const buildPortalCheckoutService = (db: TenantPrismaClient) => {
+  const buildPaymentService = (db: TenantPrismaClient) => {
     const stockValidator = new StockValidatorService(db, new StockMovementService(db));
-    const paymentService = new PaymentService(new InvoiceRepository(db, stockValidator), db);
-    return new PortalCheckoutService(db, new AccessScopeService(), paymentService);
+    return new PaymentService(new InvoiceRepository(db, stockValidator), db);
   };
+  const buildPortalCheckoutService = (db: TenantPrismaClient) =>
+    new PortalCheckoutService(db, new AccessScopeService(), buildPaymentService(db));
+  // Finding 9.3 (D-71): scoped, token-authenticated receipt access --
+  // re-checks `invoiceId` against `allowedInvoiceIds` before delegating to
+  // `PaymentService.getLatestReceiptForInvoice`, the real billing lookup,
+  // rather than a second receipt system.
+  const buildPortalReceiptService = (db: TenantPrismaClient) =>
+    new PortalReceiptService(db, new AccessScopeService(), buildPaymentService(db));
 
   // ─── WhatsApp send pipeline, admin-scoped (D-30 exemption) — feeds ONLY
   // `PortalReissueService.reissue`'s delegated send, mirroring
@@ -104,6 +114,7 @@ export default async function ownerPortalRoutes(fastify: FastifyInstance) {
   const careDatesController = createCareDatesController(buildPortalCareDatesService);
   const checkoutController = createCheckoutController(buildPortalCheckoutService);
   const reissueController = createReissueController(magicLinkService, buildPortalReissueService);
+  const receiptController = createReceiptController(buildPortalReceiptService);
 
   /**
    * The shared "magic-link middleware" every `READY`-only route hangs off
@@ -178,6 +189,14 @@ export default async function ownerPortalRoutes(fastify: FastifyInstance) {
     config: { rateLimit: portalReadRateLimit },
     preHandler: requirePortalScope,
     handler: checkoutController.createCheckoutHandler,
+  });
+
+  // D-71, finding 9.3: scoped receipt access, same requirePortalScope gate
+  // and rate budget as every other read route in this module.
+  fastify.get('/owner-portal/:token/invoices/:invoiceId/receipt', {
+    config: { rateLimit: portalReadRateLimit },
+    preHandler: requirePortalScope,
+    handler: receiptController.getReceiptHandler,
   });
 
   // No `requirePortalScope` preHandler — reissue is the one route that must

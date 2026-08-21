@@ -37,6 +37,7 @@ import { CheckoutHandoffSheet } from '../../../src/features/owner-portal/compone
 import { PaymentResultBanner } from '../../../src/features/owner-portal/components/PaymentResultBanner';
 import { usePortalCheckout } from '../../../src/features/owner-portal/hooks/usePortalCheckout';
 import { usePortalCareDates } from '../../../src/features/owner-portal/hooks/usePortalCareDates';
+import { usePortalReceiptUrl } from '../../../src/features/owner-portal/hooks/usePortalReceiptUrl';
 import styles from './portal-page.module.css';
 
 interface RecordsResponse {
@@ -142,6 +143,17 @@ export function PortalBody({ token, context, initialOpenInvoiceId }: PortalBodyP
   const mostRecentVisit = visits?.[0] ?? null;
   const openInvoice = invoices?.find((invoice) => invoice.invoiceId === openInvoiceId) ?? null;
 
+  // Finding 9.3 (D-71): "receipt access" for the open invoice sheet, and for
+  // the checkout success banner (the first invoice paid in this checkout --
+  // a combined multi-invoice payment issues one receipt per invoice leg, see
+  // `webhook.worker.ts`, so this links the first rather than attempting to
+  // surface every leg's receipt on one banner). Both resolve to `null` until
+  // a receipt is confirmed to exist server-side.
+  const openInvoiceReceiptUrl = usePortalReceiptUrl(token, openInvoice?.invoiceId ?? null);
+  const successReceiptInvoiceId =
+    checkout.returnState === 'success' ? checkout.selectedInvoiceIds[0] ?? null : null;
+  const successReceiptUrl = usePortalReceiptUrl(token, successReceiptInvoiceId);
+
   const handleProceedToCheckout = async () => {
     const result = await checkout.startCheckout();
     if (result) {
@@ -178,6 +190,7 @@ export function PortalBody({ token, context, initialOpenInvoiceId }: PortalBodyP
         {checkout.returnState !== 'idle' ? (
           <PaymentResultBanner
             state={checkout.returnState}
+            receiptUrl={successReceiptUrl}
             onRetry={() => {
               checkout.reset();
             }}
@@ -199,6 +212,7 @@ export function PortalBody({ token, context, initialOpenInvoiceId }: PortalBodyP
         {openInvoice ? (
           <InvoiceDetailSheet
             invoice={openInvoice}
+            receiptUrl={openInvoiceReceiptUrl}
             onClose={() => setOpenInvoiceId(null)}
             onPay={(invoiceId) => {
               if (!checkout.selectedInvoiceIds.includes(invoiceId)) {

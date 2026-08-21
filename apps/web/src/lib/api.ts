@@ -1,5 +1,15 @@
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
 
+/**
+ * Builds a full, directly-navigable URL for an API path. Finding 9.3's
+ * `usePortalReceiptUrl` is the first caller: `InvoiceDetailSheet`'s "View
+ * Receipt" link needs an `href` a browser can open in a new tab, not a
+ * value `apiClient` fetches and returns JSON for.
+ */
+export function apiUrl(path: string): string {
+  return `${API_BASE_URL}${path}`;
+}
+
 interface RequestOptions extends RequestInit {
   token?: string;
 }
