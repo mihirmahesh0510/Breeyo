@@ -2,9 +2,35 @@
 
 **Date:** 2026-08-21
 **Source:** `/breeyo-build --verify phase 9` — 8 parallel independent audits (one per plan + one phase-level goal-backward check) against `.planning/phases/09-web-dashboard-owner-portal/09-CONTEXT.md` and `09-VALIDATION.md`, plus two spot-checks I ran myself.
-**Purpose:** For every confirmed finding from that verify pass, identify the fix shape and which docs need updating alongside the code. This is a planning document — no code has been changed yet (the verify pass was read-only by design).
+**Purpose:** For every confirmed finding from that verify pass, identify the fix shape and which docs need updating alongside the code.
 
 **Scope boundary:** Phase 9 only. The phase is unmerged (still on `breeyo/phase-09-web-dashboard-owner-portal`), not yet pushed through the no-mistakes gate — these fixes land in that same worktree before the gate push happens.
+
+---
+
+## Execution status (2026-08-21)
+
+All 9 findings executed, TDD throughout (failing test first, confirmed failing for the right reason, then minimal implementation), each committed separately on `breeyo/phase-09-web-dashboard-owner-portal`:
+
+| # | Finding | Commit | Status |
+|---|---|---|---|
+| 9.1 | First-link issuance on invoice finalization (D-84) | `499043e` | ✅ Fixed |
+| 9.2 | Front Desk browser-access defaults + per-module admin UI | `7bca66b`, `2d1996b` | ✅ Fixed |
+| 9.3 | Payment-success receipt access | `365ed1d` | ✅ Fixed |
+| 9.4 | Reissue daily-cap race condition | `1632d4c` | ✅ Fixed |
+| 9.5 | Per-route rate limiting on public owner-portal endpoints | `28ab148` | ✅ Fixed |
+| 9.6 | Mutation-failure error feedback (billing/queue/inventory) | `08da99c`, `72b90f0`, `fbd4f08` | ✅ Fixed |
+| 9.7 | D-24 actor/timestamp at the real usage site | `2d1996b` | ✅ Fixed |
+| 9.8 | `09-VALIDATION.md` false-passing rows | `75b5a80` | ✅ Fixed (doc-only) |
+| 9.9 | ExpiredLinkState clinic-phone wiring | `67d1b32` | ✅ Fixed |
+
+**Full regression after all fixes** (`npx vitest run` from `apps/api/`, clean DB, no interfering processes): 151 files passed, 9 skipped, 3 failed; 1945 tests passed, 80 todo, 8 failed. The 8 failures are the same two pre-existing, out-of-scope categories already documented in `09-VALIDATION.md` before any of today's fixes (`tests/scheduling/appointment-reads.test.ts` — untouched by any Phase 9 commit; `tests/billing/webhook.test.ts` / `combined-payment-link.test.ts` — BullMQ worker timing flake, nondeterministic subset each run). All ~40 new tests added by today's fixes pass. `pnpm --filter @breeyo/web build` succeeds.
+
+**One mid-run false alarm, self-diagnosed and resolved:** a first full-suite pass showed `tests/tenant-isolation.test.ts` (Phase 1's core security suite) failing with foreign-key violations. Traced to a stray API dev-server process I'd left running from an earlier browser-verification step in this same session — its background workers (BullMQ scheduling sweep, notifications, etc.) were hitting the same shared dev Postgres concurrently with the test run. Killed the process, confirmed the database was already back to zero rows, and re-ran — clean, 22/22 passing. Not a code regression; a test-environment hygiene miss on my part, caught before being reported as a finding.
+
+**Not fixed, by acknowledged residual risk (not deferred, not forgotten):**
+- 9.1's fix has no concurrency guard against two invoices finalizing for the same owner in the same instant (unlike 9.4's fix, which got exactly this treatment). Worst case is a duplicate WhatsApp send/link row, not a security issue — accepted as-is given severity, flagged here for visibility rather than silently omitted.
+- 9.3's combined multi-invoice checkout issues one `PaymentReceipt` per invoice leg; the success banner links only the first selected invoice's receipt. Documented as a deliberate simplification in that fix's commit, not a bug.
 
 ---
 
