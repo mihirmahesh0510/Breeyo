@@ -80,6 +80,7 @@ export function useBillingWorkbench() {
   const [error, setError] = useState<ApiClientError | Error | null>(null);
   const [refetchToken, setRefetchToken] = useState(0);
   const [realtimeNotice, setRealtimeNotice] = useState<BillingWorkbenchSyncPayload | null>(null);
+  const [mutationError, setMutationError] = useState<string | null>(null);
   const knownVersionRef = useRef<number | undefined>(undefined);
   const socketRef = useRef<Socket | null>(null);
 
@@ -155,16 +156,32 @@ export function useBillingWorkbench() {
 
   const dismissRealtimeNotice = useCallback(() => setRealtimeNotice(null), []);
 
+  const dismissMutationError = useCallback(() => setMutationError(null), []);
+
+  /**
+   * D-42/D-43: a rejected mutation is exactly the "action-blocking exception"
+   * case toasts are reserved for -- this is the one place that message gets
+   * surfaced instead of propagating as an unhandled rejection from an
+   * unawaited `onClick`.
+   */
+  function describeMutationFailure(err: unknown, fallback: string): string {
+    return err instanceof ApiClientError ? err.message : fallback;
+  }
+
   /** D-05: Front Desk and Admin both call this. */
   const collectPayment = useCallback(
     async (invoiceId: string, amountPaise?: number) => {
       if (!accessToken) return;
-      await apiClient(`/api/v1/billing/web/invoices/${invoiceId}/collect-payment`, {
-        method: 'POST',
-        token: accessToken,
-        body: JSON.stringify(amountPaise !== undefined ? { amountPaise } : {}),
-      });
-      await load();
+      try {
+        await apiClient(`/api/v1/billing/web/invoices/${invoiceId}/collect-payment`, {
+          method: 'POST',
+          token: accessToken,
+          body: JSON.stringify(amountPaise !== undefined ? { amountPaise } : {}),
+        });
+        await load();
+      } catch (err) {
+        setMutationError(describeMutationFailure(err, 'Could not collect payment. Try again.'));
+      }
     },
     [accessToken, load],
   );
@@ -173,12 +190,16 @@ export function useBillingWorkbench() {
   const refundInvoice = useCallback(
     async (invoiceId: string, amountPaise: number, reason: string) => {
       if (!accessToken) return;
-      await apiClient(`/api/v1/billing/web/invoices/${invoiceId}/refund`, {
-        method: 'POST',
-        token: accessToken,
-        body: JSON.stringify({ amountPaise, reason }),
-      });
-      await load();
+      try {
+        await apiClient(`/api/v1/billing/web/invoices/${invoiceId}/refund`, {
+          method: 'POST',
+          token: accessToken,
+          body: JSON.stringify({ amountPaise, reason }),
+        });
+        await load();
+      } catch (err) {
+        setMutationError(describeMutationFailure(err, 'Could not process refund. Try again.'));
+      }
     },
     [accessToken, load],
   );
@@ -186,12 +207,16 @@ export function useBillingWorkbench() {
   const voidInvoice = useCallback(
     async (invoiceId: string, reason: string) => {
       if (!accessToken) return;
-      await apiClient(`/api/v1/billing/web/invoices/${invoiceId}/void`, {
-        method: 'POST',
-        token: accessToken,
-        body: JSON.stringify({ reason, restoreStock: true }),
-      });
-      await load();
+      try {
+        await apiClient(`/api/v1/billing/web/invoices/${invoiceId}/void`, {
+          method: 'POST',
+          token: accessToken,
+          body: JSON.stringify({ reason, restoreStock: true }),
+        });
+        await load();
+      } catch (err) {
+        setMutationError(describeMutationFailure(err, 'Could not void invoice. Try again.'));
+      }
     },
     [accessToken, load],
   );
@@ -204,6 +229,8 @@ export function useBillingWorkbench() {
     acknowledgeAndRefetch,
     realtimeNotice,
     dismissRealtimeNotice,
+    mutationError,
+    dismissMutationError,
     collectPayment,
     refundInvoice,
     voidInvoice,

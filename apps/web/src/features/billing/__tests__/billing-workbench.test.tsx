@@ -253,3 +253,32 @@ describe('Billing workbench stale-state prompts (D-40)', () => {
     expect(banner).toBeInTheDocument();
   });
 });
+
+describe('Billing workbench mutation failures surface a visible error (D-42, D-43)', () => {
+  it('shows an error toast when collect-payment fails, instead of failing silently', async () => {
+    seedSession();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        if (url.includes('web-dashboard/cockpit')) return jsonResponse(200, cockpitBody);
+        if (url.includes('billing/web/workbench')) return jsonResponse(200, workbenchBody(true));
+        if (url.includes('billing/web/invoices/inv_1/collect-payment')) {
+          return jsonResponse(400, { error: { message: 'Payment gateway timed out', code: 'PAYMENT_TIMEOUT' } });
+        }
+        throw new Error(`Unhandled fetch in test: ${url}`);
+      }),
+    );
+
+    render(
+      <AuthProvider>
+        <BillingPage />
+      </AuthProvider>,
+    );
+
+    await screen.findByText('Bruno');
+    fireEvent.click(screen.getAllByRole('button', { name: /collect payment/i })[0]);
+
+    const toast = await screen.findByRole('alert');
+    expect(toast).toHaveTextContent(/payment gateway timed out/i);
+  });
+});

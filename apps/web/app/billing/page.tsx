@@ -9,6 +9,7 @@ import { useDashboardCockpit } from '../../src/features/dashboard/hooks/useDashb
 import { DashboardShell } from '../../src/components/app-shell/DashboardShell';
 import { useBillingWorkbench } from '../../src/features/billing/hooks/useBillingWorkbench';
 import { BillingWorkbench } from '../../src/features/billing/components/BillingWorkbench';
+import { ErrorToast } from '../../src/components/ErrorToast';
 import styles from './billing.module.css';
 
 export default function BillingPage() {
@@ -56,6 +57,9 @@ export default function BillingPage() {
             onVoid={workbench.voidInvoice}
           />
         ) : null}
+
+        {/* D-42/D-43: a failed mutation is the one case reserved for a toast. */}
+        <ErrorToast message={workbench.mutationError} onDismiss={workbench.dismissMutationError} />
       </main>
     </DashboardShell>
   );

@@ -12,6 +12,7 @@ import { DashboardShell } from '../../src/components/app-shell/DashboardShell';
 import { useQueueBoard } from '../../src/features/queue/hooks/useQueueBoard';
 import { useQueueRealtime, type QueueBoardSyncPayload } from '../../src/features/queue/hooks/useQueueRealtime';
 import { QueueBoard } from '../../src/features/queue/components/QueueBoard';
+import { ErrorToast } from '../../src/components/ErrorToast';
 import styles from './queue.module.css';
 
 export default function QueuePage() {
@@ -70,6 +71,9 @@ export default function QueuePage() {
             onUpdateStatus={queueBoard.updateStatus}
           />
         ) : null}
+
+        {/* D-42/D-43: a failed mutation is the one case reserved for a toast. */}
+        <ErrorToast message={queueBoard.mutationError} onDismiss={queueBoard.dismissMutationError} />
       </main>
     </DashboardShell>
   );

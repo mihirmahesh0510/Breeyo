@@ -60,6 +60,7 @@ export function useQueueBoard() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<ApiClientError | Error | null>(null);
   const [refetchToken, setRefetchToken] = useState(0);
+  const [mutationError, setMutationError] = useState<string | null>(null);
   const knownVersionRef = useRef<number | undefined>(undefined);
 
   const load = useCallback(
@@ -110,19 +111,40 @@ export function useQueueBoard() {
     refetch();
   }, [data, refetch]);
 
-  /** D-43: same state-machine transition mobile uses, via the browser route. */
+  const dismissMutationError = useCallback(() => setMutationError(null), []);
+
+  /**
+   * D-43: same state-machine transition mobile uses, via the browser route.
+   * D-42: a rejection here is an action-blocking exception -- exactly the
+   * case toasts are reserved for -- so it is caught and surfaced rather than
+   * propagating as an unhandled rejection from `QueueBoard`'s unawaited
+   * `onClick`.
+   */
   const updateStatus = useCallback(
     async (entryId: string, status: string) => {
       if (!accessToken) return;
-      await apiClient(`/api/v1/queue/web/entries/${entryId}/status`, {
-        method: 'POST',
-        token: accessToken,
-        body: JSON.stringify({ status }),
-      });
-      await load();
+      try {
+        await apiClient(`/api/v1/queue/web/entries/${entryId}/status`, {
+          method: 'POST',
+          token: accessToken,
+          body: JSON.stringify({ status }),
+        });
+        await load();
+      } catch (err) {
+        setMutationError(err instanceof ApiClientError ? err.message : 'Could not update queue status. Try again.');
+      }
     },
     [accessToken, load],
   );
 
-  return { data, isLoading, error, refetch, acknowledgeAndRefetch, updateStatus };
+  return {
+    data,
+    isLoading,
+    error,
+    refetch,
+    acknowledgeAndRefetch,
+    mutationError,
+    dismissMutationError,
+    updateStatus,
+  };
 }

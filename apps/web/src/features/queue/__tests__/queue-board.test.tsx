@@ -1,7 +1,7 @@
 // Plan 09-04 Task 2: browser queue workbench UI, against 09-CONTEXT.md
 // D-07, D-40, D-41, D-43 and 09-UI-SPEC.md's module-depth contract.
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, cleanup, act } from '@testing-library/react';
+import { render, screen, cleanup, act, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { writeSession, clearSession } from '../../../lib/auth-store';
 import { AuthProvider } from '../../../lib/AuthProvider';
@@ -245,5 +245,34 @@ describe('Queue workbench stale-state prompts (D-40, D-43)', () => {
     });
 
     expect(screen.queryByTestId('stale-state-banner')).not.toBeInTheDocument();
+  });
+});
+
+describe('Queue workbench mutation failures surface a visible error (D-42, D-43)', () => {
+  it('shows an error toast when a status update fails, instead of failing silently', async () => {
+    seedSession();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        if (url.includes('web-dashboard/cockpit')) return jsonResponse(200, cockpitBody);
+        if (url.includes('queue/web/board')) return jsonResponse(200, boardBody());
+        if (url.includes('queue/web/entries/entry_1/status')) {
+          return jsonResponse(500, { error: { message: 'Could not update queue status', code: 'INTERNAL' } });
+        }
+        throw new Error(`Unhandled fetch in test: ${url}`);
+      }),
+    );
+
+    render(
+      <AuthProvider>
+        <QueuePage />
+      </AuthProvider>,
+    );
+
+    await screen.findByText('Bruno');
+    fireEvent.click(screen.getByRole('button', { name: /call in/i }));
+
+    const toast = await screen.findByRole('alert');
+    expect(toast).toHaveTextContent(/could not update queue status/i);
   });
 });
