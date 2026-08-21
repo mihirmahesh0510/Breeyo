@@ -7,17 +7,40 @@ function cacheKey(userId: string, clinicId: string): string {
   return `perms:${userId}:${clinicId}`;
 }
 
+export interface UserPermissionsResult {
+  /**
+   * Whether an active `ClinicMember` row exists for (userId, clinicId).
+   * `false` means the session is stale — the account was deactivated or the
+   * clinic membership was removed after the token was issued — and callers
+   * (see `tenantContext`) must treat that as an invalid session (401), not as
+   * "authenticated but permission-less" (E2E-BUG-FIX-PLAN.md §1.1).
+   */
+  exists: boolean;
+  permissions: string[];
+}
+
 export class PermissionService {
   constructor(
     private readonly prisma: PrismaClient,
     private readonly redis: Redis,
   ) {}
 
-  async getUserPermissions(userId: string, clinicId: string): Promise<string[]> {
+  async getUserPermissionsResult(
+    userId: string,
+    clinicId: string,
+  ): Promise<UserPermissionsResult> {
     // 1. Check Redis cache
     const cached = await this.redis.get(cacheKey(userId, clinicId));
     if (cached) {
-      return JSON.parse(cached) as string[];
+      const parsed = JSON.parse(cached);
+      // Defensive: a cache entry written before this change is a bare
+      // `string[]` (permissions only). The old code could only have cached
+      // one if `member` was truthy, so treat it as exists=true rather than
+      // requiring every existing Redis key to be flushed on deploy.
+      if (Array.isArray(parsed)) {
+        return { exists: true, permissions: parsed };
+      }
+      return parsed as UserPermissionsResult;
     }
 
     // 2. Query ClinicMember with roles and their permissions
@@ -39,7 +62,9 @@ export class PermissionService {
     });
 
     if (!member) {
-      return [];
+      const result: UserPermissionsResult = { exists: false, permissions: [] };
+      await this.redis.setex(cacheKey(userId, clinicId), CACHE_TTL_SECONDS, JSON.stringify(result));
+      return result;
     }
 
     // 3. Collect default permissions from all roles
@@ -66,15 +91,16 @@ export class PermissionService {
     }
 
     // 6. Cache result
-    const finalPerms = [...permissionSet];
-    await this.redis.setex(
-      cacheKey(userId, clinicId),
-      CACHE_TTL_SECONDS,
-      JSON.stringify(finalPerms),
-    );
+    const result: UserPermissionsResult = { exists: true, permissions: [...permissionSet] };
+    await this.redis.setex(cacheKey(userId, clinicId), CACHE_TTL_SECONDS, JSON.stringify(result));
 
     // 7. Return
-    return finalPerms;
+    return result;
+  }
+
+  async getUserPermissions(userId: string, clinicId: string): Promise<string[]> {
+    const { permissions } = await this.getUserPermissionsResult(userId, clinicId);
+    return permissions;
   }
 
   async invalidateCache(userId: string, clinicId: string): Promise<void> {
