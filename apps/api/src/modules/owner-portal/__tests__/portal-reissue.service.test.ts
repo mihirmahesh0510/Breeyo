@@ -2,6 +2,7 @@
 // a 3-per-owner-per-rolling-24h cap. Mocked collaborators, no real DB /
 // WhatsApp send.
 import { describe, it, expect, vi } from 'vitest';
+import { OWNER_PORTAL_REISSUE_DAILY_LIMIT } from '@breeyo/types';
 import type { MagicLinkResolution } from '../magic-link.service.js';
 import { PortalReissueService } from '../portal-reissue.service.js';
 
@@ -27,8 +28,17 @@ function oldLinkRow(overrides: Record<string, unknown> = {}) {
   };
 }
 
+/**
+ * `$transaction` resolves its callback with the SAME mock object handed back
+ * out, so every existing assertion against `db.ownerPortalMagicLink.*` below
+ * keeps working unchanged whether the service reads/writes through `this.db`
+ * directly or through the `tx` a `$transaction(async (tx) => ...)` callback
+ * receives (finding 9.4/D-82's fix). What's new is `$transaction` and
+ * `$executeRaw` themselves — the pre-fix service never calls either, which is
+ * exactly what the race-condition test below asserts against.
+ */
 function buildDb(overrides: Record<string, unknown> = {}) {
-  return {
+  const db = {
     ownerPortalMagicLink: {
       count: vi.fn().mockResolvedValue(0),
       findUnique: vi.fn().mockResolvedValue(oldLinkRow()),
@@ -38,7 +48,12 @@ function buildDb(overrides: Record<string, unknown> = {}) {
     petOwner: {
       findUnique: vi.fn().mockResolvedValue({ name: 'Asha Rao', mobile: '+919812345678' }),
     },
+    $executeRaw: vi.fn().mockResolvedValue(undefined),
     ...overrides,
+  };
+  return {
+    ...db,
+    $transaction: vi.fn(async (fn: (tx: typeof db) => unknown) => fn(db)),
   };
 }
 
@@ -133,6 +148,81 @@ describe('PortalReissueService — 3-per-24h cap (D-82)', () => {
     const result = await service.reissue(expiredResolution());
 
     expect(result.status).toBe('REISSUED');
+  });
+});
+
+describe('PortalReissueService — atomic count-check-then-create (D-82, finding 9.4)', () => {
+  it('runs the daily-cap count check and the new-link create inside one $transaction, not as two independent unwrapped queries', async () => {
+    // Pre-fix, `count` and `create` each ran directly on `this.db` with no
+    // transaction at all: two concurrent reissue calls for the same owner
+    // could each observe "count < 3" before either one's `create` commits,
+    // letting more than OWNER_PORTAL_REISSUE_DAILY_LIMIT links through in
+    // the rolling window. Wrapping both in a single `$transaction` callback
+    // (mirroring `queue.repository.ts`'s `createEntryIfNoneActive` and
+    // `appointment.service.ts`'s D-34 slot lock for this exact
+    // check-then-create shape) is what makes the two operations atomic
+    // against each other. This test never proves true DB-level concurrency
+    // (the mock has no real connection to race) — it proves the fix's
+    // structural shape: both operations happen on the transaction's own
+    // handle, inside exactly one `$transaction` call.
+    const db = buildDb();
+    const wa = buildWhatsAppService();
+    const service = new PortalReissueService(db as never, wa as never, 'https://portal.breeyo.app');
+
+    const result = await service.reissue(expiredResolution());
+
+    expect(result.status).toBe('REISSUED');
+    expect(db.$transaction).toHaveBeenCalledTimes(1);
+    expect(db.ownerPortalMagicLink.count).toHaveBeenCalledTimes(1);
+    expect(db.ownerPortalMagicLink.create).toHaveBeenCalledTimes(1);
+
+    // Both calls must have happened by the time the single `$transaction`
+    // promise settles -- i.e. neither runs outside the callback it was
+    // given.
+    const transactionCall = db.$transaction.mock.invocationCallOrder[0];
+    expect(db.ownerPortalMagicLink.count.mock.invocationCallOrder[0]).toBeGreaterThan(transactionCall);
+    expect(db.ownerPortalMagicLink.create.mock.invocationCallOrder[0]).toBeGreaterThan(transactionCall);
+  });
+
+  it('takes a per-owner pg_advisory_xact_lock inside the transaction before checking the count, so concurrent reissues for the SAME owner serialize', async () => {
+    const db = buildDb();
+    const wa = buildWhatsAppService();
+    const service = new PortalReissueService(db as never, wa as never, 'https://portal.breeyo.app');
+
+    await service.reissue(expiredResolution());
+
+    expect(db.$executeRaw).toHaveBeenCalledTimes(1);
+    const lockCallOrder = db.$executeRaw.mock.invocationCallOrder[0];
+    const countCallOrder = db.ownerPortalMagicLink.count.mock.invocationCallOrder[0];
+    expect(lockCallOrder).toBeLessThan(countCallOrder);
+
+    // The lock key must carry the owner id so two DIFFERENT owners' reissue
+    // calls are never serialized against each other, only same-owner ones.
+    const [sqlParts, ...values] = db.$executeRaw.mock.calls[0];
+    expect(sqlParts.join('')).toContain('pg_advisory_xact_lock');
+    expect(values.join('')).toContain(OWNER);
+  });
+
+  it('never lets a 4th same-window reissue create a link even when the count check races the create within the same transaction', async () => {
+    const db = buildDb({
+      ownerPortalMagicLink: {
+        count: vi.fn().mockResolvedValue(OWNER_PORTAL_REISSUE_DAILY_LIMIT),
+        findUnique: vi.fn().mockResolvedValue(oldLinkRow()),
+        create: vi.fn(),
+        update: vi.fn(),
+      },
+    });
+    const wa = buildWhatsAppService();
+    const service = new PortalReissueService(db as never, wa as never, 'https://portal.breeyo.app');
+
+    const result = await service.reissue(expiredResolution());
+
+    expect(result).toEqual({ status: 'LIMIT_REACHED' });
+    expect(db.ownerPortalMagicLink.create).not.toHaveBeenCalled();
+    // The whole check-then-refuse decision happened inside the one
+    // transaction call -- there is no second, later opportunity for a
+    // create to slip through outside it.
+    expect(db.$transaction).toHaveBeenCalledTimes(1);
   });
 });
 
