@@ -207,6 +207,43 @@ describe('Inventory workbench risky stock-change confirmation (D-34, D-24)', () 
   });
 });
 
+describe('Inventory workbench mutation failures surface a visible error (D-42, D-43)', () => {
+  it('shows an error toast when a stock adjustment fails, instead of failing silently', async () => {
+    seedSession();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        if (url.includes('web-dashboard/cockpit')) return jsonResponse(200, cockpitBody);
+        if (url.includes('inventory/web/workbench')) return jsonResponse(200, stockAndBatchesBody(true));
+        if (url.includes('adjust-stock')) {
+          return jsonResponse(409, { error: { message: 'Stock changed since you loaded this page', code: 'STALE_STOCK' } });
+        }
+        throw new Error(`Unhandled fetch in test: ${url}`);
+      }),
+    );
+
+    render(
+      <AuthProvider>
+        <InventoryPage />
+      </AuthProvider>,
+    );
+
+    await screen.findByText('Amoxicillin 250mg Tab');
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Stock' }));
+
+    const reasonSelect = await screen.findByLabelText(/reason/i);
+    fireEvent.change(reasonSelect, { target: { value: 'damage' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+
+    const dialog = await screen.findByRole('alertdialog');
+    fireEvent.click(screen.getByRole('button', { name: /apply change/i }));
+
+    const toast = await screen.findByRole('alert');
+    expect(toast).toHaveTextContent(/stock changed since you loaded this page/i);
+    expect(dialog).toBeInTheDocument();
+  });
+});
+
 describe('Inventory workbench analytics export actions (D-36)', () => {
   it('exposes Export CSV and Export PDF on the Analytics tab', async () => {
     seedSession();

@@ -8,6 +8,7 @@
 import { useState } from 'react';
 import { useRequireAuth } from '../../src/lib/useRequireAuth';
 import { useAuth } from '../../src/lib/AuthProvider';
+import { ApiClientError } from '../../src/lib/api';
 import { useDashboardCockpit } from '../../src/features/dashboard/hooks/useDashboardCockpit';
 import { DashboardShell } from '../../src/components/app-shell/DashboardShell';
 import {
@@ -20,6 +21,7 @@ import { InventoryActionTable } from '../../src/features/inventory/components/In
 import { InventoryReorderPanel } from '../../src/features/inventory/components/InventoryReorderPanel';
 import { InventoryAnalyticsPanel } from '../../src/features/inventory/components/InventoryAnalyticsPanel';
 import { RiskyStockChangeDialog } from '../../src/features/inventory/components/RiskyStockChangeDialog';
+import { ErrorToast } from '../../src/components/ErrorToast';
 import styles from './inventory.module.css';
 
 export default function InventoryPage() {
@@ -33,6 +35,7 @@ export default function InventoryPage() {
   const workbench = useInventoryWorkbench(activeTab);
   const [pendingRemoval, setPendingRemoval] = useState<InventoryStockRow | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   if (!ready) {
     return null;
@@ -40,8 +43,16 @@ export default function InventoryPage() {
 
   const visiblePanelIds = cockpit.data?.panels.map((panel) => panel.panelId) ?? [];
 
+  // D-42/D-43: a rejected stock adjustment is an action-blocking exception --
+  // exactly the case toasts are reserved for -- so it's caught here rather
+  // than propagating as an unhandled rejection from the unawaited `onClick`
+  // callers in `InventoryActionTable`/`RiskyStockChangeDialog`.
   const handleAddStock = async (itemId: string, quantity: number, reason: string) => {
-    await workbench.adjustStock(itemId, { quantity, type: 'add', reason });
+    try {
+      await workbench.adjustStock(itemId, { quantity, type: 'add', reason });
+    } catch (err) {
+      setActionError(err instanceof ApiClientError ? err.message : 'Could not add stock. Try again.');
+    }
   };
 
   const confirmRemoval = async (reason: string, notes: string) => {
@@ -55,6 +66,8 @@ export default function InventoryPage() {
         notes: notes || undefined,
       });
       setPendingRemoval(null);
+    } catch (err) {
+      setActionError(err instanceof ApiClientError ? err.message : 'Could not remove stock. Try again.');
     } finally {
       setIsSubmitting(false);
     }
@@ -105,6 +118,8 @@ export default function InventoryPage() {
           onConfirm={confirmRemoval}
           onCancel={() => setPendingRemoval(null)}
         />
+
+        <ErrorToast message={actionError} onDismiss={() => setActionError(null)} />
       </main>
     </DashboardShell>
   );
