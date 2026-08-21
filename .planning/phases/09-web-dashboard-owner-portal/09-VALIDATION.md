@@ -64,14 +64,14 @@ updated: 2026-08-21
 
 | Check | Requirement | Test type | Automated command | Status |
 |-------|-------------|-----------|-------------------|--------|
-| Tampered/revoked/cross-clinic token → 403 with empty body | OWN-06 | integration | `pnpm --filter @breeyo/api exec vitest run tests/owner-portal/portal-isolation.test.ts` — model on `tests/tenant-isolation.test.ts` | ✅ |
-| Owner A's session cannot read Owner B's pet/invoice by direct id | OWN-06 | integration | same file as above | ✅ |
-| `breeyo_app` + `app.clinic_id` RLS returns own-clinic rows, zero cross-clinic rows | OWN-06 | integration | `pnpm --filter @breeyo/api exec vitest run tests/rls/clinic-scope.test.ts` | ✅ — first test in the repo to actually exercise `breeyo_app` + RLS end to end |
-| Stale `updatedAt` → 409 + fresh entity; UI shows stale banner | D-40 | unit + integration | `pnpm --filter @breeyo/api exec vitest run src/modules/queue/__tests__/queue.repository.optimistic.test.ts` | ✅ |
-| Socket event triggers inline invalidation, not a toast | D-42, D-43 | unit (hook) | `pnpm --filter @breeyo/web exec vitest run src/features/queue/__tests__/useQueueRealtime.test.ts` | ✅ |
-| Every Phase 9 sensitive action writes an audit row with actor + timestamp | D-24 | integration | extend `AuditEvent` enum + assert audit row per access-policy change, refund, void, and stock correction | ✅ |
-| Reissue capped at 3/owner/day, then routes to clinic contact | D-82 | integration | `pnpm --filter @breeyo/api exec vitest run tests/owner-portal/reissue-rate-limit.test.ts` | ✅ |
-| Browser access revoked mid-session takes effect on next request, not next login | D-83 | integration | `pnpm --filter @breeyo/api exec vitest run tests/web-dashboard/browser-permissions.test.ts` | ✅ |
+| Tampered/revoked/cross-clinic token → 403 with empty body | OWN-06 | integration | `pnpm --filter @breeyo/api exec vitest run tests/owner-portal/portal-isolation.test.ts` — model on `tests/tenant-isolation.test.ts` | ❌ W0 |
+| Owner A's session cannot read Owner B's pet/invoice by direct id | OWN-06 | integration | same file as above | ❌ W0 |
+| `breeyo_app` + `app.clinic_id` RLS returns own-clinic rows, zero cross-clinic rows | OWN-06 | integration | `pnpm --filter @breeyo/api exec vitest run tests/rls/clinic-scope.test.ts` | ❌ W0 — first test in the repo to actually exercise `breeyo_app` + RLS end to end |
+| Stale `updatedAt` → 409 + fresh entity; UI shows stale banner | D-40 | unit + integration | `pnpm --filter @breeyo/api exec vitest run src/realtime/__tests__/browser-sync.service.test.ts` (path corrected — original `queue.repository.optimistic.test.ts` never existed) | ✅ mechanism tested; stale-metadata emission covered, not a literal `updatedAt` 409 |
+| Socket event triggers inline invalidation, not a toast | D-42, D-43 | unit (hook) | `pnpm --filter @breeyo/web exec vitest run src/features/queue/__tests__/queue-board.test.tsx` (path corrected — original `useQueueRealtime.test.ts` never existed) | ✅ |
+| Every Phase 9 sensitive action writes an audit row with actor + timestamp | D-24 | integration | none exists | ❌ CONFIRMED gap — see PHASE-09-VERIFY-FIX-PLAN.md finding 9.7: the one real usage site (`apps/web/app/users/page.tsx`) never surfaces actor/timestamp despite the API already returning it |
+| Reissue capped at 3/owner/day, then routes to clinic contact | D-82 | integration | `pnpm --filter @breeyo/api exec vitest run tests/owner-portal/reissue-rate-limit.test.ts` | ❌ W0 |
+| Browser access revoked mid-session takes effect on next request, not next login | D-83 | integration | `pnpm --filter @breeyo/api exec vitest run tests/web-dashboard/browser-permissions.test.ts` | ❌ W0 |
 
 ---
 
@@ -119,3 +119,7 @@ All 7 plans built, TDD throughout, on branch `breeyo/phase-09-web-dashboard-owne
 - `tests/billing/webhook.test.ts` and `tests/billing/combined-payment-link.test.ts` — fail on a *different* subset of sub-tests each run (duplicate-row assertions consistent with a BullMQ worker timing race under sustained full-suite load, not a deterministic regression); Phase 9 never modifies webhook/payment processing code, only calls the existing `PaymentService.createPaymentLink`/`createCombinedPaymentLink`.
 
 Both are flagged here for visibility, not silently omitted, and should be triaged separately from this phase.
+
+## Verify Pass Findings (2026-08-21)
+
+`/breeyo-build --verify phase 9` ran 8 independent audits (one per plan + one phase-level goal-backward check) against actual code, not against this document's self-reported status above. It found the cross-cutting checks table above had been marked "✅ passing" for four rows whose backing test files don't exist (now corrected) — a mistake made during this doc's own "Final Phase Status" update, caught by the very audit that section should have anticipated. It also found 8 further real findings, most seriously that no production code path ever issues an owner's *first* magic link (only reissue exists). Full findings, fix shapes, and the one decision required (now resolved as D-84) are in `.planning/PHASE-09-VERIFY-FIX-PLAN.md`. Fixes are being applied to this same worktree before the no-mistakes gate push.
