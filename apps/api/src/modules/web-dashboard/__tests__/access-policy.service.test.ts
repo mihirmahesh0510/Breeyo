@@ -127,6 +127,30 @@ describe('AccessPolicyService.updatePolicy (D-19, D-21, D-22)', () => {
 
     expect(db.clinicBrowserAccessPolicy.upsert).not.toHaveBeenCalled();
   });
+
+  it('defaults queue/scheduling/billing/inventory to true (but keeps inventoryWrite/users false) when an Admin enables browser access for Front Desk with no existing policy row (D-17, D-18, D-21)', async () => {
+    // No row exists yet -- the create branch of the upsert must fall back to
+    // DEFAULT_BROWSER_ACCESS_BY_ROLE.FRONT_DESK for every field the caller
+    // didn't explicitly specify. Only `browserEnabled` is specified here.
+    db.clinicBrowserAccessPolicy.upsert.mockImplementation(
+      async ({ create }: { create: Record<string, unknown> }) => dbRow(create),
+    );
+
+    const policy = await service.updatePolicy(
+      CLINIC_ID,
+      'FRONT_DESK',
+      { browserEnabled: true },
+      ADMIN_USER_ID,
+    );
+
+    expect(policy.browserEnabled).toBe(true);
+    expect(policy.queueEnabled).toBe(true);
+    expect(policy.schedulingEnabled).toBe(true);
+    expect(policy.billingEnabled).toBe(true);
+    expect(policy.inventoryEnabled).toBe(true);
+    expect(policy.inventoryWriteEnabled).toBe(false);
+    expect(policy.usersEnabled).toBe(false);
+  });
 });
 
 describe('AccessPolicyService role resolution (D-19)', () => {

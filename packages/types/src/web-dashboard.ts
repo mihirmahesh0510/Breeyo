@@ -108,10 +108,14 @@ export const DEFAULT_BROWSER_ACCESS_BY_ROLE: Record<
   FRONT_DESK: {
     roleCode: 'FRONT_DESK',
     browserEnabled: false,
-    queueEnabled: false,
-    schedulingEnabled: false,
-    billingEnabled: false,
-    inventoryEnabled: false,
+    // D-17: once an Admin enables browserEnabled, Front Desk actively
+    // manages queue/scheduling/billing. D-18: inventory is visible but
+    // view-only (inventoryWriteEnabled stays false). D-21: user management
+    // stays Admin-only (usersEnabled stays false).
+    queueEnabled: true,
+    schedulingEnabled: true,
+    billingEnabled: true,
+    inventoryEnabled: true,
     inventoryWriteEnabled: false,
     usersEnabled: false,
   },
