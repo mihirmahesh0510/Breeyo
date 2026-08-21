@@ -129,22 +129,35 @@ export default async function ownerPortalRoutes(fastify: FastifyInstance) {
     request.portalDb = createTenantClient(resolution.data.clinicId);
   }
 
-  // No `config: { rateLimit: false }` override here, unlike the Razorpay
-  // webhook plugin — this surface is the opposite case. A public route that
-  // takes a raw token in the URL is exactly the shape a brute-force token
-  // guesser targets, so it keeps the app-wide 200/min limit rather than
-  // opting out of it (T-09-13).
+  // PHASE-09-VERIFY-FIX-PLAN.md finding 9.5 (09-RESEARCH.md pitfall P-7,
+  // addressed): every route below used to inherit only the generic app-wide
+  // 200/min limit (`app.ts`), which is far too loose for this public,
+  // unauthenticated, raw-token-in-the-URL surface -- 200/min is a
+  // meaningful token-guessing budget. Each route now carries its own
+  // `config.rateLimit` override, the same per-route mechanism
+  // `whatsapp.webhook.routes.ts` already uses (`isTest` bump so the test
+  // suite never trips the limit). `reissue` gets the tightest budget plus
+  // `ban`, layered ON TOP of finding 9.4/D-82's DB-backed 3-per-24h cap --
+  // that cap is the correct-answer business rule; this is defense-in-depth
+  // against sheer request volume against the same endpoint.
+  const isTest = process.env.NODE_ENV === 'test';
+  const portalReadRateLimit = { max: isTest ? 10000 : 30, timeWindow: '1 minute' };
+  const reissueRateLimit = { max: isTest ? 10000 : 5, timeWindow: '1 minute', ban: 3 };
+
   fastify.get('/owner-portal/:token/session', {
+    config: { rateLimit: portalReadRateLimit },
     preHandler: requirePortalScope,
     handler: sessionController.getSessionHandler,
   });
 
   fastify.get('/owner-portal/:token/records', {
+    config: { rateLimit: portalReadRateLimit },
     preHandler: requirePortalScope,
     handler: recordsController.getRecordsHandler,
   });
 
   fastify.get('/owner-portal/:token/invoices', {
+    config: { rateLimit: portalReadRateLimit },
     preHandler: requirePortalScope,
     handler: invoicesController.getInvoicesHandler,
   });
@@ -153,19 +166,25 @@ export default async function ownerPortalRoutes(fastify: FastifyInstance) {
   // appointment, scoped by the same `requirePortalScope` middleware as
   // session/records/invoices (T-09-21).
   fastify.get('/owner-portal/:token/care-dates', {
+    config: { rateLimit: portalReadRateLimit },
     preHandler: requirePortalScope,
     handler: careDatesController.getCareDatesHandler,
   });
 
   fastify.post('/owner-portal/:token/checkout', {
+    config: { rateLimit: portalReadRateLimit },
     preHandler: requirePortalScope,
     handler: checkoutController.createCheckoutHandler,
   });
 
   // No `requirePortalScope` preHandler — reissue is the one route that must
   // accept an `EXPIRED` link (that is the whole point of it). See
-  // `reissue.controller.ts` for its own token resolution.
+  // `reissue.controller.ts` for its own token resolution. Tightest budget
+  // of the module (5/min) plus `ban: 3` -- three 429s in a row escalates to
+  // a flat 403, since this is also the one route with its own DB-backed
+  // daily cap (finding 9.4/D-82) a sustained flood would otherwise beat on.
   fastify.post('/owner-portal/:token/reissue', {
+    config: { rateLimit: reissueRateLimit },
     handler: reissueController.reissueHandler,
   });
 }
