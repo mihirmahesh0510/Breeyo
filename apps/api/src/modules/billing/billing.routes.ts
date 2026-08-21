@@ -1,3 +1,4 @@
+import { Queue } from 'bullmq';
 import type { FastifyInstance } from 'fastify';
 import { authenticate } from '../../middleware/authenticate.js';
 import { tenantContext } from '../../middleware/tenant-context.js';
@@ -25,6 +26,10 @@ import { BillingWorkbenchService } from './billing-workbench.service.js';
 import { createWorkbenchController } from './workbench.controller.js';
 import { AccessPolicyService } from '../web-dashboard/access-policy.service.js';
 import { BrowserSyncService } from '../../realtime/browser-sync.service.js';
+import { WhatsAppRepository } from '../whatsapp/whatsapp.repository.js';
+import { SendAuthorizationService } from '../whatsapp/send-authorization.service.js';
+import { WhatsAppService } from '../whatsapp/whatsapp.service.js';
+import { PortalLinkIssuanceService } from '../owner-portal/portal-link-issuance.service.js';
 
 /**
  * Billing routes — the first consumer of `requirePermission` outside auth.
@@ -56,16 +61,45 @@ import { BrowserSyncService } from '../../realtime/browser-sync.service.js';
  * service method itself, rather than this route, would break D-03.
  */
 export default async function billingRoutes(fastify: FastifyInstance) {
+  // D-84 (PHASE-09-VERIFY-FIX-PLAN.md finding 9.1) — the owner-portal
+  // first-link-issuance WhatsApp send `InvoiceService.finalize` triggers.
+  // Admin-scoped (D-30 exemption), constructed exactly like
+  // `owner-portal.routes.ts`'s own `whatsAppService`/`outboundQueue`
+  // (this file's header comment on that pattern applies verbatim): a
+  // second `Queue('whatsapp-outbound', ...)` handle here is intentional and
+  // safe, since Fastify's plugin encapsulation means this sibling plugin
+  // cannot reach `owner-portal.routes.ts`'s own instance, and
+  // `WhatsAppService.sendTemplate` calls `prisma.$transaction(async (tx) =>
+  // ...)` internally, which is why this is the raw admin `fastify.prisma`
+  // rather than a per-request tenant handle.
+  const whatsAppRepository = new WhatsAppRepository(fastify.prisma);
+  const finalizeOutboundQueue = new Queue('whatsapp-outbound', { connection: fastify.redis });
+  fastify.addHook('onClose', async () => {
+    await finalizeOutboundQueue.close();
+  });
+  const finalizeWhatsAppService = new WhatsAppService(
+    whatsAppRepository,
+    new SendAuthorizationService(whatsAppRepository),
+    fastify.prisma,
+    finalizeOutboundQueue,
+    fastify.io ?? null,
+  );
+  const portalBaseUrl = `${process.env.WEB_URL || 'http://localhost:3001'}/portal`;
+
   /**
    * D-30: built per request from the tenant handle, never as a plugin-scope
    * singleton. `StockValidatorService` is shared between the repository and the
    * service so that the finalize transaction and the read-only availability
-   * check observe the same instance.
+   * check observe the same instance. `portalLinkIssuer` is the one exception —
+   * it wraps the plugin-scope `finalizeWhatsAppService` above, exactly like
+   * every other per-request builder in this file wraps a plugin-scope
+   * collaborator it cannot rebuild per request (see `browserSyncService` below).
    */
   const buildService = (db: TenantPrismaClient) => {
     const stockValidator = new StockValidatorService(db, new StockMovementService(db));
     const repository = new InvoiceRepository(db, stockValidator);
-    return new InvoiceService(repository, stockValidator, db);
+    const portalLinkIssuer = new PortalLinkIssuanceService(db, finalizeWhatsAppService, portalBaseUrl);
+    return new InvoiceService(repository, stockValidator, db, portalLinkIssuer);
   };
 
   /**

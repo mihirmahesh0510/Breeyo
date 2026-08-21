@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Prisma } from '@prisma/client';
 import { InvoiceService } from '../invoice.service.js';
+import { PortalLinkIssuanceService } from '../../owner-portal/portal-link-issuance.service.js';
 
 /**
  * Draft assembly, the money boundary, and the finalize orchestration, against
@@ -73,6 +74,7 @@ function build(options: {
   invoice?: Record<string, unknown> | null;
   lineItems?: ReturnType<typeof lineItem>[];
   existingDraft?: Record<string, unknown> | null;
+  portalLinkIssuanceService?: { issueFirstLinkIfNeeded: ReturnType<typeof vi.fn> };
 } = {}) {
   const repository = {
     findUninvoicedDispensedMovements: vi.fn(async () => options.movements ?? []),
@@ -117,7 +119,12 @@ function build(options: {
 
   const stockValidator = { checkAvailability: vi.fn(async () => []) };
 
-  const service = new InvoiceService(repository as any, stockValidator as any, prisma as any);
+  const service = new InvoiceService(
+    repository as any,
+    stockValidator as any,
+    prisma as any,
+    options.portalLinkIssuanceService as any,
+  );
   return { service, repository, prisma, stockValidator, tx };
 }
 
@@ -651,5 +658,133 @@ describe('InvoiceService — percentage discounts are whole percents (D-07)', ()
     // 10% of a 10000-paise net is 1000 paise, leaving 9000 taxable.
     expect(c.invoiceDiscountPaise).toBe(1000);
     expect(c.taxableValuePaise).toBe(9000);
+  });
+});
+
+describe('InvoiceService.finalize — first owner-portal link issuance (D-84)', () => {
+  const OWNED_INVOICE = { id: INVOICE, status: 'DRAFT', exceptionFlag: null, ownerId: OWNER, petId: PET };
+
+  /**
+   * A real `PortalLinkIssuanceService`, backed by a minimal hand-rolled
+   * mock "db" (not the `prisma`/`repository` mocks `build()` wires into
+   * `InvoiceService` — this is the SEPARATE tenant handle the owner-portal
+   * composition root gives `PortalLinkIssuanceService` in production, per
+   * `owner-portal.routes.ts`). Stateful `findFirst`/`create` on
+   * `ownerPortalMagicLink` so a second `finalize` call for the same owner
+   * observes the row the first call created — this is what proves
+   * `InvoiceService` does not re-issue on every invoice, not just that the
+   * unit-tested `PortalLinkIssuanceService` itself dedupes (already covered
+   * by `portal-link-issuance.service.test.ts`).
+   */
+  function buildPortalCollaborators() {
+    let createdLink: { id: string; expiresAt: Date } | null = null;
+
+    const portalDb = {
+      ownerPortalMagicLink: {
+        findFirst: vi.fn(async () => createdLink),
+        create: vi.fn(async (args: { data: Record<string, unknown> }) => {
+          createdLink = { id: 'link-1', expiresAt: args.data.expiresAt as Date };
+          return createdLink;
+        }),
+      },
+      petOwner: {
+        findUnique: vi.fn(async () => ({ name: 'Asha Rao', mobile: '+919812345678' })),
+      },
+      pet: {
+        findMany: vi.fn(async () => [{ id: PET }]),
+      },
+      invoice: {
+        findMany: vi.fn(async () => [{ id: INVOICE }]),
+      },
+    };
+
+    const wa = { sendTemplate: vi.fn(async () => ({ messageId: 'msg-1' })) };
+
+    const portalLinkIssuanceService = new PortalLinkIssuanceService(
+      portalDb as never,
+      wa as never,
+      'https://portal.breeyo.app',
+    );
+
+    return { portalDb, wa, portalLinkIssuanceService };
+  }
+
+  it('creates exactly one OwnerPortalMagicLink row and one WhatsApp send for an owner with no existing link', async () => {
+    const { portalDb, wa, portalLinkIssuanceService } = buildPortalCollaborators();
+    const { service } = build({
+      invoice: OWNED_INVOICE,
+      lineItems: [lineItem()],
+      portalLinkIssuanceService: portalLinkIssuanceService as never,
+    });
+
+    await service.finalize(CLINIC, INVOICE, ACTOR, {});
+
+    expect(portalDb.ownerPortalMagicLink.create).toHaveBeenCalledTimes(1);
+    expect(wa.sendTemplate).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not create a second link or send a second message when finalizing another invoice for the same owner', async () => {
+    const { portalDb, wa, portalLinkIssuanceService } = buildPortalCollaborators();
+    const { service } = build({
+      invoice: OWNED_INVOICE,
+      lineItems: [lineItem()],
+      portalLinkIssuanceService: portalLinkIssuanceService as never,
+    });
+
+    // Same mocked repository/prisma fixtures stand in for two separate
+    // finalize calls (a real repository would have flipped this invoice to
+    // FINALIZED after the first) — what this test exercises is
+    // `InvoiceService` wiring every finalize through the SAME
+    // `PortalLinkIssuanceService` instance, whose own idempotency check
+    // (unit-tested separately) is what must observe the first call's row.
+    await service.finalize(CLINIC, INVOICE, ACTOR, {});
+    await service.finalize(CLINIC, 'second-invoice-id', ACTOR, {});
+
+    expect(portalDb.ownerPortalMagicLink.create).toHaveBeenCalledTimes(1);
+    expect(wa.sendTemplate).toHaveBeenCalledTimes(1);
+  });
+
+  it('calls issuance with the finalized invoice\'s clinicId/ownerId', async () => {
+    const issueFirstLinkIfNeeded = vi.fn(async () => ({ status: 'ISSUED', whatsappMessageId: 'msg-1' }));
+    const { service } = build({
+      invoice: OWNED_INVOICE,
+      lineItems: [lineItem()],
+      portalLinkIssuanceService: { issueFirstLinkIfNeeded } as never,
+    });
+
+    await service.finalize(CLINIC, INVOICE, ACTOR, {});
+
+    expect(issueFirstLinkIfNeeded).toHaveBeenCalledWith(CLINIC, OWNER);
+  });
+
+  it('still returns the finalized invoice detail when link issuance throws — a WhatsApp/DB failure in this side effect must never fail finalize', async () => {
+    const issueFirstLinkIfNeeded = vi.fn().mockRejectedValue(new Error('whatsapp down'));
+    const { service } = build({
+      invoice: OWNED_INVOICE,
+      lineItems: [lineItem()],
+      portalLinkIssuanceService: { issueFirstLinkIfNeeded } as never,
+    });
+
+    await expect(service.finalize(CLINIC, INVOICE, ACTOR, {})).resolves.toMatchObject({ id: INVOICE });
+    expect(issueFirstLinkIfNeeded).toHaveBeenCalledTimes(1);
+  });
+
+  it('never calls issuance when the invoice has no ownerId', async () => {
+    const issueFirstLinkIfNeeded = vi.fn();
+    const { service } = build({
+      invoice: { id: INVOICE, status: 'DRAFT', exceptionFlag: null, ownerId: null, petId: null },
+      lineItems: [lineItem()],
+      portalLinkIssuanceService: { issueFirstLinkIfNeeded } as never,
+    });
+
+    await service.finalize(CLINIC, INVOICE, ACTOR, {});
+
+    expect(issueFirstLinkIfNeeded).not.toHaveBeenCalled();
+  });
+
+  it('finalize still succeeds with no portalLinkIssuanceService wired at all (backward compatibility)', async () => {
+    const { service } = build({ invoice: OWNED_INVOICE, lineItems: [lineItem()] });
+
+    await expect(service.finalize(CLINIC, INVOICE, ACTOR, {})).resolves.toMatchObject({ id: INVOICE });
   });
 });

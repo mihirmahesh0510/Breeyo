@@ -105,11 +105,30 @@ export interface MarkPaidInput {
 const asNumber = (value: Prisma.Decimal | number | null | undefined): number | null =>
   value == null ? null : Number(value);
 
+/** The narrow slice of `PortalLinkIssuanceService` `finalize` depends on — kept
+ * as a `Pick`-shaped interface (matching `portal-reissue.service.ts`'s own
+ * `Pick<WhatsAppService, 'sendTemplate'>`) so this file never imports the
+ * owner-portal module's full surface, and a `{ issueFirstLinkIfNeeded: vi.fn() }`
+ * fake satisfies it in tests without constructing the real service. */
+export interface PortalLinkIssuer {
+  issueFirstLinkIfNeeded(clinicId: string, ownerId: string): Promise<unknown>;
+}
+
 export class InvoiceService {
   constructor(
     private readonly repository: InvoiceRepository,
     private readonly stockValidator: StockValidatorService,
     private readonly prisma: TenantPrismaClient,
+    /**
+     * D-84 (PHASE-09-VERIFY-FIX-PLAN.md finding 9.1): optional so every
+     * existing construction site of `InvoiceService` — `billing.routes.ts`'s
+     * two builders, `emr.routes.ts`'s consultation-draft path, and this
+     * file's own test suite — keeps working unchanged. Only the finalize
+     * route actually needs an owner ever to receive a first portal link, so
+     * only `billing.routes.ts`'s `buildService` (used by
+     * `POST /billing/invoices/:invoiceId/finalize`) wires a real one in.
+     */
+    private readonly portalLinkIssuer?: PortalLinkIssuer,
   ) {}
 
   // ─── Draft assembly ───────────────────────────────────────────────────────
@@ -500,6 +519,35 @@ export class InvoiceService {
     const stockPlan = this.buildProductLineStockPlan(lineItems);
 
     await this.repository.finalizeInvoice(clinicId, invoiceId, computed, stockPlan, actor, now);
+
+    // D-84 (PHASE-09-VERIFY-FIX-PLAN.md finding 9.1): piggyback the owner's
+    // FIRST portal-link issuance on invoice finalization — before this, no
+    // production path ever created a first `OwnerPortalMagicLink` row, so
+    // the entire owner portal was unreachable by any real owner.
+    //
+    // Independent of the write above (which has already committed) and
+    // never allowed to fail finalize itself: an owner-portal WhatsApp send
+    // or a portal-link DB error is a side effect, not a billing invariant.
+    // No `portalLinkIssuer` at all (e.g. `emr.routes.ts`'s consultation-draft
+    // construction, or this file's own test fixtures) skips this silently by
+    // design — see the constructor's doc comment.
+    const ownerId = (invoice as { ownerId?: string | null }).ownerId ?? null;
+    if (ownerId && this.portalLinkIssuer) {
+      try {
+        await this.portalLinkIssuer.issueFirstLinkIfNeeded(clinicId, ownerId);
+      } catch (err) {
+        // This file has no logger dependency of its own — see the
+        // codebase's established `console.error` convention for exactly
+        // this shape of best-effort side effect
+        // (`booking.service.ts`'s `createRealAppointmentForBooking`).
+        console.error('InvoiceService.finalize: owner-portal link issuance failed', {
+          clinicId,
+          invoiceId,
+          ownerId,
+          err,
+        });
+      }
+    }
 
     return this.repository.getInvoiceDetail(clinicId, invoiceId);
   }
