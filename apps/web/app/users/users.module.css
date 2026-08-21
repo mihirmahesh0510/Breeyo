@@ -49,10 +49,19 @@
 
 .policyRow {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--spacing-md);
   padding: var(--spacing-sm) 0;
   border-bottom: 1px solid var(--color-outline-variant);
+}
+
+.moduleToggles {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-sm);
+  font-size: var(--font-size-label);
 }
 
 .policyRole {
