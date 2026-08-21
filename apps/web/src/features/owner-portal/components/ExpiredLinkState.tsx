@@ -6,10 +6,19 @@
 // instead of its own inline `ExpiredScreen`.
 import { useState } from 'react';
 import { apiClient, ApiClientError } from '../../../lib/api';
+import { PortalHelpBar } from './PortalHelpBar';
 import styles from './ExpiredLinkState.module.css';
 
 export interface ExpiredLinkStateProps {
   token: string;
+  /**
+   * D-52, D-79, finding 9.9: sourced by `PortalShell` from the `EXPIRED`
+   * session envelope's own `clinicPhone` (widened alongside the `READY`
+   * path's `data.clinicPhone` -- see `magic-link.service.ts`), so this
+   * screen's help bar gets real `tel:`/`wa.me` links instead of the
+   * `href="#"` placeholder it used before this field existed.
+   */
+  clinicPhone?: string;
 }
 
 type ReissueStatus = 'idle' | 'requesting' | 'requested' | 'limit-reached' | 'error';
@@ -32,7 +41,7 @@ type ReissueStatus = 'idle' | 'requesting' | 'requested' | 'limit-reached' | 'er
  * reissue impossible for a link opened for the very first time after it
  * had already expired.)
  */
-export function ExpiredLinkState({ token }: ExpiredLinkStateProps) {
+export function ExpiredLinkState({ token, clinicPhone }: ExpiredLinkStateProps) {
   const [status, setStatus] = useState<ReissueStatus>('idle');
 
   const handleRequestNewLink = async () => {
@@ -82,20 +91,7 @@ export function ExpiredLinkState({ token }: ExpiredLinkStateProps) {
         </p>
       ) : null}
 
-      <div className={styles.helpBar} data-testid="portal-help-bar">
-        <a className={styles.helpAction} href="#" onClick={(e) => e.preventDefault()}>
-          📞 Call Clinic
-        </a>
-        <a
-          className={styles.helpAction}
-          href="#"
-          onClick={(e) => e.preventDefault()}
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          💬 WhatsApp Clinic
-        </a>
-      </div>
+      <PortalHelpBar clinicPhone={clinicPhone} />
     </div>
   );
 }

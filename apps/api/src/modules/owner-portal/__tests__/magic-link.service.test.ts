@@ -36,10 +36,13 @@ function linkRow(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function buildPrisma(row: ReturnType<typeof linkRow> | null) {
+function buildPrisma(row: ReturnType<typeof linkRow> | null, clinicPhone: string | null = '+919876543210') {
   return {
     ownerPortalMagicLink: {
       findUnique: vi.fn().mockResolvedValue(row),
+    },
+    clinic: {
+      findUnique: vi.fn().mockResolvedValue(clinicPhone === null ? null : { contactPhone: clinicPhone }),
     },
   };
 }
@@ -96,6 +99,34 @@ describe('MagicLinkService.validate — EXPIRED (D-64)', () => {
     expect(result.clinicId).toBe(CLINIC);
     expect(result.ownerId).toBe(OWNER);
     expect((result as unknown as { data?: unknown }).data).toBeUndefined();
+  });
+
+  it('carries the clinic\'s real contact number (finding 9.9) — safe here since the caller already received this exact link from this exact clinic', async () => {
+    const row = linkRow();
+    const prisma = buildPrisma(row, '+919876543210');
+    const service = new MagicLinkService(prisma as never, new AccessScopeService());
+
+    const farFuture = new Date(row.expiresAt.getTime() + 1000);
+    const result = await service.validate('raw-token-abc', farFuture);
+
+    if (result.state !== 'EXPIRED') throw new Error('expected EXPIRED');
+    expect(result.clinicPhone).toBe('+919876543210');
+    expect(prisma.clinic.findUnique).toHaveBeenCalledWith({
+      where: { id: CLINIC },
+      select: { contactPhone: true },
+    });
+  });
+
+  it('falls back to an empty string, never throwing, if the clinic row is somehow missing', async () => {
+    const row = linkRow();
+    const prisma = buildPrisma(row, null);
+    const service = new MagicLinkService(prisma as never, new AccessScopeService());
+
+    const farFuture = new Date(row.expiresAt.getTime() + 1000);
+    const result = await service.validate('raw-token-abc', farFuture);
+
+    if (result.state !== 'EXPIRED') throw new Error('expected EXPIRED');
+    expect(result.clinicPhone).toBe('');
   });
 });
 

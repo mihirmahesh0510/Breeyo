@@ -12,14 +12,22 @@ const ownerPortalReadySessionDataSchema = z
   .passthrough();
 
 /**
- * D-64, D-67, OWN-04, OWN-06: `INVALID` and `EXPIRED` carry no data payload —
- * a mismatched, tampered, revoked, or expired link must not leak owner/pet
- * scope in the response body (T-09-02). Only `READY` may carry `data`.
+ * D-64, D-67, OWN-04, OWN-06: `INVALID` and `EXPIRED` carry no owner/pet
+ * scope payload — a mismatched, tampered, revoked, or expired link must not
+ * leak that in the response body (T-09-02). Only `READY` may carry `data`.
+ *
+ * `EXPIRED` is widened (finding 9.9) to optionally carry `clinicPhone` --
+ * this is NOT scope data (no owner/pet/invoice id), it is the same
+ * `Clinic.contactPhone` the `READY` path's `data.clinicPhone` already
+ * exposes, safe here for the identical reason: the holder of an expired
+ * token already received it from this exact clinic, so naming the clinic
+ * back to them leaks nothing an attacker with a tampered/guessed token (the
+ * `INVALID` path, which never reaches this branch) could use.
  */
 export const ownerPortalSessionSchema = z.discriminatedUnion('state', [
   z.object({ state: z.literal('VALIDATING') }).strict(),
   z.object({ state: z.literal('READY'), data: ownerPortalReadySessionDataSchema }).strict(),
-  z.object({ state: z.literal('EXPIRED') }).strict(),
+  z.object({ state: z.literal('EXPIRED'), clinicPhone: z.string().optional() }).strict(),
   z.object({ state: z.literal('INVALID') }).strict(),
 ]);
 
@@ -35,12 +43,15 @@ const magicLinkScopeDataSchema = z
 /**
  * Result of validating a presented magic-link token against stored scope.
  * Same no-data-unless-READY rule as `ownerPortalSessionSchema`, but carries
- * the explicit allow-lists a repository query filters on (OWN-06).
+ * the explicit allow-lists a repository query filters on (OWN-06). `EXPIRED`
+ * carries the same optional `clinicPhone` as `ownerPortalSessionSchema` --
+ * see that schema's comment (finding 9.9) for why it, alone among the
+ * `EXPIRED` state's fields, is safe to serialize.
  */
 export const magicLinkValidationResultSchema = z.discriminatedUnion('state', [
   z.object({ state: z.literal('VALIDATING') }).strict(),
   z.object({ state: z.literal('READY'), data: magicLinkScopeDataSchema }).strict(),
-  z.object({ state: z.literal('EXPIRED') }).strict(),
+  z.object({ state: z.literal('EXPIRED'), clinicPhone: z.string().optional() }).strict(),
   z.object({ state: z.literal('INVALID') }).strict(),
 ]);
 

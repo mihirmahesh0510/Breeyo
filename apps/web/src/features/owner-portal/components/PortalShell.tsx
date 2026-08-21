@@ -12,6 +12,7 @@ import { TrustBanner } from './TrustBanner';
 import { PortalTabBar } from './PortalTabBar';
 import { PetSwitcher } from './PetSwitcher';
 import { ExpiredLinkState } from './ExpiredLinkState';
+import { PortalHelpBar } from './PortalHelpBar';
 import styles from './PortalShell.module.css';
 
 export interface PortalShellRenderContext {
@@ -26,47 +27,6 @@ export interface PortalShellRenderContext {
 export interface PortalShellProps {
   token: string;
   children: (context: PortalShellRenderContext) => ReactNode;
-}
-
-/** `tel:` accepts the number largely as-is; `wa.me` needs digits only (no `+`, spaces, or punctuation). */
-function toWhatsAppDigits(phone: string): string {
-  return phone.replace(/[^0-9]/g, '');
-}
-
-/**
- * D-52, D-79: Call/WhatsApp clinic-contact actions, visible on every
- * ready/expired/invalid screen. `clinicPhone` comes from the READY session
- * response (`Clinic.contactPhone`, safe to show back to an owner who
- * already received this exact link from this exact clinic) and produces
- * real `tel:`/`wa.me` links there. The `INVALID` screen never has a
- * session (T-09-16: no data at all for a tampered/mismatched token,
- * including which clinic it might belong to) and the `EXPIRED` screen's
- * own envelope is likewise data-free by design, so both fall back to the
- * same non-navigating placeholder link they always used -- present and
- * reachable per D-52/D-79's "always visible" requirement, just without a
- * clinic to point to yet.
- */
-function PortalHelpBar({ clinicPhone }: { clinicPhone?: string }) {
-  return (
-    <div className={styles.helpBar} data-testid="portal-help-bar">
-      <a
-        className={styles.helpAction}
-        href={clinicPhone ? `tel:${clinicPhone}` : '#'}
-        onClick={clinicPhone ? undefined : (e) => e.preventDefault()}
-      >
-        📞 Call Clinic
-      </a>
-      <a
-        className={styles.helpAction}
-        href={clinicPhone ? `https://wa.me/${toWhatsAppDigits(clinicPhone)}` : '#'}
-        onClick={clinicPhone ? undefined : (e) => e.preventDefault()}
-        target="_blank"
-        rel="noopener noreferrer"
-      >
-        💬 WhatsApp Clinic
-      </a>
-    </div>
-  );
 }
 
 function ValidatingScreen() {
@@ -112,7 +72,7 @@ export function PortalShell({ token, children }: PortalShellProps) {
   }
 
   if (portal.state === 'expired') {
-    return <ExpiredLinkState token={token} />;
+    return <ExpiredLinkState token={token} clinicPhone={portal.clinicPhone} />;
   }
 
   if (!portal.session) {

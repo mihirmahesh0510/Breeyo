@@ -14,11 +14,21 @@ import { AccessScopeService, type OwnerPortalMagicLinkRow, type OwnerPortalToken
  * internal-only fields for `PortalReissueService`, never serialized directly
  * as a public response body (see `magicLinkValidationResultSchema` in
  * `@breeyo/validators`, whose `EXPIRED` variant is `.strict()` with no extra
- * fields).
+ * scope fields).
+ *
+ * `clinicPhone` (finding 9.9) is the one exception: it graduated to
+ * "serializable" alongside the `READY` path's `data.clinicPhone` for the
+ * identical reason (`portal-session.service.ts`'s header comment) — the
+ * holder of an expired token already received it from this exact clinic, so
+ * naming the clinic back to them leaks nothing an `INVALID` token's holder
+ * (who never reaches this branch) could use. It is looked up here rather
+ * than left for each caller to fetch separately, so `owner-portal.routes.ts`'s
+ * `requirePortalScope` and `reissue.controller.ts` -- the two callers that
+ * ever see an `EXPIRED` resolution -- both get it for free.
  */
 export type MagicLinkResolution =
   | { state: 'INVALID' }
-  | { state: 'EXPIRED'; magicLinkId: string; clinicId: string; ownerId: string }
+  | { state: 'EXPIRED'; magicLinkId: string; clinicId: string; ownerId: string; clinicPhone: string }
   | { state: 'READY'; data: OwnerPortalTokenScope };
 
 /**
@@ -65,11 +75,21 @@ export class MagicLinkService {
     }
 
     if (state === 'EXPIRED') {
+      // Separate query rather than an `include` on the row lookup above:
+      // keeps the READY/INVALID paths (the overwhelming majority of calls)
+      // free of an extra join, mirroring `portal-session.service.ts`'s own
+      // separate `clinic.findUnique` for the READY path's `clinicPhone`.
+      const clinic = (await this.prisma.clinic.findUnique({
+        where: { id: row.clinicId },
+        select: { contactPhone: true },
+      })) as { contactPhone: string } | null;
+
       return {
         state: 'EXPIRED',
         magicLinkId: row.id,
         clinicId: row.clinicId,
         ownerId: row.ownerId,
+        clinicPhone: clinic?.contactPhone ?? '',
       };
     }
 

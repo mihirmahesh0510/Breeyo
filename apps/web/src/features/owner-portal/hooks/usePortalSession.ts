@@ -41,7 +41,14 @@ export interface PortalSessionData {
   clinicPhone: string;
 }
 
-type SessionEnvelope = { state: 'READY'; data: PortalSessionData } | { state: 'EXPIRED' };
+// Finding 9.9: `EXPIRED` now carries `clinicPhone` the same way the `READY`
+// envelope's `data.clinicPhone` does (sourced from `Clinic.contactPhone` in
+// `magic-link.service.ts`), so `ExpiredLinkState`'s own help bar can show
+// real `tel:`/`wa.me` links instead of the `href="#"` placeholder it fell
+// back to because this envelope used to carry no data at all.
+type SessionEnvelope =
+  | { state: 'READY'; data: PortalSessionData }
+  | { state: 'EXPIRED'; clinicPhone?: string };
 
 function resolveDeepLinkTab(deepLink: OwnerPortalDeepLinkTarget | null): OwnerPortalTabId | null {
   if (!deepLink) return null;
@@ -59,6 +66,14 @@ export interface UsePortalSessionResult {
   setSelectedPetId: (petId: string) => void;
   deepLinkTarget: OwnerPortalDeepLinkTarget | null;
   refetch: () => void;
+  /**
+   * D-52, D-79, finding 9.9: populated from the `READY` session's
+   * `data.clinicPhone` OR the `EXPIRED` envelope's own `clinicPhone` --
+   * whichever state is currently active -- so `PortalShell` can hand the
+   * same real clinic number to `ExpiredLinkState`'s help bar that it already
+   * hands its own.
+   */
+  clinicPhone: string | undefined;
 }
 
 /**
@@ -77,6 +92,7 @@ export function usePortalSession(token: string): UsePortalSessionResult {
   const [activeTab, setActiveTabState] = useState<OwnerPortalTabId>('OVERVIEW');
   const [selectedPetId, setSelectedPetIdState] = useState<string | null>(null);
   const [refetchIndex, setRefetchIndex] = useState(0);
+  const [expiredClinicPhone, setExpiredClinicPhone] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     if (!token) {
@@ -93,6 +109,7 @@ export function usePortalSession(token: string): UsePortalSessionResult {
 
         if (response.state === 'EXPIRED') {
           setSession(null);
+          setExpiredClinicPhone(response.clinicPhone);
           setState('expired');
           return;
         }
@@ -133,5 +150,6 @@ export function usePortalSession(token: string): UsePortalSessionResult {
     setSelectedPetId,
     deepLinkTarget: session?.deepLink ?? null,
     refetch,
+    clinicPhone: session?.clinicPhone ?? expiredClinicPhone,
   };
 }

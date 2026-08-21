@@ -90,6 +90,19 @@ describe('ownerPortalSessionSchema (OWN-04, OWN-06: INVALID carries no data)', (
     expect(result.success).toBe(true);
   });
 
+  it('accepts an EXPIRED envelope carrying clinicPhone (finding 9.9 — safe, not scope data)', () => {
+    const result = ownerPortalSessionSchema.safeParse({ state: 'EXPIRED', clinicPhone: '+919876543210' });
+    expect(result.success).toBe(true);
+  });
+
+  it('still rejects an EXPIRED envelope that carries owner/pet scope data', () => {
+    const result = ownerPortalSessionSchema.safeParse({
+      state: 'EXPIRED',
+      data: { magicLinkId: MAGIC_LINK_ID, defaultTab: 'OVERVIEW' },
+    });
+    expect(result.success).toBe(false);
+  });
+
   it('rejects an unknown state', () => {
     const result = ownerPortalSessionSchema.safeParse({ state: 'UNKNOWN' });
     expect(result.success).toBe(false);

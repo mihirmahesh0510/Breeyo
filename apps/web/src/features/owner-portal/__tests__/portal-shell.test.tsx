@@ -184,13 +184,20 @@ describe('PortalShell persistent help actions (D-52, D-79)', () => {
     expect(screen.getByRole('link', { name: /whatsapp clinic/i })).toHaveAttribute('href', '#');
   });
 
-  it('shows Call Clinic and WhatsApp Clinic on the expired screen', async () => {
-    mockSessionFetch({ state: 'EXPIRED' });
+  it('shows Call Clinic and WhatsApp Clinic on the expired screen, wired to the clinic\'s real number (finding 9.9)', async () => {
+    // The EXPIRED envelope now carries `clinicPhone` the same way READY's
+    // `data.clinicPhone` does -- before finding 9.9's fix, `ExpiredLinkState`
+    // had its own separate help bar hardcoded to `href="#"` regardless of
+    // this field, so asserting only that the links exist (as this test used
+    // to) would not have caught that regression.
+    mockSessionFetch({ state: 'EXPIRED', clinicPhone: '+919876543210' });
     renderShell();
 
     await waitFor(() => expect(screen.getByText(/link has expired/i)).toBeInTheDocument());
-    expect(screen.getByRole('link', { name: /call clinic/i })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /whatsapp clinic/i })).toBeInTheDocument();
+    const callLink = screen.getByRole('link', { name: /call clinic/i });
+    const whatsappLink = screen.getByRole('link', { name: /whatsapp clinic/i });
+    expect(callLink).toHaveAttribute('href', 'tel:+919876543210');
+    expect(whatsappLink).toHaveAttribute('href', 'https://wa.me/919876543210');
   });
 });
 

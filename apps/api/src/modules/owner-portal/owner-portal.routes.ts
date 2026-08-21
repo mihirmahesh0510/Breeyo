@@ -122,7 +122,10 @@ export default async function ownerPortalRoutes(fastify: FastifyInstance) {
       return reply.status(403).send({ state: 'INVALID' });
     }
     if (resolution.state === 'EXPIRED') {
-      return reply.status(200).send({ state: 'EXPIRED' });
+      // Finding 9.9: carries `clinicPhone` so `ExpiredLinkState`'s own help
+      // bar can show real tel:/wa.me links instead of the href="#" it fell
+      // back to when this envelope had no data at all.
+      return reply.status(200).send({ state: 'EXPIRED', clinicPhone: resolution.clinicPhone });
     }
 
     request.portalScope = resolution.data;

@@ -13,7 +13,17 @@ const NEW_LINK_ID = '44444444-4444-4444-8444-444444444444';
 const PET_1 = '55555555-5555-4555-8555-555555555555';
 
 function expiredResolution(): MagicLinkResolution {
-  return { state: 'EXPIRED', magicLinkId: OLD_LINK_ID, clinicId: CLINIC, ownerId: OWNER };
+  return {
+    state: 'EXPIRED',
+    magicLinkId: OLD_LINK_ID,
+    clinicId: CLINIC,
+    ownerId: OWNER,
+    // Finding 9.9: PortalReissueService never reads this field itself (it
+    // takes a `MagicLinkResolution` the caller already resolved), so a
+    // placeholder value is sufficient here -- only `magic-link.service.test.ts`
+    // and `reissue.controller.ts`'s callers care about the real value.
+    clinicPhone: '+919876543210',
+  };
 }
 
 function oldLinkRow(overrides: Record<string, unknown> = {}) {
