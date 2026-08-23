@@ -25,6 +25,7 @@ import { createCreditNoteController } from './credit-note.controller.js';
 import { BillingWorkbenchService } from './billing-workbench.service.js';
 import { createWorkbenchController } from './workbench.controller.js';
 import { AccessPolicyService } from '../web-dashboard/access-policy.service.js';
+import { requireBrowserModuleAccess } from '../web-dashboard/browser-access.middleware.js';
 import { BrowserSyncService } from '../../realtime/browser-sync.service.js';
 import { WhatsAppRepository } from '../whatsapp/whatsapp.repository.js';
 import { SendAuthorizationService } from '../whatsapp/send-authorization.service.js';
@@ -324,8 +325,11 @@ export default async function billingRoutes(fastify: FastifyInstance) {
   // Front Desk request into a 403 rather than a second permission string
   // this module would have to introduce and keep in sync with
   // `AccessPolicyService`'s browser role resolution.
-  fastify.get('/billing/web/workbench', { preHandler: readHandler, handler: workbenchController.getWorkbenchHandler });
-  fastify.post('/billing/web/invoices/:invoiceId/collect-payment', { preHandler: payHandler, handler: workbenchController.collectPaymentHandler });
-  fastify.post('/billing/web/invoices/:invoiceId/refund', { preHandler: payHandler, handler: workbenchController.refundHandler });
-  fastify.post('/billing/web/invoices/:invoiceId/void', { preHandler: payHandler, handler: workbenchController.voidHandler });
+  const webBillingReadHandler = [...readHandler, requireBrowserModuleAccess('BILLING')];
+  const webBillingPayHandler = [...payHandler, requireBrowserModuleAccess('BILLING')];
+
+  fastify.get('/billing/web/workbench', { preHandler: webBillingReadHandler, handler: workbenchController.getWorkbenchHandler });
+  fastify.post('/billing/web/invoices/:invoiceId/collect-payment', { preHandler: webBillingPayHandler, handler: workbenchController.collectPaymentHandler });
+  fastify.post('/billing/web/invoices/:invoiceId/refund', { preHandler: webBillingPayHandler, handler: workbenchController.refundHandler });
+  fastify.post('/billing/web/invoices/:invoiceId/void', { preHandler: webBillingPayHandler, handler: workbenchController.voidHandler });
 }

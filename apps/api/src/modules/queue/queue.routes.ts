@@ -7,6 +7,7 @@ import { createWebQueueController } from './web-queue.controller.js';
 import { BrowserSyncService } from '../../realtime/browser-sync.service.js';
 import { authenticate } from '../../middleware/authenticate.js';
 import { tenantContext } from '../../middleware/tenant-context.js';
+import { requireBrowserModuleAccess } from '../web-dashboard/browser-access.middleware.js';
 import type { TenantPrismaClient } from '../../lib/prisma-rls.js';
 import { createNotificationBus } from '../notifications/notification-bus.js';
 import { PushTriggerService } from '../scheduling/push-trigger.service.js';
@@ -89,12 +90,14 @@ export default async function queueRoutes(fastify: FastifyInstance) {
   // Plan 09-04: browser queue workbench. Registered after the fixed
   // `/queue/archive` path but before nothing that could shadow it -- neither
   // segment is parametric, so Fastify's radix router cannot confuse them.
+  const webQueuePreHandler = [...preHandler, requireBrowserModuleAccess('QUEUE')];
+
   fastify.get('/queue/web/board', {
-    preHandler,
+    preHandler: webQueuePreHandler,
     handler: webQueueController.getBoardHandler,
   });
   fastify.post('/queue/web/entries/:queueEntryId/status', {
-    preHandler,
+    preHandler: webQueuePreHandler,
     handler: webQueueController.updateEntryStatusHandler,
   });
 }

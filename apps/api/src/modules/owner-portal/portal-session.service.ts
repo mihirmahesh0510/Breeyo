@@ -110,31 +110,18 @@ export class PortalSessionService {
     };
   }
 
-  /** D-53: persists last tab/pet/invoice/visit/checkout/return-state, upsert-by-hand
-   * because `OwnerPortalSessionState.magicLinkId` is indexed but not unique. */
+  /** D-53: persists last tab/pet/invoice/visit/checkout/return-state. */
   async updateRestoreState(magicLinkId: string, patch: Partial<SessionRestoreState>): Promise<void> {
-    const existing = await this.db.ownerPortalSessionState.findFirst({
+    await this.db.ownerPortalSessionState.upsert({
       where: { magicLinkId },
-      orderBy: { updatedAt: 'desc' },
-    });
-
-    if (existing) {
-      await this.db.ownerPortalSessionState.update({
-        where: { id: (existing as { id: string }).id },
-        data: patch,
-      });
-      return;
-    }
-
-    await this.db.ownerPortalSessionState.create({
-      data: { magicLinkId, ...EMPTY_RESTORE_STATE, ...patch },
+      create: { magicLinkId, ...EMPTY_RESTORE_STATE, ...patch },
+      update: patch,
     });
   }
 
   private async loadRestoreState(magicLinkId: string): Promise<SessionRestoreState> {
-    const row = await this.db.ownerPortalSessionState.findFirst({
+    const row = await this.db.ownerPortalSessionState.findUnique({
       where: { magicLinkId },
-      orderBy: { updatedAt: 'desc' },
     });
 
     if (!row) {

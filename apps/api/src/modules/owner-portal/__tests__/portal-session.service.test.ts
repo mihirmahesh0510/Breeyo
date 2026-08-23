@@ -51,9 +51,8 @@ function buildDb(overrides: Record<string, unknown> = {}) {
       ]),
     },
     ownerPortalSessionState: {
-      findFirst: vi.fn().mockResolvedValue(null),
-      create: vi.fn().mockResolvedValue({}),
-      update: vi.fn().mockResolvedValue({}),
+      findUnique: vi.fn().mockResolvedValue(null),
+      upsert: vi.fn().mockResolvedValue({}),
     },
     ownerPortalMagicLink: {
       update: vi.fn().mockResolvedValue({}),
@@ -169,7 +168,7 @@ describe('PortalSessionService restore state (D-53)', () => {
   it('restores the last-viewed tab and pet from a persisted session-state row', async () => {
     const db = buildDb({
       ownerPortalSessionState: {
-        findFirst: vi.fn().mockResolvedValue({
+        findUnique: vi.fn().mockResolvedValue({
           lastTab: 'RECORDS',
           lastPetId: PET_2,
           lastInvoiceId: null,
@@ -177,8 +176,7 @@ describe('PortalSessionService restore state (D-53)', () => {
           lastCheckoutSessionId: null,
           lastReturnState: null,
         }),
-        create: vi.fn(),
-        update: vi.fn(),
+        upsert: vi.fn(),
       },
     });
     const service = new PortalSessionService(db as never);
@@ -189,34 +187,16 @@ describe('PortalSessionService restore state (D-53)', () => {
     expect(session.restore.lastPetId).toBe(PET_2);
   });
 
-  it('creates a new session-state row on first restore-state update', async () => {
+  it('upserts the session-state row keyed by magicLinkId on a restore-state update', async () => {
     const db = buildDb();
     const service = new PortalSessionService(db as never);
 
     await service.updateRestoreState(LINK_ID, { lastTab: 'INVOICES', lastPetId: PET_1 });
 
-    expect(db.ownerPortalSessionState.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({ magicLinkId: LINK_ID, lastTab: 'INVOICES', lastPetId: PET_1 }),
+    expect(db.ownerPortalSessionState.upsert).toHaveBeenCalledWith({
+      where: { magicLinkId: LINK_ID },
+      create: expect.objectContaining({ magicLinkId: LINK_ID, lastTab: 'INVOICES', lastPetId: PET_1 }),
+      update: expect.objectContaining({ lastTab: 'INVOICES', lastPetId: PET_1 }),
     });
-  });
-
-  it('updates the existing session-state row rather than creating a duplicate', async () => {
-    const existing = { id: 'state-1', magicLinkId: LINK_ID };
-    const db = buildDb({
-      ownerPortalSessionState: {
-        findFirst: vi.fn().mockResolvedValue(existing),
-        create: vi.fn(),
-        update: vi.fn().mockResolvedValue({}),
-      },
-    });
-    const service = new PortalSessionService(db as never);
-
-    await service.updateRestoreState(LINK_ID, { lastTab: 'INVOICES' });
-
-    expect(db.ownerPortalSessionState.update).toHaveBeenCalledWith({
-      where: { id: 'state-1' },
-      data: expect.objectContaining({ lastTab: 'INVOICES' }),
-    });
-    expect(db.ownerPortalSessionState.create).not.toHaveBeenCalled();
   });
 });

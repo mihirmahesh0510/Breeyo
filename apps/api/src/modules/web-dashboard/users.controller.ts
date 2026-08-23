@@ -28,6 +28,7 @@ export function createUsersController() {
         include: {
           user: { select: { id: true, fullName: true, email: true } },
           roles: { include: { role: { select: { name: true } } } },
+          statusChangedBy: { select: { fullName: true } },
         },
         orderBy: { createdAt: 'asc' },
       });
@@ -38,6 +39,8 @@ export function createUsersController() {
         email: member.user.email,
         roleNames: member.roles.map((memberRole) => memberRole.role.name),
         isActive: member.isActive,
+        statusChangedByName: member.statusChangedBy?.fullName ?? null,
+        statusChangedAt: member.statusChangedAt ? member.statusChangedAt.toISOString() : null,
       }));
 
       return reply.status(200).send({ data });
@@ -69,9 +72,10 @@ export function createUsersController() {
         return reply.status(404).send({ error: { code: 'NOT_FOUND', message: 'User not found in this clinic' } });
       }
 
+      const now = new Date();
       const updated = await request.db.clinicMember.update({
         where: { id: member.id },
-        data: { isActive },
+        data: { isActive, statusChangedByUserId: request.user.id, statusChangedAt: now },
       });
 
       await writeAuditLog(request.db, isActive ? AuditEvent.USER_REACTIVATED : AuditEvent.USER_DEACTIVATED, {
@@ -80,13 +84,12 @@ export function createUsersController() {
         targetUserId: userId,
       });
 
-      const updatedAt = new Date().toISOString();
       return reply.status(200).send({
         data: {
           userId,
           isActive: updated.isActive,
           updatedByUserId: request.user.id,
-          updatedAt,
+          updatedAt: now.toISOString(),
         },
       });
     },

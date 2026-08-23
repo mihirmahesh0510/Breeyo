@@ -15,6 +15,7 @@ import { PermissionService } from '../auth/permission.service.js';
 import { authenticate } from '../../middleware/authenticate.js';
 import { tenantContext } from '../../middleware/tenant-context.js';
 import { requireInventoryPermission } from './middleware/inventory-permissions.middleware.js';
+import { requireBrowserModuleAccess } from '../web-dashboard/browser-access.middleware.js';
 import type { TenantPrismaClient } from '../../lib/prisma-rls.js';
 
 export default async function inventoryRoutes(fastify: FastifyInstance) {
@@ -110,8 +111,11 @@ export default async function inventoryRoutes(fastify: FastifyInstance) {
   // on top of the existing `manageStock` RBAC gate below -- Front Desk keeps
   // `manageStock` for mobile, but D-18 requires browser inventory to stay
   // view-only for that same role unless an Admin separately grants it.
-  fastify.get('/inventory/web/workbench', { preHandler: viewInventory, handler: webController.getWorkbench });
-  fastify.post('/inventory/web/items/:itemId/adjust-stock', { preHandler: manageStock, handler: webController.adjustStock });
-  fastify.get('/inventory/web/exports/analytics.csv', { preHandler: viewInventory, handler: webController.exportAnalyticsCsv });
-  fastify.get('/inventory/web/exports/analytics.pdf', { preHandler: viewInventory, handler: webController.exportAnalyticsPdf });
+  const webViewInventory = [...viewInventory, requireBrowserModuleAccess('INVENTORY')];
+  const webManageStock = [...manageStock, requireBrowserModuleAccess('INVENTORY')];
+
+  fastify.get('/inventory/web/workbench', { preHandler: webViewInventory, handler: webController.getWorkbench });
+  fastify.post('/inventory/web/items/:itemId/adjust-stock', { preHandler: webManageStock, handler: webController.adjustStock });
+  fastify.get('/inventory/web/exports/analytics.csv', { preHandler: webViewInventory, handler: webController.exportAnalyticsCsv });
+  fastify.get('/inventory/web/exports/analytics.pdf', { preHandler: webViewInventory, handler: webController.exportAnalyticsPdf });
 }

@@ -55,6 +55,14 @@ export default function InventoryPage() {
     }
   };
 
+  const handleExport = async (format: 'csv' | 'pdf') => {
+    try {
+      await workbench.exportAnalytics(format);
+    } catch (err) {
+      setActionError(err instanceof ApiClientError ? err.message : 'Could not export analytics. Try again.');
+    }
+  };
+
   const confirmRemoval = async (reason: string, notes: string) => {
     if (!pendingRemoval) return;
     setIsSubmitting(true);
@@ -101,13 +109,13 @@ export default function InventoryPage() {
         {workbench.data?.reordering ? (
           <InventoryReorderPanel
             payload={workbench.data.reordering}
-            onExport={workbench.exportAnalytics}
+            onExport={handleExport}
             onOpenItem={() => setActiveTab('stock')}
           />
         ) : null}
 
         {workbench.data?.analytics ? (
-          <InventoryAnalyticsPanel payload={workbench.data.analytics} onExport={workbench.exportAnalytics} />
+          <InventoryAnalyticsPanel payload={workbench.data.analytics} onExport={handleExport} />
         ) : null}
 
         <RiskyStockChangeDialog

@@ -20,6 +20,9 @@ interface StaffMember {
   email: string;
   roleNames: string[];
   isActive: boolean;
+  /** D-24: persisted actor + timestamp for the last status change, so it survives a reload or a different admin's session. */
+  statusChangedByName: string | null;
+  statusChangedAt: string | null;
 }
 
 interface PendingStatusChange {
@@ -174,7 +177,11 @@ export default function UsersPage() {
             </thead>
             <tbody>
               {members.map((member) => {
-                const meta = statusChangeMeta[member.userId];
+                const meta =
+                  statusChangeMeta[member.userId] ??
+                  (member.statusChangedByName && member.statusChangedAt
+                    ? { actorName: member.statusChangedByName, updatedAt: member.statusChangedAt }
+                    : null);
                 return (
                   <tr key={member.userId}>
                     <td>{member.fullName}</td>
