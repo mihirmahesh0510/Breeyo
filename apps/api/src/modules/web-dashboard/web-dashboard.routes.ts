@@ -25,7 +25,10 @@ export default async function webDashboardRoutes(fastify: FastifyInstance) {
   // plugin encapsulation means auth.routes.ts's decoration never reaches this
   // sibling plugin's scope, so it is decorated locally here, matching
   // `billing.routes.ts` and `inventory.routes.ts`.
-  const permissionService = new PermissionService(fastify.prisma, fastify.redis);
+  //
+  // Admin client by design: runs before tenantContext (D-30 exemption) — the
+  // permission check executes during `authenticate`, before `request.db` exists.
+  const permissionService = new PermissionService(fastify.prisma, fastify.redis); // D-30 exemption
   if (!fastify.hasDecorator('permissionService')) {
     fastify.decorate('permissionService', permissionService);
   }
