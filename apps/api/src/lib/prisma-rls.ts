@@ -209,21 +209,44 @@ export function createTenantClient(clinicId: string): TenantPrismaClient {
  * The Prisma handle a repository or service may be constructed with.
  *
  * On the HTTP path this is always the tenant-scoped `TenantPrismaClient`
- * (`request.db`), so RLS applies. The raw `PrismaClient` arm exists only for
- * the documented callers that have no request context and are cross-clinic by
- * design — currently the midnight-archive cron job (`jobs/midnight-archive.ts`)
- * and unit-test mocks.
+ * (`request.db`), so RLS applies. A raw `PrismaClient` (the admin role, no RLS)
+ * is accepted for the documented callers that have no request context and are
+ * cross-clinic by design — e.g. the midnight-archive cron job and the
+ * Razorpay webhook route — but must be passed as `adminAsDbClient(...)`
+ * rather than assigned directly.
  *
- * This union is deliberately NOT the type of `request.db`: widening there
- * would let a handler silently fall back to the RLS-bypassing admin client,
- * which is exactly the D-30 defect this phase is closing. Prefer
- * `TenantPrismaClient` in new code.
+ * This used to be the literal union `TenantPrismaClient | PrismaClient`. Every
+ * property access on a value of that union type forces the compiler to prove
+ * the two clients' same-named model delegates (e.g. `petOwner.upsert`) share a
+ * compatible call signature, for every model in the schema, at every call
+ * site. Prisma's extended-client delegate type is structurally different from
+ * the base client's (see `ScopedClient`), and once the schema has enough
+ * models the recursive comparison exceeds TypeScript's instantiation-depth
+ * guard — surfacing as `TS2321 Excessive stack depth` immediately followed by
+ * a misleading `TS2349 This expression is not callable` on essentially every
+ * repository in the codebase, not just the ones that touch the new models.
+ * `DbClient` is a single type instead so no such comparison is ever needed;
+ * `adminAsDbClient` documents and localizes the one legitimate cast.
  *
  * Note: the interactive `$transaction(async (tx) => ...)` overload does not
- * resolve through this union. Modules that need it (currently `emr`) type
+ * resolve through this type. Modules that need it (currently `emr`) type
  * their collaborator as `TenantPrismaClient` directly.
  */
-export type DbClient = TenantPrismaClient | PrismaClient;
+export type DbClient = TenantPrismaClient;
+
+/**
+ * Marks a deliberate D-30 exemption: hands the admin (non-RLS) client to a
+ * `DbClient`-typed collaborator for a caller that is documented as
+ * cross-clinic by design (no request/tenant context to scope by).
+ *
+ * The cast is safe because `TenantPrismaClient`'s query-shaped members are
+ * behaviorally a superset of `PrismaClient`'s for plain model calls — the
+ * scoping extension only adds transaction-per-call wrapping and a narrowed
+ * `$transaction` signature, neither of which the admin-role callers rely on.
+ */
+export function adminAsDbClient(prisma: PrismaClient): DbClient {
+  return prisma as unknown as DbClient;
+}
 
 /**
  * Base Prisma client for operations that don't need RLS

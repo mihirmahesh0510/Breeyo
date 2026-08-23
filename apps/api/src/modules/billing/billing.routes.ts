@@ -3,7 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { authenticate } from '../../middleware/authenticate.js';
 import { tenantContext } from '../../middleware/tenant-context.js';
 import { requirePermission } from '../../middleware/authorize.js';
-import type { TenantPrismaClient } from '../../lib/prisma-rls.js';
+import { adminAsDbClient, type TenantPrismaClient } from '../../lib/prisma-rls.js';
 import { PermissionService } from '../auth/permission.service.js';
 import { StockMovementService } from '../inventory/stock-movement.service.js';
 import { InvoiceRepository } from './invoice.repository.js';
@@ -73,7 +73,7 @@ export default async function billingRoutes(fastify: FastifyInstance) {
   // `WhatsAppService.sendTemplate` calls `prisma.$transaction(async (tx) =>
   // ...)` internally, which is why this is the raw admin `fastify.prisma`
   // rather than a per-request tenant handle.
-  const whatsAppRepository = new WhatsAppRepository(fastify.prisma);
+  const whatsAppRepository = new WhatsAppRepository(adminAsDbClient(fastify.prisma));
   const finalizeOutboundQueue = new Queue('whatsapp-outbound', { connection: fastify.redis });
   fastify.addHook('onClose', async () => {
     await finalizeOutboundQueue.close();

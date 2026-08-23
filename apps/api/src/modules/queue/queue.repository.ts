@@ -5,13 +5,23 @@ import { ACTIVE_QUEUE_STATUSES, CLOSED_QUEUE_STATUSES } from '@breeyo/types';
 import type { CreateEntryParams } from './queue.types.js';
 
 /**
- * `DbClient` (the tenant-scoped or admin `PrismaClient`) or a Prisma
- * interactive-transaction client -- lets `findTodayActiveEntryForPet`/
- * `createEntry` run inside a caller's own transaction (e.g.
- * `QueueHandoffService`'s per-appointment `prisma.$transaction`) instead of
- * always going through this repository's own `this.prisma` connection.
+ * `DbClient` (the tenant-scoped or admin `PrismaClient`) -- lets
+ * `findTodayActiveEntryForPet`/`createEntry` run inside a caller's own
+ * transaction (e.g. `QueueHandoffService`'s per-appointment
+ * `prisma.$transaction`) instead of always going through this repository's
+ * own `this.prisma` connection.
+ *
+ * A caller's raw `Prisma.TransactionClient` is cast to `Db` at the boundary
+ * (see `createEntryIfNoneActive` and `QueueHandoffService`) rather than
+ * unioned into this type: unioning it back in makes every model delegate
+ * access below (`queueEntry.findFirst`, `.create`, ...) a comparison between
+ * two structurally different generic client shapes, which blows past
+ * TypeScript's instantiation-depth guard on a schema this size (TS2321,
+ * surfaced as a misleading "not callable" TS2349). The cast is safe: at
+ * runtime the transaction client exposes the same model delegate methods
+ * either way.
  */
-type Db = DbClient | Prisma.TransactionClient;
+type Db = DbClient;
 
 const PET_OWNER_INCLUDE = {
   pet: {
@@ -166,7 +176,7 @@ export class QueueRepository {
     // proxy from `prisma-rls.ts`, whose own `$transaction` trap still fires
     // (and still binds the `app.clinic_id` GUC) regardless of the static type
     // used to access it here.
-    return (this.prisma as unknown as PrismaClient).$transaction((tx) => run(tx));
+    return (this.prisma as unknown as PrismaClient).$transaction((tx) => run(tx as unknown as Db));
   }
 
   /**

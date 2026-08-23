@@ -1,5 +1,6 @@
 import type { PrismaClient } from '@prisma/client';
 import type { Server } from 'socket.io';
+import type { DbClient } from '../../lib/prisma-rls.js';
 import { SOCKET_EVENTS, NO_SHOW_GRACE_MINUTES } from '@breeyo/types';
 import { getTodayIST } from '../../lib/ist-date.js';
 import type { AppointmentRepository } from './appointment.repository.js';
@@ -106,7 +107,12 @@ export class QueueHandoffService {
               queuePriorityAt: appointment.scheduledFor,
               appointmentId: appointment.id,
             },
-            tx,
+            // Cast per the established tenant-vs-admin transaction typing
+            // boundary (see `queue.repository.ts`'s `Db` type): `tx`'s
+            // model delegates are structurally identical to `DbClient`'s at
+            // runtime, but unioning the two into `QueueRepository`'s `Db`
+            // type would blow past TypeScript's instantiation-depth guard.
+            tx as unknown as DbClient,
           );
           if (existingActive || !entry) {
             continue;

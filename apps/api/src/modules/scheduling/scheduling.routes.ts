@@ -25,6 +25,7 @@ import { registerSchedulingSweep } from './scheduling.sweep.worker.js';
 import { createSchedulingController } from './scheduling.controller.js';
 import { QueueRepository } from '../queue/queue.repository.js';
 import { QueueService } from '../queue/queue.service.js';
+import { adminAsDbClient } from '../../lib/prisma-rls.js';
 import { PermissionService } from '../auth/permission.service.js';
 import { authenticate } from '../../middleware/authenticate.js';
 import { tenantContext } from '../../middleware/tenant-context.js';
@@ -86,7 +87,7 @@ export default async function schedulingRoutes(fastify: FastifyInstance): Promis
   // `io` reference, and this instance needs to live at plugin scope so the
   // `onRescheduled`/`onCancelled` hooks below (and `QueueHandoffService`) can
   // close over ONE instance for the lifetime of the process.
-  const queueRepository = new QueueRepository(fastify.prisma);
+  const queueRepository = new QueueRepository(adminAsDbClient(fastify.prisma));
   const queueService = new QueueService(queueRepository, fastify.io, pushTriggers);
 
   // ─── Phase 7-dependent reminder-cancellation wiring (08-10), guarded ──────
@@ -108,8 +109,8 @@ export default async function schedulingRoutes(fastify: FastifyInstance): Promis
     // D-30 exemption: same reasoning as the file header/availabilityRepository
     // above -- no DB-level RLS on these tables, so fastify.prisma is injected
     // directly.
-    const reminderTaskRepository = new ReminderTaskRepository(fastify.prisma);
-    const whatsAppRepositoryForReminders = new WhatsAppRepository(fastify.prisma);
+    const reminderTaskRepository = new ReminderTaskRepository(adminAsDbClient(fastify.prisma));
+    const whatsAppRepositoryForReminders = new WhatsAppRepository(adminAsDbClient(fastify.prisma));
     reminderService = new RealAppointmentReminderService(
       reminderTaskRepository,
       whatsAppRepositoryForReminders,
@@ -189,7 +190,7 @@ export default async function schedulingRoutes(fastify: FastifyInstance): Promis
     try {
       const { OwnerActionService: RealOwnerActionService } = await import('./owner-action.service.js');
       const { WhatsAppRepository } = await import('../whatsapp/whatsapp.repository.js');
-      const whatsAppRepositoryForReplies = new WhatsAppRepository(fastify.prisma);
+      const whatsAppRepositoryForReplies = new WhatsAppRepository(adminAsDbClient(fastify.prisma));
 
       // Adapts `OwnerReplySender` onto Phase 7's EXISTING send path
       // (`WhatsAppRepository.createOutboundMessage` + `touchThread` + the

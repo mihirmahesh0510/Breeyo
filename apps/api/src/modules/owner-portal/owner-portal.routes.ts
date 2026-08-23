@@ -1,6 +1,11 @@
 import { Queue } from 'bullmq';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import { createTenantClient, getBasePrisma, type TenantPrismaClient } from '../../lib/prisma-rls.js';
+import {
+  adminAsDbClient,
+  createTenantClient,
+  getBasePrisma,
+  type TenantPrismaClient,
+} from '../../lib/prisma-rls.js';
 import { InvoiceRepository } from '../billing/invoice.repository.js';
 import { PaymentService } from '../billing/payment.service.js';
 import { StockMovementService } from '../inventory/stock-movement.service.js';
@@ -92,7 +97,7 @@ export default async function ownerPortalRoutes(fastify: FastifyInstance) {
   // Redis-backed queue, not a singleton-per-process resource — the existing
   // `outbound.worker.ts` consumer processes jobs regardless of which
   // plugin's `Queue` instance produced them.
-  const whatsAppRepository = new WhatsAppRepository(fastify.prisma);
+  const whatsAppRepository = new WhatsAppRepository(adminAsDbClient(fastify.prisma));
   const outboundQueue = new Queue('whatsapp-outbound', { connection: fastify.redis });
   fastify.addHook('onClose', async () => {
     await outboundQueue.close();
