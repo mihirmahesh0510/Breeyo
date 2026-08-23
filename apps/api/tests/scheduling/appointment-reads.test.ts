@@ -12,7 +12,8 @@ import {
   createTestServiceForBooking,
   createTestAppointment,
 } from '../helpers/factories.js';
-import { getTodayIST, addDaysIST, weekdayIST, minutesToIstDate } from '../../src/lib/ist-date.js';
+import { getTodayIST, addDaysIST } from '../../src/lib/ist-date.js';
+import { futureSlot } from '../helpers/future-slot.js';
 import type { FastifyInstance } from 'fastify';
 
 let app: FastifyInstance;
@@ -35,17 +36,6 @@ async function setupTestContext() {
   await createTestVetAvailabilityWeek(clinic.id, user.id);
   const service = await createTestServiceForBooking(clinic.id, { durationMinutes: 30 });
   return { user, clinic, accessToken, owner, pet, service };
-}
-
-/** A future weekday slot (skips Sunday, which the default fixture week
- * closes), `daysAhead` IST calendar days out, at `minutesOfDay` past IST
- * midnight. */
-function futureSlot(daysAhead: number, minutesOfDay = 600): Date {
-  let day = addDaysIST(getTodayIST(), daysAhead);
-  while (weekdayIST(day) === 0) {
-    day = addDaysIST(day, 1);
-  }
-  return minutesToIstDate(day, minutesOfDay);
 }
 
 function dateRangeUrl(from: Date, to: Date, extra = ''): string {
