@@ -4,6 +4,10 @@ import { EmrService } from './emr.service.js';
 import { ConsultationLockService } from './consultation-lock.service.js';
 import { DosageService } from './dosage.service.js';
 import { createEmrController } from './emr.controller.js';
+import {
+  createConsultationSyncController,
+  buildConsultationOfflineReplayService,
+} from './controllers/consultationSync.controller.js';
 import { createNotificationBus } from '../notifications/notification-bus.js';
 // D-03: the EMR module depends on billing so that ending a consultation can
 // seed a draft invoice. This is a deliberate ONE-DIRECTIONAL dependency — EMR
@@ -61,6 +65,13 @@ export default async function emrRoutes(fastify: FastifyInstance) {
 
   const controller = createEmrController(buildServices, notificationBus);
 
+  // Plan 10-03 (PLT-03, D-05 to D-09, D-24): mobile offline consultation
+  // draft replay on reconnect. Deliberately its own controller/service,
+  // mirroring `queue.routes.ts`'s `queueSyncController` -- clinical replay
+  // has its own review posture (whole-draft hold on any conflict) and must
+  // not share a code path with queue/inventory replay's lighter rules.
+  const consultationSyncController = createConsultationSyncController(buildConsultationOfflineReplayService);
+
   const preHandler = [authenticate, tenantContext];
 
   // Consultation lifecycle
@@ -70,6 +81,12 @@ export default async function emrRoutes(fastify: FastifyInstance) {
   fastify.patch('/consultations/:consultationId/draft', { preHandler, handler: controller.saveDraftHandler });
   fastify.post('/consultations/:consultationId/finalize', { preHandler, handler: controller.finalizeHandler });
   fastify.post('/consultations/:consultationId/addendum', { preHandler, handler: controller.addAddendumHandler });
+
+  // Plan 10-03: mobile offline consultation draft replay on reconnect.
+  // Registered as a fixed segment (`/consultations/sync/replay`), same as
+  // queue's `/queue/sync/replay` -- Fastify's radix router does not confuse
+  // it with the parametric `/consultations/:consultationId` routes above.
+  fastify.post('/consultations/sync/replay', { preHandler, handler: consultationSyncController.replayHandler });
 
   // Lock management
   fastify.post('/consultations/:consultationId/heartbeat', { preHandler, handler: controller.heartbeatHandler });

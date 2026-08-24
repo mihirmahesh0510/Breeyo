@@ -328,3 +328,48 @@ export async function writeWorkingSetSnapshot(
     }
   });
 }
+
+export interface WorkingSetSnapshotRow {
+  entityId: string;
+  clinicId: string;
+  deviceId: string;
+  data: unknown;
+  recordDate: string;
+  workingSetAnchoredAt: string;
+  isFullyEditable: boolean;
+  updatedAt: string;
+}
+
+/**
+ * Read counterpart to `writeWorkingSetSnapshot` (Plan 10-03 Task 1) -- until
+ * now no domain adapter needed to read a same-day working-set snapshot back
+ * (queue/inventory only ever write one to render optimistically off other
+ * in-memory state), but the offline consultation draft store needs to
+ * restore a persisted draft across an app restart, which means reading
+ * `consultation_draft_snapshot` back out. Returns `null` when nothing has
+ * been snapshotted for this entity, exactly mirroring `loadDraft`'s
+ * "no draft yet" contract on the server side.
+ */
+export async function readWorkingSetSnapshot(
+  db: SQLite.SQLiteDatabase,
+  table: WorkingSetSnapshotTable,
+  entityId: string,
+): Promise<WorkingSetSnapshotRow | null> {
+  const row = await db.getFirstAsync<Record<string, unknown>>(
+    `SELECT * FROM ${table} WHERE entity_id = $entityId`,
+    { $entityId: entityId },
+  );
+  if (!row) {
+    return null;
+  }
+  return {
+    entityId: row.entity_id as string,
+    clinicId: row.clinic_id as string,
+    deviceId: row.device_id as string,
+    data: JSON.parse(row.data_json as string),
+    recordDate: row.record_date as string,
+    workingSetAnchoredAt: row.working_set_anchored_at as string,
+    isFullyEditable: Boolean(row.is_fully_editable),
+    updatedAt: row.updated_at as string,
+  };
+}

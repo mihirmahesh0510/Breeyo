@@ -44,6 +44,11 @@ export default defineConfig({
       // Plan 10-02: offline queue actions/store (mobile) and queue replay/
       // preemption reconciliation (API).
       'apps/mobile/src/features/queue/**/__tests__/*.test.ts',
+      // Plan 10-03: offline consultation draft persistence, clinical
+      // conflict classification, and clinical conflict resolution sheet.
+      'apps/mobile/src/features/consultation/**/__tests__/*.test.ts',
+      'apps/mobile/src/features/consultation/**/__tests__/*.test.tsx',
+      'apps/api/src/modules/emr/**/__tests__/*.test.ts',
     ],
   },
 });

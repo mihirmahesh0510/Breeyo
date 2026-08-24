@@ -8,9 +8,24 @@ import type {
   ReferralData,
   VisitType,
   PrescriptionItem,
+  SaveDraftInput,
 } from '@breeyo/types';
 
-interface ConsultationDraftStore extends ConsultationDraftState {
+/**
+ * Plan 10-03 Task 1 (D-01, D-05, D-06): the draft state last known to be in
+ * sync with the server. `offlineConsultationDraftStore.ts` needs this as
+ * the three-way-diff baseline whenever it persists an offline save --
+ * without it there is no way to tell "this device changed this field"
+ * apart from "this field simply arrived pre-populated from the last load",
+ * which is exactly the distinction `clinicalConflict.service.ts` uses
+ * server-side to decide what is safe to auto-merge (D-07) versus what must
+ * become a reviewed conflict (D-06).
+ */
+interface ConsultationSyncBaseline {
+  syncedSnapshot: SaveDraftInput;
+}
+
+interface ConsultationDraftStore extends ConsultationDraftState, ConsultationSyncBaseline {
   // Actions
   setConsultationId: (id: string) => void;
   setVisitType: (type: VisitType) => void;
@@ -72,8 +87,29 @@ const INITIAL_STATE: ConsultationDraftState = {
   lastSavedAt: null,
 };
 
-export const useConsultationDraftStore = create<ConsultationDraftStore>((set) => ({
+/** Extracts the `SaveDraftInput`-shaped fields from the full draft state --
+ *  the same field set `useAutoSave.ts`'s own `serializeDraft` sends to the
+ *  server, used here to snapshot "what the server currently has" rather
+ *  than the screen-only fields (`consultationId`, `expandedSections`, ...). */
+function serializeDraftFields(state: ConsultationDraftState): SaveDraftInput {
+  return {
+    vitals: state.vitals,
+    subjective: state.subjective,
+    objective: state.objective,
+    assessment: state.assessment,
+    plan: state.plan,
+    careInstructions: state.careInstructions,
+    referral: state.referral,
+    rxNotes: state.rxNotes,
+    prescriptions: state.prescriptions,
+  };
+}
+
+const INITIAL_SYNCED_SNAPSHOT: SaveDraftInput = serializeDraftFields(INITIAL_STATE);
+
+export const useConsultationDraftStore = create<ConsultationDraftStore>((set, get) => ({
   ...INITIAL_STATE,
+  syncedSnapshot: INITIAL_SYNCED_SNAPSHOT,
 
   setConsultationId: (id) => set({ consultationId: id }),
 
@@ -128,16 +164,25 @@ export const useConsultationDraftStore = create<ConsultationDraftStore>((set) =>
     set({ prescriptions: items, isDirty: true }),
 
   markSaved: () =>
-    set({ isDirty: false, lastSavedAt: new Date() }),
+    set((state) => ({
+      isDirty: false,
+      lastSavedAt: new Date(),
+      // The server now confirmably has this exact draft -- advance the
+      // three-way-diff baseline so the NEXT offline stretch (if any) only
+      // reports fields changed after this point, not fields already synced
+      // long ago.
+      syncedSnapshot: serializeDraftFields(state),
+    })),
 
   markSaving: () => set({}),
 
   setFinalizing: (value) => set({ isFinalizing: value }),
 
-  loadFromDraft: (data: Record<string, unknown>) =>
-    set({
+  loadFromDraft: (data: Record<string, unknown>) => {
+    const loaded: ConsultationDraftState = {
       consultationId: (data.id as string) || (data.consultationId as string) || '',
       visitType: (data.visitType as VisitType) || 'general',
+      expandedSections: get().expandedSections,
       vitals: (data.vitals as VitalsData) || INITIAL_VITALS,
       subjective: (data.subjective as SubjectiveData) || INITIAL_SUBJECTIVE,
       objective: (data.objective as ObjectiveData) || INITIAL_OBJECTIVE,
@@ -150,7 +195,15 @@ export const useConsultationDraftStore = create<ConsultationDraftStore>((set) =>
       isDirty: false,
       isFinalizing: false,
       lastSavedAt: null,
-    }),
+    };
+    set({
+      ...loaded,
+      // D-01, D-05, D-06: the just-loaded server draft IS the new sync
+      // baseline -- this is what a locally-persisted offline edit gets
+      // diffed against once `ConsultationScreen.tsx` restores it on top.
+      syncedSnapshot: serializeDraftFields(loaded),
+    });
+  },
 
-  reset: () => set(INITIAL_STATE),
+  reset: () => set({ ...INITIAL_STATE, syncedSnapshot: INITIAL_SYNCED_SNAPSHOT }),
 }));

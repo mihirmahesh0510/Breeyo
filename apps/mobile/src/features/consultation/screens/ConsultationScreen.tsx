@@ -15,6 +15,8 @@ import { apiClient } from '../../../lib/api';
 import { useConsultationDraftStore } from '../hooks/useConsultationDraft';
 import { useAutoSave } from '../hooks/useAutoSave';
 import { useConsultationLock } from '../hooks/useConsultationLock';
+import { loadOfflineConsultationDraft } from '../services/offlineConsultationDraftStore';
+import { getOfflineSyncDb } from '../../offline-sync/db/offlineDb';
 import { useVoiceTranscription } from '../hooks/useVoiceTranscription';
 import type { SoapFieldName } from '../hooks/useVoiceTranscription';
 import { useFileUpload } from '../../attachment/hooks/useFileUpload';
@@ -223,7 +225,7 @@ export function ConsultationScreen() {
   const consultationId = store.consultationId || params.consultationId || '';
 
   // Auto-save
-  const { isSaving, saveError, forceSave } = useAutoSave(consultationId);
+  const { isSaving, saveError, isOffline, forceSave } = useAutoSave(consultationId);
 
   // Lock management
   const lockStatus = useConsultationLock(consultationId, user?.id || '');
@@ -263,10 +265,13 @@ export function ConsultationScreen() {
 
   const voice = useVoiceTranscription({ onTranscript: handleTranscript });
 
-  // Draft status for indicator
+  // Draft status for indicator. `isOffline` (D-01, D-03, D-19) takes
+  // precedence over the plain 'dirty' pulse -- an offline edit is already
+  // safely captured on-device, not just unsaved-in-memory.
   const draftStatus = (() => {
     if (saveError) return 'error' as const;
     if (isSaving) return 'saving' as const;
+    if (isOffline) return 'offline' as const;
     if (store.isDirty) return 'dirty' as const;
     return 'saved' as const;
   })();
@@ -308,6 +313,32 @@ export function ConsultationScreen() {
           );
           store.loadFromDraft(draftResponse.data);
           setIsNew(false);
+
+          // D-01, D-05: if this device has an offline-persisted draft for
+          // this exact consultation (edits made during a connectivity drop
+          // that survived even an app restart), restore it on top of the
+          // just-loaded server draft rather than silently losing it. This
+          // marks the restored fields dirty again so `useAutoSave.ts`
+          // naturally re-attempts syncing them once online.
+          try {
+            const offlineDb = await getOfflineSyncDb();
+            const offlineDraft = await loadOfflineConsultationDraft(offlineDb, params.consultationId);
+            if (offlineDraft) {
+              const { draft } = offlineDraft;
+              if (draft.vitals) store.updateVitals(draft.vitals);
+              if (draft.subjective) store.updateSubjective(draft.subjective);
+              if (draft.objective) store.updateObjective(draft.objective);
+              if (draft.assessment !== undefined) store.updateAssessment(draft.assessment);
+              if (draft.plan) store.updatePlan(draft.plan);
+              if (draft.careInstructions !== undefined) store.updateCareInstructions(draft.careInstructions);
+              if (draft.referral !== undefined) store.updateReferral(draft.referral ?? null);
+              if (draft.rxNotes !== undefined) store.updateRxNotes(draft.rxNotes);
+              if (draft.prescriptions !== undefined) store.updatePrescriptions(draft.prescriptions);
+            }
+          } catch {
+            // Best-effort restore -- a missing/corrupt local snapshot must
+            // never block loading the server's own copy of the draft.
+          }
         } else if (params.petId) {
           // Create new consultation
           const createResponse = await apiClient<{ data: { id: string } }>(
