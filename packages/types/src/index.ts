@@ -15,3 +15,5 @@ export * from './whatsapp.js';
 export * from './scheduling.js';
 export * from './web-dashboard.js';
 export * from './owner-portal.js';
+export * from './offline-sync/constants.js';
+export * from './offline-sync/types.js';

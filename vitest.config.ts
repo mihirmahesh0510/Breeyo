@@ -36,6 +36,8 @@ export default defineConfig({
       'apps/web/src/features/billing/**/__tests__/*.test.tsx',
       // Plan 09-06: owner-portal web shell, records, and invoice/checkout flow.
       'apps/web/src/features/owner-portal/**/__tests__/*.test.tsx',
+      // Plan 10-01 Task 1: shared offline-sync contract schema tests.
+      'packages/validators/src/offline-sync/__tests__/schemas.test.ts',
     ],
   },
 });
