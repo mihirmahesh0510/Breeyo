@@ -122,3 +122,57 @@
 ## Deferred Ideas
 
 None — discussion stayed within Phase 10 scope.
+
+---
+
+## Plan Review Follow-Up (2026-08-20)
+
+Four product gaps surfaced during `/breeyo-build --review phase 10` that D-01 to D-33 didn't resolve. A fifth candidate gap (offline billing/payment scope) turned out to already be answered by Phase 6's D-41 (billing blocked offline with a clear message) — not re-litigated here, just cross-referenced into 10-CONTEXT.md's canonical refs.
+
+### Duplicate offline check-in (same patient, two devices)
+
+| Option | Description | Selected |
+|--------|-------------|----------|
+| Auto-merge into one entry | Quiet merge, lightweight review per D-10 | ✓ |
+| Keep both, staff reviews | Both entries persist pending manual review | |
+| Auto-merge silently, no review | Combine with no trace at all | |
+
+**User's choice:** Auto-merge into one entry. Recorded as **D-34**.
+
+### Same-day window at midnight rollover
+
+| Option | Description | Selected |
+|--------|-------------|----------|
+| Anchor "today" to when offline began | Working set stays editable through the outage regardless of date rollover | ✓ |
+| Roll over at local midnight regardless | Prior-day data demotes to read-only fallback at midnight even while still offline | |
+
+**User's choice:** Anchor to when offline began. Recorded as **D-35**.
+
+### Escalation backstop beyond the assigned clinician
+
+| Option | Description | Selected |
+|--------|-------------|----------|
+| Any other on-duty clinician | Escalates further rather than stalling on one unreachable person | ✓ |
+| Clinic Admin | Falls back to Admin as catch-all owner | |
+| Stays with original clinician indefinitely | No further escalation tier | |
+
+**User's choice:** Any other on-duty clinician. Recorded as **D-36**.
+
+### Queue-first ordering vs. safety-critical severity
+
+| Option | Description | Selected |
+|--------|-------------|----------|
+| Queue always first, no exception | Matches locked D-12 to D-14; safety-critical items stay visible but wait their tier | ✓ |
+| Safety-critical severity can preempt queue tier | Carves out a severity-based exception to tier ordering | |
+
+**User's choice:** Queue always first, no exception. Recorded as **D-37**.
+
+---
+
+## Plan Re-Review After Phase 9 Merge (2026-08-24)
+
+Phase 9 merged to `main` on 2026-08-23 (PR #20) after an independent `no-mistakes` code review caught and fixed real bugs (missing RLS on 5 new tables, unenforced browser-module toggles, a Clinician browser-access bypass, a racy session-state upsert). Re-ran the Phase 10 plan review against the actual shipped code instead of the pre-implementation assumptions in `10-RESEARCH.md`/`10-CONTEXT.md`.
+
+**No new product decision needed**, but one gap required a plan fix, applied directly (not a product judgment call — it follows straight from the already-locked D-05):
+
+- Phase 9's `StaleStateBanner`/`knownVersion` mechanism only computes staleness for **reads**; no browser mutation path (queue status update, billing collect/refund/void, inventory adjust) checks a version before writing, so the "conflict" banner state is never backed by a real rejection. This was flagged by the `no-mistakes` review as a Warning-severity finding and was not part of Phase 9's auto-fix round, so it shipped as-is. Since D-05 requires review-before-overwrite (not silent last-write-wins) and Phase 10 owns closing exactly this kind of gap, `10-05-PLAN.md` Task 2 was extended to add real `expectedVersion` enforcement to the browser write paths, not just new prompt UI. `10-CONTEXT.md`'s Reusable Assets section and `10-VALIDATION.md`'s 10-05-02 row were updated to match.
