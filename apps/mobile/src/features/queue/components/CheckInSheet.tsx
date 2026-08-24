@@ -7,7 +7,7 @@ import { BottomSheet } from '@breeyo/ui';
 import { SPECIES_ICONS } from '@breeyo/types';
 import type { OwnerWithPets, Pet } from '@breeyo/types';
 import { useLookupOwner } from '../../patient/hooks/usePatientRegister';
-import { useCheckIn } from '../hooks/useCheckIn';
+import { useOfflineQueueActions } from '../hooks/useOfflineQueueActions';
 import { VisitReasonPicker } from './VisitReasonPicker';
 
 interface CheckInSheetProps {
@@ -37,12 +37,18 @@ export function CheckInSheet({
   const [mobileDisplay, setMobileDisplay] = useState('');
   const [selectedPet, setSelectedPet] = useState<Pet | null>(null);
   const [showReasonPicker, setShowReasonPicker] = useState(false);
+  const [isCheckingIn, setIsCheckingIn] = useState(false);
 
   const mobile = extractDigits(mobileDisplay);
   const isValidMobile = /^[6-9]\d{9}$/.test(mobile);
 
   const lookupQuery = useLookupOwner(mobile);
-  const checkInMutation = useCheckIn();
+  // Plan 10-02 (D-01 to D-03, D-12): check-in tries the normal online
+  // request first and only falls back to a queued `QUEUE_HIGH` offline
+  // operation when the server was never reached -- see
+  // `useOfflineQueueActions.checkIn`. Replaces the old always-online
+  // `useCheckIn()` mutation, which had no offline path at all.
+  const offlineActions = useOfflineQueueActions();
 
   const ownerData = lookupQuery.data?.data as OwnerWithPets | undefined;
   const isLooking = lookupQuery.isFetching;
@@ -66,14 +72,26 @@ export function CheckInSheet({
     setShowReasonPicker(true);
   }, []);
 
+  const petForOfflineRender = useCallback(
+    (pet: Pet) => ({
+      id: pet.id,
+      name: pet.name,
+      species: pet.species,
+      owner: { id: ownerData!.id, name: ownerData!.name, mobile: ownerData!.mobile },
+    }),
+    [ownerData],
+  );
+
   const handleReasonSelected = useCallback(
     async (params: { visitReason?: string; isEmergency: boolean }) => {
-      if (!selectedPet) return;
+      if (!selectedPet || !ownerData) return;
       setShowReasonPicker(false);
+      setIsCheckingIn(true);
 
       try {
-        const result = await checkInMutation.mutateAsync({
+        const result = await offlineActions.checkIn({
           petId: selectedPet.id,
+          pet: petForOfflineRender(selectedPet),
           visitReason: params.visitReason,
           isEmergency: params.isEmergency,
         });
@@ -90,9 +108,11 @@ export function CheckInSheet({
               {
                 text: 'Check In Again',
                 onPress: async () => {
+                  setIsCheckingIn(true);
                   try {
-                    const result = await checkInMutation.mutateAsync({
+                    const result = await offlineActions.checkIn({
                       petId: selectedPet.id,
+                      pet: petForOfflineRender(selectedPet),
                       visitReason: params.visitReason,
                       isEmergency: params.isEmergency,
                       reCheckIn: true,
@@ -100,7 +120,9 @@ export function CheckInSheet({
                     onDismiss();
                     onCheckInSuccess?.(selectedPet.name, result.data.position);
                   } catch {
-                    // handled by mutation error handler
+                    // handled below / a genuine server rejection on retry
+                  } finally {
+                    setIsCheckingIn(false);
                   }
                 },
               },
@@ -112,9 +134,11 @@ export function CheckInSheet({
             `${selectedPet.name} is already in today's queue.`,
           );
         }
+      } finally {
+        setIsCheckingIn(false);
       }
     },
-    [selectedPet, checkInMutation, onDismiss, onCheckInSuccess],
+    [selectedPet, ownerData, offlineActions, petForOfflineRender, onDismiss, onCheckInSuccess],
   );
 
   const handleRegisterNew = useCallback(() => {
@@ -219,7 +243,7 @@ export function CheckInSheet({
         )}
 
         {/* Check-in Loading */}
-        {checkInMutation.isPending && (
+        {isCheckingIn && (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="small" />
             <Text variant="bodySmall" style={styles.loadingText}>

@@ -41,6 +41,9 @@ export default defineConfig({
       // Plan 10-01 Task 2: mobile sync coordinator + API replay-ingress tests.
       'apps/mobile/src/features/offline-sync/**/__tests__/*.test.ts',
       'apps/api/src/modules/sync/**/__tests__/*.test.ts',
+      // Plan 10-02: offline queue actions/store (mobile) and queue replay/
+      // preemption reconciliation (API).
+      'apps/mobile/src/features/queue/**/__tests__/*.test.ts',
     ],
   },
 });
