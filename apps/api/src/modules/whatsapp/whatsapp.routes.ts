@@ -54,7 +54,7 @@
  */
 
 import type { FastifyInstance } from 'fastify';
-import type { TenantPrismaClient } from '../../lib/prisma-rls.js';
+import { adminAsDbClient, type TenantPrismaClient } from '../../lib/prisma-rls.js';
 import { WhatsAppRepository } from './whatsapp.repository.js';
 import { SendAuthorizationService } from './send-authorization.service.js';
 import { WhatsAppService } from './whatsapp.service.js';
@@ -112,10 +112,10 @@ export default async function whatsappRoutes(fastify: FastifyInstance): Promise<
   // clinic in one pass (no single clinicId to scope a tenant client to), and
   // the inbound router/booking/reminder handlers run from a webhook
   // delivery or a queue job, neither of which has a `request.db`.
-  const repository = new WhatsAppRepository(fastify.prisma);
-  const bookingRepository = new BookingRepository(fastify.prisma);
-  const reminderSourceRepository = new ReminderSourceRepository(fastify.prisma);
-  const reminderTaskRepository = new ReminderTaskRepository(fastify.prisma);
+  const repository = new WhatsAppRepository(adminAsDbClient(fastify.prisma));
+  const bookingRepository = new BookingRepository(adminAsDbClient(fastify.prisma));
+  const reminderSourceRepository = new ReminderSourceRepository(adminAsDbClient(fastify.prisma));
+  const reminderTaskRepository = new ReminderTaskRepository(adminAsDbClient(fastify.prisma));
   // `reminderSourceRepository` is consumed by the reminder-sweep worker's
   // deps below (WHA-01), not by the route surface itself.
 
@@ -181,7 +181,7 @@ export default async function whatsappRoutes(fastify: FastifyInstance): Promise<
   // created `EXPECTED` queue card, not only the scheduling-module HTTP
   // endpoints. There is no shared state to duplicate here (both are
   // stateless aside from the `io` reference).
-  const queueRepository = new QueueRepository(fastify.prisma);
+  const queueRepository = new QueueRepository(adminAsDbClient(fastify.prisma));
   const queueService = new QueueService(queueRepository, fastify.io ?? null, pushTriggers);
 
   // D-17/D-18: the appointment ADVANCE/ON_DATE reminder-discovery source,
@@ -299,7 +299,7 @@ export default async function whatsappRoutes(fastify: FastifyInstance): Promise<
   // D-30 exemption: feeds bookingHandler (webhook-triggered) below. The
   // controller's own `getSlotsHandler` uses `buildSlotService` instead (see
   // the per-request builders, below the workers).
-  const slotService = new SlotService(fastify.prisma);
+  const slotService = new SlotService(adminAsDbClient(fastify.prisma));
   // D-30 exemption: BookingService.confirmBooking/cancelBooking/moveBooking
   // call `prisma.$transaction(async (tx) => ...)`, the same overload
   // constraint as WhatsAppService above — and this instance is shared with
@@ -330,7 +330,11 @@ export default async function whatsappRoutes(fastify: FastifyInstance): Promise<
   // D-30 exemption: shared with the reminder-sweep worker below (which
   // sweeps every clinic in one pass) and the webhook-triggered
   // reminderHandler just below it.
-  const reminderTaskService = new ReminderTaskService(reminderTaskRepository, repository, fastify.prisma);
+  const reminderTaskService = new ReminderTaskService(
+    reminderTaskRepository,
+    repository,
+    adminAsDbClient(fastify.prisma),
+  );
   // The REAL ReminderReplyHandler (07-11), replacing InboundRouterService's
   // no-op default.
   const reminderHandler = createReminderReplyHandler({ taskService: reminderTaskService });

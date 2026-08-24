@@ -524,3 +524,42 @@ describe('PaymentService.markPaymentUnpaid — D-11 manual fallback, D-37 guard'
     expect(rzp.paymentLink.cancel).not.toHaveBeenCalled();
   });
 });
+
+describe('PaymentService.getLatestReceiptForInvoice — D-13, finding 9.3', () => {
+  // The owner-portal receipt route (finding 9.3) has no receiptId to present
+  // -- unlike `getReceipt` (D-13's staff-side "View Receipt", which takes an
+  // explicit receiptId), it can only ask "the most recent receipt for this
+  // invoice". This method is what that route delegates to rather than
+  // reinventing the `paymentReceipt` lookup a second time.
+  it('returns the most recently issued receipt for the invoice, clinic-scoped', async () => {
+    const { service, prisma } = build();
+    const receiptRow = {
+      id: 'receipt-1',
+      clinicId: CLINIC,
+      invoiceId: INVOICE,
+      receiptNumber: 'RCT-202608-0001',
+      amountPaise: 50000,
+      method: 'cash',
+      transactionRef: null,
+      issuedAt: new Date('2026-08-10T00:00:00.000Z'),
+    };
+    prisma.paymentReceipt.findFirst = vi.fn(async () => receiptRow);
+
+    const result = await service.getLatestReceiptForInvoice(CLINIC, INVOICE);
+
+    expect(result).toEqual(receiptRow);
+    expect(prisma.paymentReceipt.findFirst).toHaveBeenCalledWith({
+      where: { clinicId: CLINIC, invoiceId: INVOICE },
+      orderBy: { issuedAt: 'desc' },
+    });
+  });
+
+  it('returns null rather than throwing when the invoice has no receipt yet (unpaid, not an error state here)', async () => {
+    const { service, prisma } = build();
+    prisma.paymentReceipt.findFirst = vi.fn(async () => null);
+
+    const result = await service.getLatestReceiptForInvoice(CLINIC, INVOICE);
+
+    expect(result).toBeNull();
+  });
+});

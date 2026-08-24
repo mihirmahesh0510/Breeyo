@@ -1,0 +1,60 @@
+.sheet {
+  background: var(--color-surface, #fffbf5);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.invoiceNumber {
+  margin: 0;
+  font-size: var(--font-size-heading2, 20px);
+  font-weight: var(--font-weight-subheading);
+}
+
+.closeButton {
+  min-height: 44px;
+  min-width: 44px;
+  background: none;
+  border: none;
+  font-size: var(--font-size-subheading);
+  cursor: pointer;
+}
+
+.amountRow {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--font-size-body);
+}
+
+.balance {
+  font-weight: var(--font-weight-subheading);
+}
+
+.payButton {
+  min-height: 44px;
+  padding: var(--spacing-sm) var(--spacing-lg);
+  border-radius: var(--radius-md);
+  border: none;
+  background: var(--color-primary);
+  color: var(--color-on-primary, #fff);
+  font-size: var(--font-size-subheading);
+  font-weight: var(--font-weight-subheading);
+  cursor: pointer;
+}
+
+.receiptLink {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  color: var(--color-primary);
+  text-decoration: none;
+  font-weight: var(--font-weight-subheading);
+}

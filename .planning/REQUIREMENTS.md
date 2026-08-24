@@ -96,6 +96,16 @@ Requirements for Beta launch (20 pilot clinics, solo vets).
 - [x] **SCH-04**: Calendar syncs in real time across mobile and web (multi-device)
 - [ ] **SCH-05**: User receives push notifications for upcoming appointments and queue changes — left unticked: the notification pipeline (triggers, debounce, in-app rows, Expo send call) is fully built and verified by automated tests plus live server-side verification (see `08-VALIDATION.md` § Manual-Only Verifications), but actual Expo push delivery to a real device could not be verified in this build environment (no physical hardware/Expo credentials available). Requires the user's own device-based confirmation before this can be ticked.
 
+### Owner Portal (added 2026-08-20 -- OWN-01..07 referenced in Phase 9 planning docs since 2026-05-07 but never formally defined here; wording drafted in Phase 9 09-RESEARCH.md BF-3, approved by user during phase plan review)
+
+- [ ] **OWN-01**: Pet owner can open a tokenised magic link from WhatsApp and view their pet's clinical record history -- diagnosis and prescriptions only -- in a mobile-responsive web portal, with no login and no app install
+- [ ] **OWN-02**: Pet owner can view their pet's past invoices with status (paid / unpaid / overdue / processing) and open an invoice detail view with receipt and PDF access
+- [ ] **OWN-03**: Pet owner can pay an outstanding balance via UPI or card through Razorpay from the portal, including one combined checkout across multiple invoices, and sees an explicit success or failure return state with receipt access
+- [ ] **OWN-04**: Magic links are valid for 7 days; an expired link renders a dedicated expired state with a self-service "Request New Link" action that reissues the link over WhatsApp, capped at 3 reissue requests per owner per day before falling back to clinic contact
+- [ ] **OWN-05**: Owner portal is mobile-first responsive (320px min) and reaches first contentful paint under 3 seconds on a 4G connection
+- [ ] **OWN-06**: Owner portal enforces strict data isolation -- an owner sees only their own pets and invoices; a mismatched, tampered, revoked, or cross-clinic token returns 403 with no data in the response body
+- [ ] **OWN-07**: Owner portal shows upcoming care dates per pet -- vaccination due dates, deworming due dates, and the next scheduled appointment
+
 ### Platform & Infrastructure
 
 - [ ] **PLT-01**: Mobile app runs on Android 8+ and iOS 14+ via React Native/Expo
@@ -206,6 +216,14 @@ Which phases cover which requirements. Updated during roadmap creation.
 | SCH-03 | Phase 8 | Complete |
 | SCH-04 | Phase 8 | Complete |
 | SCH-05 | Phase 8 | Partial — device push delivery unverified |
+| ONB-02 | Phase 4 | Pending |
+| OWN-01 | Phase 9 | Pending |
+| OWN-02 | Phase 9 | Pending |
+| OWN-03 | Phase 9 | Pending |
+| OWN-04 | Phase 9 | Pending |
+| OWN-05 | Phase 9 | Pending |
+| OWN-06 | Phase 9 | Pending |
+| OWN-07 | Phase 9 | Pending |
 | PLT-01 | Phase 9 | Pending |
 | PLT-02 | Phase 9 | Pending |
 | PLT-03 | Phase 10 | Pending |
@@ -214,10 +232,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | PLT-07 | Phase 10 | Pending |
 
 **Coverage:**
-- v1 requirements: 61 total
-- Mapped to phases: 61
+- v1 requirements: 69 total
+- Mapped to phases: 69
 - Unmapped: 0
 
 ---
 *Requirements defined: 2026-04-10*
-*Last updated: 2026-08-12 -- BIL-07 moved from v2 to v1 (Phase 6), RPT-01 added (Phase 6), during /gsd-plan-phase 6 research resolution*
+*Last updated: 2026-08-20 -- OWN-01..07 (Owner Portal) added to v1 scope and mapped to Phase 9; ONB-02 traceability row added (was missing since 2026-04-10); both gaps identified in Phase 9 09-RESEARCH.md BF-3 and closed during /breeyo-build --review phase 9. BIL-07 moved from v2 to v1 (Phase 6), RPT-01 added (Phase 6), during /gsd-plan-phase 6 research resolution (2026-08-12).*

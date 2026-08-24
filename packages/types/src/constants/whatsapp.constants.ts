@@ -13,6 +13,7 @@ export const WA_TEMPLATE_KEYS: readonly WaTemplateKey[] = [
   'deworming_due',
   'booking_confirmation',
   'appointment_reminder',
+  'owner_portal_link',
 ] as const;
 
 /**
@@ -27,6 +28,7 @@ export const WA_TEMPLATE_STAFF_NAMES: Readonly<Record<WaTemplateKey, string>> = 
   deworming_due: 'Deworming due',
   booking_confirmation: 'Booking confirmation',
   appointment_reminder: 'Appointment reminder',
+  owner_portal_link: 'Owner portal link',
 } as const;
 
 /**
@@ -45,6 +47,10 @@ export const WA_TEMPLATE_CATEGORIES: Readonly<Record<WaTemplateKey, WaTemplateCa
   // D-17/D-18: an appointment reminder is silenceable by the same global
   // STOP opt-out as every other reminder-category template.
   appointment_reminder: 'REMINDER',
+  // D-67, D-82: a reissued portal link is access recovery, not a
+  // silenceable nudge — TRANSACTIONAL, like invoice_delivery and
+  // booking_confirmation.
+  owner_portal_link: 'TRANSACTIONAL',
 } as const;
 
 /**

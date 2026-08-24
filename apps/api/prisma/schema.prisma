@@ -25,11 +25,12 @@ model User {
   createdAt               DateTime  @default(now()) @map("created_at")
   updatedAt               DateTime  @updatedAt @map("updated_at")
 
-  clinicMemberships  ClinicMember[]
-  ownedClinics       Clinic[]
-  refreshTokens      RefreshToken[]
-  deviceTokens       DeviceToken[]
-  consultationsAsVet Consultation[] @relation("ConsultationVet")
+  clinicMemberships    ClinicMember[] @relation("ClinicMemberUser")
+  statusChangesActedOn ClinicMember[] @relation("ClinicMemberStatusChangedBy")
+  ownedClinics         Clinic[]
+  refreshTokens        RefreshToken[]
+  deviceTokens         DeviceToken[]
+  consultationsAsVet   Consultation[] @relation("ConsultationVet")
 
   // Phase 6 back-relations
   invoicesCreated   Invoice[]    @relation("InvoiceCreatedBy")
@@ -43,6 +44,10 @@ model User {
   blockedPeriods           BlockedPeriod[]
   appointmentsAsVet        Appointment[]             @relation("AppointmentVet")
   appointmentsCreated      Appointment[]             @relation("AppointmentCreatedBy")
+
+  // Phase 9 back-relations (D-15..D-45)
+  browserAccessPoliciesUpdated ClinicBrowserAccessPolicy[]
+  dashboardPreferences         UserDashboardPreference[]
 
   @@map("users")
 }
@@ -125,18 +130,29 @@ model Clinic {
   availabilityOverrides    AvailabilityOverride[]
   blockedPeriods           BlockedPeriod[]
 
+  // Phase 9 back-relations (D-15..D-45, D-64..D-82)
+  browserAccessPolicies ClinicBrowserAccessPolicy[]
+  dashboardPreferences  UserDashboardPreference[]
+  ownerPortalMagicLinks OwnerPortalMagicLink[]
+
   @@map("clinics")
 }
 
 model ClinicMember {
-  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId    String   @map("user_id") @db.Uuid
-  clinicId  String   @map("clinic_id") @db.Uuid
-  isActive  Boolean  @default(true) @map("is_active")
-  createdAt DateTime @default(now()) @map("created_at")
+  id                    String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId                String    @map("user_id") @db.Uuid
+  clinicId              String    @map("clinic_id") @db.Uuid
+  isActive              Boolean   @default(true) @map("is_active")
+  createdAt             DateTime  @default(now()) @map("created_at")
+  /// D-24: persisted actor + timestamp for the last active/inactive status
+  /// change, so it survives a page reload or a second admin's session
+  /// instead of living only in the acting admin's transient browser state.
+  statusChangedByUserId String?   @map("status_changed_by_user_id") @db.Uuid
+  statusChangedAt       DateTime? @map("status_changed_at")
 
-  user                User                     @relation(fields: [userId], references: [id])
+  user                User                     @relation("ClinicMemberUser", fields: [userId], references: [id])
   clinic              Clinic                   @relation(fields: [clinicId], references: [id])
+  statusChangedBy     User?                    @relation("ClinicMemberStatusChangedBy", fields: [statusChangedByUserId], references: [id])
   roles               ClinicMemberRole[]
   permissionOverrides UserPermissionOverride[]
 
@@ -332,6 +348,9 @@ model PetOwner {
 
   // Phase 8 back-relation (SCH-01, SCH-02, D-21)
   appointments Appointment[]
+
+  // Phase 9 back-relation (D-64..D-82)
+  ownerPortalMagicLinks OwnerPortalMagicLink[]
 
   @@unique([clinicId, mobile])
   @@index([clinicId])
@@ -1712,4 +1731,123 @@ model AppointmentPet {
   @@index([clinicId, petId])
   @@index([queueEntryId])
   @@map("appointment_pets")
+}
+
+// ─── Phase 9: Web Dashboard & Owner Portal ───────────────────────────
+
+/// Clinic-scoped, role-scoped browser access configuration (D-15, D-16,
+/// D-17, D-18, D-19, D-21, D-22). One row per (clinicId, roleCode) — access
+/// is configured through per-role module toggles, not per-user custom rules.
+/// `roleCode` mirrors `BrowserRoleCode` in
+/// `packages/types/src/web-dashboard.ts` (ADMIN | FRONT_DESK |
+/// CLINICIAN).
+model ClinicBrowserAccessPolicy {
+  id                    String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clinicId              String   @map("clinic_id") @db.Uuid
+  roleCode              String   @map("role_code") // ADMIN | FRONT_DESK | CLINICIAN
+  browserEnabled        Boolean  @default(false) @map("browser_enabled")
+  queueEnabled          Boolean  @default(false) @map("queue_enabled")
+  schedulingEnabled     Boolean  @default(false) @map("scheduling_enabled")
+  billingEnabled        Boolean  @default(false) @map("billing_enabled")
+  inventoryEnabled      Boolean  @default(false) @map("inventory_enabled")
+  inventoryWriteEnabled Boolean  @default(false) @map("inventory_write_enabled")
+  usersEnabled          Boolean  @default(false) @map("users_enabled")
+  updatedByUserId       String?  @map("updated_by_user_id") @db.Uuid
+  updatedAt             DateTime @updatedAt @map("updated_at")
+  createdAt             DateTime @default(now()) @map("created_at")
+
+  clinic        Clinic @relation(fields: [clinicId], references: [id])
+  updatedByUser User?  @relation(fields: [updatedByUserId], references: [id])
+
+  @@unique([clinicId, roleCode])
+  @@index([clinicId, roleCode])
+  @@index([clinicId, browserEnabled])
+  @@map("clinic_browser_access_policies")
+}
+
+/// Per-user browser home personalization (D-14): panel order can be
+/// reordered by the user, but core panels are never removable — this row
+/// stores order/collapse preferences only, never a redesigned panel set.
+model UserDashboardPreference {
+  id                    String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId                String    @map("user_id") @db.Uuid
+  clinicId              String    @map("clinic_id") @db.Uuid
+  panelOrderJson        Json      @default("[]") @map("panel_order_json")
+  collapsedPanelsJson   Json      @default("[]") @map("collapsed_panels_json")
+  lastViewedDashboardAt DateTime? @map("last_viewed_dashboard_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+
+  user   User   @relation(fields: [userId], references: [id])
+  clinic Clinic @relation(fields: [clinicId], references: [id])
+
+  @@map("user_dashboard_preferences")
+}
+
+/// No-login owner magic link (D-64, D-67, OWN-04, OWN-06). Only the hashed
+/// token is persisted — `tokenHash`, never the raw token (T-09-02). Scope is
+/// explicit and pet/invoice-bounded via the allow-list JSON columns.
+model OwnerPortalMagicLink {
+  id                    String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clinicId              String    @map("clinic_id") @db.Uuid
+  ownerId               String    @map("owner_id") @db.Uuid
+  tokenHash             String    @unique @map("token_hash")
+  defaultTab            String    @map("default_tab") // OVERVIEW | RECORDS | INVOICES
+  deepLinkType          String?   @map("deep_link_type") // OVERVIEW | INVOICE | VISIT
+  deepLinkEntityId      String?   @map("deep_link_entity_id") @db.Uuid
+  allowedPetIdsJson     Json      @default("[]") @map("allowed_pet_ids_json")
+  allowedInvoiceIdsJson Json      @default("[]") @map("allowed_invoice_ids_json")
+  issuedAt              DateTime  @default(now()) @map("issued_at")
+  expiresAt             DateTime  @map("expires_at")
+  revokedAt             DateTime? @map("revoked_at")
+  reissuedFromLinkId    String?   @map("reissued_from_link_id") @db.Uuid
+  latestReissueLinkId   String?   @map("latest_reissue_link_id") @db.Uuid
+  lastViewedAt          DateTime? @map("last_viewed_at")
+
+  clinic           Clinic                       @relation(fields: [clinicId], references: [id])
+  owner            PetOwner                     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  sessionStates    OwnerPortalSessionState[]
+  checkoutSessions OwnerPortalCheckoutSession[]
+
+  @@index([ownerId, expiresAt])
+  @@map("owner_portal_magic_links")
+}
+
+/// Session-restore state remembered within a valid magic-link window (D-53):
+/// last tab, last pet, last invoice/visit, and last checkout/return state.
+model OwnerPortalSessionState {
+  id                    String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  magicLinkId           String   @map("magic_link_id") @db.Uuid
+  lastTab               String?  @map("last_tab") // OVERVIEW | RECORDS | INVOICES
+  lastPetId             String?  @map("last_pet_id") @db.Uuid
+  lastInvoiceId         String?  @map("last_invoice_id") @db.Uuid
+  lastVisitId           String?  @map("last_visit_id") @db.Uuid
+  lastCheckoutSessionId String?  @map("last_checkout_session_id") @db.Uuid
+  lastReturnState       String?  @map("last_return_state") // success | failed | interrupted | pending
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  magicLink OwnerPortalMagicLink @relation(fields: [magicLinkId], references: [id], onDelete: Cascade)
+
+  @@unique([magicLinkId])
+  @@index([magicLinkId, updatedAt])
+  @@map("owner_portal_session_states")
+}
+
+/// Combined-checkout snapshot across one or many pet-scoped invoices
+/// (D-59, D-69, D-70, OWN-03).
+model OwnerPortalCheckoutSession {
+  id                     String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  magicLinkId            String    @map("magic_link_id") @db.Uuid
+  selectedInvoiceIdsJson Json      @default("[]") @map("selected_invoice_ids_json")
+  petBreakdownJson       Json      @default("[]") @map("pet_breakdown_json")
+  amountDuePaise         Int       @default(0) @map("amount_due_paise")
+  razorpayPaymentLinkId  String?   @map("razorpay_payment_link_id")
+  returnState            String    @default("pending") @map("return_state") // pending | success | failed | interrupted
+  createdAt              DateTime  @default(now()) @map("created_at")
+  updatedAt              DateTime  @updatedAt @map("updated_at")
+  completedAt            DateTime? @map("completed_at")
+
+  magicLink OwnerPortalMagicLink @relation(fields: [magicLinkId], references: [id], onDelete: Cascade)
+
+  @@index([magicLinkId, returnState])
+  @@map("owner_portal_checkout_sessions")
 }

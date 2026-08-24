@@ -1,0 +1,23 @@
+.page {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.title {
+  font-size: var(--font-size-display);
+  line-height: var(--line-height-display);
+  font-weight: var(--font-weight-display);
+  color: var(--color-on-surface);
+  margin: 0 0 var(--spacing-md) 0;
+}
+
+.scanningNotice {
+  font-size: var(--font-size-body, 16px);
+  color: var(--color-on-surface-variant);
+  margin: 0 0 var(--spacing-lg) 0;
+}
+
+.errorText {
+  font-size: var(--font-size-body, 16px);
+  color: var(--color-destructive, #ba1a1a);
+}

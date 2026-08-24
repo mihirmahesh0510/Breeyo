@@ -165,6 +165,27 @@
 
 ---
 
+## Reissue rate limit (added 2026-08-20, plan review)
+
+| Option | Description | Selected |
+|--------|-------------|----------|
+| 3 per day | Generous enough for genuine confusion, tight enough to block abuse/cost runaway on WhatsApp sends | ✓ |
+| 1 per day | Stricter; treats repeated requests as likely confusion or abuse | |
+| No hard cap, just log it | Rely on provider-level throttling and audit logs only | |
+
+**User's choice:** 3 per day.
+**Notes:** Resolves 09-RESEARCH.md Open Question 5. Recorded as D-82 in CONTEXT.md. Once hit, falls back to clinic contact per D-79/D-81.
+
+## Browser access revoked mid-session (added 2026-08-20, plan review)
+
+| Option | Description | Selected |
+|--------|-------------|----------|
+| Kick them out immediately | Access change takes effect in real time; next action drops them to a locked/redirected screen | ✓ |
+| Let the current session finish | Change only applies on next fresh login | |
+
+**User's choice:** Kick them out immediately.
+**Notes:** No prior decision covered this case. Recorded as D-83 in CONTEXT.md, consistent with D-20's hidden-not-locked posture.
+
 ## the agent's Discretion
 
 - Exact browser component composition and information density within the chosen workflow boundaries.

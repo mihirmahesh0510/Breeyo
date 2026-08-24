@@ -811,3 +811,110 @@ DROP POLICY IF EXISTS billing_audit_log_delete ON billing_audit_log;
 --                                (RESEARCH Pitfall 5). Tenant isolation for these tables is
 --                                enforced by the explicit-clinicId repository pattern instead.
 --                                Section 1's blanket GRANT above already covers them.
+--   owner_portal_magic_links  -- (Phase 9, plan 09-05) same shape as refresh_tokens above:
+--                                `MagicLinkService.validate` looks a presented token up by
+--                                `tokenHash` via `getBasePrisma()` (the breeyo_admin table
+--                                owner) BEFORE the clinic is known -- that lookup is what
+--                                *establishes* clinic context for every subsequent portal
+--                                request, so it structurally cannot run under a clinic-scoped
+--                                `app.clinic_id`. FORCE ROW LEVEL SECURITY applies to the table
+--                                owner too, so forcing it here would make every magic-link
+--                                resolution return zero rows, exactly the whatsapp_* pitfall
+--                                above. Isolation is enforced instead by `tokenHash` being
+--                                globally unique and by every write to this table going through
+--                                `PortalLinkIssuanceService`/`PortalReissueService`, both scoped
+--                                to the issuing clinic. Section 1's blanket GRANT already covers
+--                                it. `owner_portal_session_states` and
+--                                `owner_portal_checkout_sessions` are the child tables of this
+--                                one and ARE given RLS below (section 10), via an EXISTS join
+--                                back to this table's `clinic_id`, since both are only ever
+--                                queried through `request.portalDb`
+--                                (`createTenantClient(scope.clinicId)`), which is already
+--                                clinic-scoped by the time either is touched.
+
+-- ============================================================
+-- 10. Phase 9 web-dashboard & owner-portal tables (plan 09-01..09-05)
+-- ============================================================
+-- clinic_browser_access_policies
+ALTER TABLE clinic_browser_access_policies ENABLE ROW LEVEL SECURITY;
+ALTER TABLE clinic_browser_access_policies FORCE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS clinic_browser_access_policies_select ON clinic_browser_access_policies;
+CREATE POLICY clinic_browser_access_policies_select ON clinic_browser_access_policies
+  FOR SELECT USING (clinic_id = current_setting('app.clinic_id', true)::uuid);
+
+DROP POLICY IF EXISTS clinic_browser_access_policies_insert ON clinic_browser_access_policies;
+CREATE POLICY clinic_browser_access_policies_insert ON clinic_browser_access_policies
+  FOR INSERT WITH CHECK (clinic_id = current_setting('app.clinic_id', true)::uuid);
+
+DROP POLICY IF EXISTS clinic_browser_access_policies_update ON clinic_browser_access_policies;
+CREATE POLICY clinic_browser_access_policies_update ON clinic_browser_access_policies
+  FOR UPDATE USING (clinic_id = current_setting('app.clinic_id', true)::uuid);
+
+DROP POLICY IF EXISTS clinic_browser_access_policies_delete ON clinic_browser_access_policies;
+CREATE POLICY clinic_browser_access_policies_delete ON clinic_browser_access_policies
+  FOR DELETE USING (clinic_id = current_setting('app.clinic_id', true)::uuid);
+
+-- user_dashboard_preferences
+ALTER TABLE user_dashboard_preferences ENABLE ROW LEVEL SECURITY;
+ALTER TABLE user_dashboard_preferences FORCE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS user_dashboard_preferences_select ON user_dashboard_preferences;
+CREATE POLICY user_dashboard_preferences_select ON user_dashboard_preferences
+  FOR SELECT USING (clinic_id = current_setting('app.clinic_id', true)::uuid);
+
+DROP POLICY IF EXISTS user_dashboard_preferences_insert ON user_dashboard_preferences;
+CREATE POLICY user_dashboard_preferences_insert ON user_dashboard_preferences
+  FOR INSERT WITH CHECK (clinic_id = current_setting('app.clinic_id', true)::uuid);
+
+DROP POLICY IF EXISTS user_dashboard_preferences_update ON user_dashboard_preferences;
+CREATE POLICY user_dashboard_preferences_update ON user_dashboard_preferences
+  FOR UPDATE USING (clinic_id = current_setting('app.clinic_id', true)::uuid);
+
+DROP POLICY IF EXISTS user_dashboard_preferences_delete ON user_dashboard_preferences;
+CREATE POLICY user_dashboard_preferences_delete ON user_dashboard_preferences
+  FOR DELETE USING (clinic_id = current_setting('app.clinic_id', true)::uuid);
+
+-- owner_portal_session_states: no clinic_id column of its own (D-53's restore
+-- state is keyed by magic_link_id alone) -- scoped via an EXISTS join back to
+-- owner_portal_magic_links.clinic_id, matching consultation_locks' pattern in
+-- section 7. Safe because this table is only ever read/written through
+-- `request.portalDb`, which is already bound to the resolved token's clinic.
+ALTER TABLE owner_portal_session_states ENABLE ROW LEVEL SECURITY;
+ALTER TABLE owner_portal_session_states FORCE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS owner_portal_session_states_select ON owner_portal_session_states;
+CREATE POLICY owner_portal_session_states_select ON owner_portal_session_states
+  FOR SELECT USING (EXISTS (SELECT 1 FROM owner_portal_magic_links m WHERE m.id = owner_portal_session_states.magic_link_id AND m.clinic_id = current_setting('app.clinic_id', true)::uuid));
+
+DROP POLICY IF EXISTS owner_portal_session_states_insert ON owner_portal_session_states;
+CREATE POLICY owner_portal_session_states_insert ON owner_portal_session_states
+  FOR INSERT WITH CHECK (EXISTS (SELECT 1 FROM owner_portal_magic_links m WHERE m.id = owner_portal_session_states.magic_link_id AND m.clinic_id = current_setting('app.clinic_id', true)::uuid));
+
+DROP POLICY IF EXISTS owner_portal_session_states_update ON owner_portal_session_states;
+CREATE POLICY owner_portal_session_states_update ON owner_portal_session_states
+  FOR UPDATE USING (EXISTS (SELECT 1 FROM owner_portal_magic_links m WHERE m.id = owner_portal_session_states.magic_link_id AND m.clinic_id = current_setting('app.clinic_id', true)::uuid));
+
+DROP POLICY IF EXISTS owner_portal_session_states_delete ON owner_portal_session_states;
+CREATE POLICY owner_portal_session_states_delete ON owner_portal_session_states
+  FOR DELETE USING (EXISTS (SELECT 1 FROM owner_portal_magic_links m WHERE m.id = owner_portal_session_states.magic_link_id AND m.clinic_id = current_setting('app.clinic_id', true)::uuid));
+
+-- owner_portal_checkout_sessions: same shape as owner_portal_session_states above.
+ALTER TABLE owner_portal_checkout_sessions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE owner_portal_checkout_sessions FORCE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS owner_portal_checkout_sessions_select ON owner_portal_checkout_sessions;
+CREATE POLICY owner_portal_checkout_sessions_select ON owner_portal_checkout_sessions
+  FOR SELECT USING (EXISTS (SELECT 1 FROM owner_portal_magic_links m WHERE m.id = owner_portal_checkout_sessions.magic_link_id AND m.clinic_id = current_setting('app.clinic_id', true)::uuid));
+
+DROP POLICY IF EXISTS owner_portal_checkout_sessions_insert ON owner_portal_checkout_sessions;
+CREATE POLICY owner_portal_checkout_sessions_insert ON owner_portal_checkout_sessions
+  FOR INSERT WITH CHECK (EXISTS (SELECT 1 FROM owner_portal_magic_links m WHERE m.id = owner_portal_checkout_sessions.magic_link_id AND m.clinic_id = current_setting('app.clinic_id', true)::uuid));
+
+DROP POLICY IF EXISTS owner_portal_checkout_sessions_update ON owner_portal_checkout_sessions;
+CREATE POLICY owner_portal_checkout_sessions_update ON owner_portal_checkout_sessions
+  FOR UPDATE USING (EXISTS (SELECT 1 FROM owner_portal_magic_links m WHERE m.id = owner_portal_checkout_sessions.magic_link_id AND m.clinic_id = current_setting('app.clinic_id', true)::uuid));
+
+DROP POLICY IF EXISTS owner_portal_checkout_sessions_delete ON owner_portal_checkout_sessions;
+CREATE POLICY owner_portal_checkout_sessions_delete ON owner_portal_checkout_sessions
+  FOR DELETE USING (EXISTS (SELECT 1 FROM owner_portal_magic_links m WHERE m.id = owner_portal_checkout_sessions.magic_link_id AND m.clinic_id = current_setting('app.clinic_id', true)::uuid));

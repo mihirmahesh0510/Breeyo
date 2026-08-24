@@ -1,0 +1,39 @@
+.card {
+  background: var(--color-surface-variant, #f5f0eb);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.date {
+  margin: 0;
+  font-size: var(--font-size-caption, 14px);
+  font-weight: var(--font-weight-subheading);
+  color: var(--color-on-surface-variant);
+}
+
+.reason {
+  margin: 0;
+  font-size: var(--font-size-body);
+  color: var(--color-on-surface-variant);
+}
+
+.diagnosis {
+  margin: 0;
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-subheading);
+}
+
+.gloss {
+  margin: 0;
+  font-size: var(--font-size-body);
+  color: var(--color-on-surface-variant);
+}
+
+.prescriptions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}

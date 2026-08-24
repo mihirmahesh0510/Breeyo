@@ -1102,6 +1102,20 @@ export async function cleanupTestData() {
     await tx.availabilityOverride.deleteMany();
     await tx.vetAvailabilityTemplate.deleteMany();
 
+    // Phase 9 web-dashboard/owner-portal tables (plan 09-01) carry no
+    // `@relation` to Clinic/User/PetOwner (deliberately -- Prisma has no FK
+    // constraint to violate here), so nothing else ever deletes these rows.
+    // Left uncleaned, repeated runs collide on OwnerPortalMagicLink's unique
+    // `tokenHash` once two runs happen to reuse the same raw test token.
+    // Order relative to Clinic/PetOwner below doesn't matter for FK safety,
+    // but checkout/session rows conceptually reference magic links, so they
+    // go first for readability.
+    await tx.ownerPortalCheckoutSession.deleteMany();
+    await tx.ownerPortalSessionState.deleteMany();
+    await tx.ownerPortalMagicLink.deleteMany();
+    await tx.userDashboardPreference.deleteMany();
+    await tx.clinicBrowserAccessPolicy.deleteMany();
+
     await tx.queueEntry.deleteMany();
     await tx.consentRecord.deleteMany();
     await tx.serviceCatalog.deleteMany();

@@ -4,6 +4,7 @@ import type { Server } from 'socket.io';
 import { SOCKET_EVENTS, SCHEDULING_TIMEZONE } from '@breeyo/types';
 import { QueueRepository } from '../modules/queue/queue.repository.js';
 import { getTodayIST } from '../lib/ist-date.js';
+import { adminAsDbClient } from '../lib/prisma-rls.js';
 
 /**
  * Schedules midnight auto-archive of queue entries.
@@ -24,7 +25,7 @@ export function scheduleMidnightArchive(prisma: PrismaClient, io: Server) {
       const today = getTodayIST();
 
       try {
-        const repository = new QueueRepository(prisma);
+        const repository = new QueueRepository(adminAsDbClient(prisma));
         const result = await repository.archiveEntries(today);
 
         console.log(`Midnight archive: ${result.count} entries archived`);

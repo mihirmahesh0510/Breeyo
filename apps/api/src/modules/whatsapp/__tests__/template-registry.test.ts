@@ -16,9 +16,9 @@ import {
 } from '../template-registry.js';
 
 describe('template-registry (WHA-02/WHA-05, D-05, D-10, D-18, D-23)', () => {
-  it('has exactly seven entries, one per WA_TEMPLATE_KEYS value (Phase 8 adds appointment_reminder, D-17/D-18)', () => {
+  it('has exactly eight entries, one per WA_TEMPLATE_KEYS value (Phase 8 adds appointment_reminder D-17/D-18; Phase 9 adds owner_portal_link OWN-04/D-67/D-82)', () => {
     const keys = Object.keys(WA_TEMPLATES);
-    expect(keys).toHaveLength(7);
+    expect(keys).toHaveLength(8);
     for (const key of WA_TEMPLATE_KEYS) {
       expect(WA_TEMPLATES[key]).toBeDefined();
       expect(WA_TEMPLATES[key].key).toBe(key);
@@ -37,6 +37,7 @@ describe('template-registry (WHA-02/WHA-05, D-05, D-10, D-18, D-23)', () => {
     expect(WA_TEMPLATES.deworming_due.staffName).toBe('Deworming due');
     expect(WA_TEMPLATES.booking_confirmation.staffName).toBe('Booking confirmation');
     expect(WA_TEMPLATES.appointment_reminder.staffName).toBe('Appointment reminder');
+    expect(WA_TEMPLATES.owner_portal_link.staffName).toBe('Owner portal link');
   });
 
   it("each entry's category equals the corresponding WA_TEMPLATE_CATEGORIES value (D-10)", () => {
@@ -154,6 +155,10 @@ describe('template-registry (WHA-02/WHA-05, D-05, D-10, D-18, D-23)', () => {
           appointment_date: '20 Aug 2026',
           appointment_time: '10:00 AM',
           touch: 'ADVANCE',
+        },
+        owner_portal_link: {
+          owner_name: 'Asha Kapoor',
+          portal_link: 'https://portal.breeyo.app/abc123def456',
         },
       };
 

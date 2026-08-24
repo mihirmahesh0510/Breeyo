@@ -1,5 +1,15 @@
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
 
+/**
+ * Builds a full, directly-navigable URL for an API path. Finding 9.3's
+ * `usePortalReceiptUrl` is the first caller: `InvoiceDetailSheet`'s "View
+ * Receipt" link needs an `href` a browser can open in a new tab, not a
+ * value `apiClient` fetches and returns JSON for.
+ */
+export function apiUrl(path: string): string {
+  return `${API_BASE_URL}${path}`;
+}
+
 interface RequestOptions extends RequestInit {
   token?: string;
 }
@@ -12,7 +22,12 @@ export async function apiClient<T>(
 
   const response = await fetch(`${API_BASE_URL}${path}`, {
     headers: {
-      'Content-Type': 'application/json',
+      // Only set this when a body is actually being sent. Fastify's default
+      // JSON body parser rejects an empty body under `Content-Type:
+      // application/json` (`FST_ERR_CTP_EMPTY_JSON_BODY`) -- a bodyless POST
+      // like `owner-portal/:token/reissue` (Plan 09-06 review) needs no
+      // Content-Type at all, and sending one anyway 400s the request.
+      ...(rest.body ? { 'Content-Type': 'application/json' } : {}),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...headers,
     },

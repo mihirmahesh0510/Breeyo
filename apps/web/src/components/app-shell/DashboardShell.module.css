@@ -1,0 +1,56 @@
+.shell {
+  display: flex;
+  min-height: 100vh;
+  background: var(--color-background);
+  font-family: var(--font-family);
+}
+
+.drawerToggle {
+  display: none;
+  position: fixed;
+  top: var(--spacing-md);
+  left: var(--spacing-md);
+  z-index: 10;
+  min-width: 44px;
+  min-height: 44px;
+  border: none;
+  border-radius: var(--radius-md);
+  background: var(--color-surface-variant);
+  cursor: pointer;
+}
+
+.sidebarSlot {
+  width: 240px;
+  flex-shrink: 0;
+}
+
+.main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.content {
+  flex: 1;
+  padding: var(--spacing-xl);
+}
+
+/* 09-UI-SPEC.md: collapsible drawer from 768px to 1023px, left sidebar fixed from 1024px+. */
+@media (max-width: 1023px) {
+  .drawerToggle {
+    display: block;
+  }
+
+  .sidebarSlot {
+    position: fixed;
+    inset: 0 auto 0 0;
+    transform: translateX(-100%);
+    transition: transform var(--motion-duration-medium, 200ms) ease;
+    z-index: 9;
+  }
+
+  .sidebarSlotOpen {
+    transform: translateX(0);
+  }
+}

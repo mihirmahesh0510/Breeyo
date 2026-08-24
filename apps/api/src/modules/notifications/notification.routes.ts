@@ -5,7 +5,7 @@ import { createNotificationBus } from './notification-bus.js';
 import { createNotificationWorker } from './notification.worker.js';
 import { authenticate } from '../../middleware/authenticate.js';
 import { tenantContext } from '../../middleware/tenant-context.js';
-import type { TenantPrismaClient } from '../../lib/prisma-rls.js';
+import { adminAsDbClient, type TenantPrismaClient } from '../../lib/prisma-rls.js';
 
 export default async function notificationRoutes(fastify: FastifyInstance) {
   // D-30: the four clinic-scoped handlers build their service per request from
@@ -22,7 +22,7 @@ export default async function notificationRoutes(fastify: FastifyInstance) {
   // authenticated userId. (D-30 exemption)
   const adminDb = fastify.prisma; // D-30 exemption
 
-  const deviceTokenService = new NotificationService(adminDb);
+  const deviceTokenService = new NotificationService(adminAsDbClient(adminDb));
   const controller = createNotificationController(buildService, deviceTokenService);
 
   // Initialize notification bus and worker

@@ -885,6 +885,23 @@ export class PaymentService {
     return receipt;
   }
 
+  /**
+   * Owner-portal read (finding 9.3 — D-71 "receipt access before navigating
+   * elsewhere" had no backing endpoint). Unlike `getReceipt`, the caller has
+   * no `receiptId` to present (the owner-portal contract never exposed one),
+   * so this finds the most recently issued receipt for the invoice instead.
+   * Returns `null` rather than throwing when none exists yet — an unpaid
+   * invoice having no receipt is an expected state for
+   * `portal-receipt.service.ts` to map to its own NOT_FOUND, not this
+   * method's job to treat as exceptional.
+   */
+  async getLatestReceiptForInvoice(clinicId: string, invoiceId: string) {
+    return this.prisma.paymentReceipt.findFirst({
+      where: { clinicId, invoiceId },
+      orderBy: { issuedAt: 'desc' },
+    });
+  }
+
   // ─── Internals ────────────────────────────────────────────────────────────
 
   /**

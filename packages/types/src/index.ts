@@ -13,3 +13,5 @@ export * from './billing.js';
 export * from './inventory.js';
 export * from './whatsapp.js';
 export * from './scheduling.js';
+export * from './web-dashboard.js';
+export * from './owner-portal.js';

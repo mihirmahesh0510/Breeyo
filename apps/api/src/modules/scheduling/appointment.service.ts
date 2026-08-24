@@ -17,6 +17,7 @@ import { AvailabilityService } from './availability.service.js';
 import { PatientRepository } from '../patient/patient.repository.js';
 import { assertAppointmentTransition } from './appointment.state.js';
 import { AuditEvent, writeAuditLog } from '../../lib/audit-log.js';
+import { adminAsDbClient } from '../../lib/prisma-rls.js';
 import { getTodayIST, addDaysIST, istMinutesOfDay, istDateOnly } from '../../lib/ist-date.js';
 import type {
   CreateAppointmentParams,
@@ -87,7 +88,7 @@ export class AppointmentService {
     private readonly onRescheduled?: (appointmentId: string, clinicId: string) => Promise<void>,
     private readonly onCancelled?: (appointmentId: string, clinicId: string) => Promise<void>,
   ) {
-    this.patientRepository = new PatientRepository(this.prisma);
+    this.patientRepository = new PatientRepository(adminAsDbClient(this.prisma));
   }
 
   /** RESEARCH Pattern 4: one range read serves both the mobile day agenda and the web week grid. */

@@ -8,6 +8,7 @@ coverage
 prisma/*.db
 postgres_data
 *.tsbuildinfo
+.lighthouseci
 .DS_Store
 .venv/
 

@@ -93,6 +93,19 @@ const appointmentReminderVariablesSchema = z.object({
 });
 
 /**
+ * Phase 9 (09-05 Task 2, OWN-04, D-67, D-82): the owner-portal magic-link
+ * (re)issue message. `portal_link` carries the RAW token in the URL — this
+ * variable is rendered into the owner-facing WhatsApp body by
+ * `template-registry.ts`'s `render`, exactly like every other link-bearing
+ * template (`invoice_delivery`'s `payment_link`), and is never itself
+ * persisted anywhere (only its hash is, per `hashMagicLinkToken`).
+ */
+const ownerPortalLinkVariablesSchema = z.object({
+  owner_name: z.string().max(NAME_MAX),
+  portal_link: z.string().max(LINK_MAX),
+});
+
+/**
  * WHA-02, WHA-05: the single source of truth for every template's variable
  * shape. A param mismatch is a `400` at this boundary rather than a Cloud
  * API `132000` failure later (07-RESEARCH § Pattern 3).
@@ -105,6 +118,7 @@ export const WA_TEMPLATE_VARIABLE_SCHEMAS: Readonly<Record<WaTemplateKey, z.ZodO
   deworming_due: dewormingDueVariablesSchema,
   booking_confirmation: bookingConfirmationVariablesSchema,
   appointment_reminder: appointmentReminderVariablesSchema,
+  owner_portal_link: ownerPortalLinkVariablesSchema,
 };
 
 // ─── Request schemas ─────────────────────────────────────────────────────────
