@@ -49,6 +49,10 @@ export default defineConfig({
       'apps/mobile/src/features/consultation/**/__tests__/*.test.ts',
       'apps/mobile/src/features/consultation/**/__tests__/*.test.tsx',
       'apps/api/src/modules/emr/**/__tests__/*.test.ts',
+      // Plan 10-04: offline stock actions (mobile) and inventory replay/
+      // operational-review reconciliation (API, already covered by the
+      // Plan 09-03 apps/api/src/modules/inventory glob above).
+      'apps/mobile/src/features/inventory/**/__tests__/*.test.ts',
     ],
   },
 });

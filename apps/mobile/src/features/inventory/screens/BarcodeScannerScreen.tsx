@@ -11,6 +11,7 @@ import { BreeyoIconButton, showToast } from '@breeyo/ui';
 import { useAuth } from '../../../providers/AuthProvider';
 import { useOfflineSync } from '../hooks/useOfflineSync';
 import { useBarcodeScan } from '../hooks/useBarcodeScan';
+import { useOfflineStockActions } from '../hooks/useOfflineStockActions';
 import { useScannerStore, type ScannerMode } from '../stores/scanner.store';
 import { ScanRegionOverlay } from '../components/ScanRegionOverlay';
 import {
@@ -101,6 +102,26 @@ export function BarcodeScannerScreen() {
     setActualCount,
     dismissResult,
   } = useBarcodeScan({ mode, clinicId: activeClinicId ?? '' });
+
+  // Plan 10-04 (D-04, D-15 to D-17): every item this session resolves to
+  // (online or from Phase 5's own offline barcode cache) is seeded into the
+  // Phase 10 same-day working-set cache, so the item has local stock-in-
+  // motion data on hand the moment a receive/dispense/adjust/return action
+  // is attempted against it, and so a pending-sync count is available to
+  // show the same calm badge treatment the queue board already uses (D-18
+  // to D-21) instead of a new bespoke indicator.
+  const { cacheScannedItem, pendingCount } = useOfflineStockActions();
+  useEffect(() => {
+    if (lastResult.status !== 'found') return;
+    const { item } = lastResult;
+    void cacheScannedItem({
+      itemId: item.itemId,
+      name: item.itemName,
+      category: item.category,
+      unit: item.unit,
+      currentStock: item.currentStock,
+    });
+  }, [lastResult, cacheScannedItem]);
 
   const [manualEntryVisible, setManualEntryVisible] = useState(false);
   const [pulseTrigger, setPulseTrigger] = useState<number | undefined>(undefined);
@@ -299,6 +320,14 @@ export function BarcodeScannerScreen() {
             </Text>
           </View>
         )}
+        {pendingCount > 0 && (
+          <View style={styles.pendingSyncBadge} testID="inventory-pending-sync-badge">
+            <MaterialCommunityIcons name="cloud-sync-outline" size={14} color={COLORS.onTertiaryContainer} />
+            <Text variant="bodySmall" style={styles.offlineBannerText}>
+              {pendingCount} stock update{pendingCount === 1 ? '' : 's'} pending sync
+            </Text>
+          </View>
+        )}
         {showStaleCache && (
           <Text variant="bodySmall" style={styles.staleCacheText}>
             Last synced: {staleMinutes} min ago
@@ -398,6 +427,19 @@ const styles = StyleSheet.create({
   offlineBannerText: {
     color: COLORS.onTertiaryContainer,
     fontWeight: '500',
+  },
+  pendingSyncBadge: {
+    position: 'absolute',
+    top: 64,
+    left: 16,
+    right: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: COLORS.tertiaryContainer,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
   },
   staleCacheText: {
     position: 'absolute',

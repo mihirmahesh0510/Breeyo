@@ -8,6 +8,7 @@ import { ParLevelAlertService } from './par-level-alert.service.js';
 import { WantListService } from './want-list.service.js';
 import { DispenseController } from './dispense.controller.js';
 import { SyncOperationService } from './sync-operation.service.js';
+import { createInventorySyncController, buildInventoryOfflineReplayService } from './controllers/inventorySync.controller.js';
 import { PermissionService } from '../auth/permission.service.js';
 import { authenticate } from '../../middleware/authenticate.js';
 import { tenantContext } from '../../middleware/tenant-context.js';
@@ -38,6 +39,17 @@ export default async function dispenseRoutes(fastify: FastifyInstance) {
   };
 
   const controller = new DispenseController(buildServices);
+
+  // Plan 10-04 (PLT-03, D-04, D-10): inventory-specific offline replay
+  // reconciliation. Deliberately its own controller/service, distinct from
+  // the pre-existing `SyncOperationService`/`/inventory/sync-operation`
+  // dispatcher below (Phase 5, D-53, Redis-idempotency-keyed, no `return`
+  // operation type) -- this one replays `INVENTORY_MEDIUM` envelopes through
+  // the SAME shared `SyncReplayReceipt`/`SyncConflictRecord` ledger Plan
+  // 10-01/10-02/10-03 use, matching this phase's cross-domain replay
+  // contract rather than Phase 5's own bespoke one. Both endpoints stay live
+  // side by side -- neither replaces the other in this plan.
+  const inventorySyncController = createInventorySyncController(buildInventoryOfflineReplayService);
 
   // D-53: generic sync dispatcher's own PermissionService instance, built
   // directly from the admin client and the Redis handle.
@@ -91,6 +103,19 @@ export default async function dispenseRoutes(fastify: FastifyInstance) {
   // Stock adjustment + stock-take (D-04, D-37, D-40)
   fastify.post('/inventory/items/:itemId/adjust', { preHandler: manageStock, handler: controller.adjustStock });
   fastify.post('/inventory/stock-take', { preHandler: manageStock, handler: controller.processStockTake });
+
+  // Plan 10-04: mobile offline inventory replay on reconnect (INVENTORY_MEDIUM
+  // tier only). Only `base` (authenticate + tenantContext) runs as a
+  // preHandler -- like `/inventory/sync-operation` below, the permission
+  // requirement varies per replayed operation's entityType, which a
+  // route-level preHandler can't inspect; the underlying
+  // receive/dispense/adjust/return services each already enforce their own
+  // invariants (and the real online routes above already gate who can reach
+  // this module's mutations through the app's normal UI in the first place).
+  fastify.post('/inventory/sync/replay', {
+    preHandler: base,
+    handler: inventorySyncController.replayHandler,
+  });
 
   // Stock movement history + CSV export (D-45, D-46, D-47)
   fastify.get('/inventory/items/:itemId/movements', { preHandler: viewInventory, handler: controller.getMovementHistory });
