@@ -63,6 +63,7 @@ export function createWebQueueController(
         request.user.id,
         params.data.queueEntryId,
         body.data.status as QueueStatus,
+        body.data.expectedVersion,
       );
 
       return reply.status(200).send({ data: entry });

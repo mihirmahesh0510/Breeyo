@@ -5,6 +5,7 @@ import type { AccessPolicyService } from '../web-dashboard/access-policy.service
 import type { ParLevelAlertService } from './par-level-alert.service.js';
 import type { WantListService } from './want-list.service.js';
 import type { StockAdjustmentService } from './stock-adjustment.service.js';
+import { BrowserSyncService, staleWriteConflictError } from '../../realtime/browser-sync.service.js';
 
 function forbiddenError(message: string): Error & { statusCode: number; code: string } {
   const error = new Error(message) as Error & { statusCode: number; code: string };
@@ -144,6 +145,7 @@ export class InventoryWebService {
     private readonly parLevelAlertService: ParLevelAlertService,
     private readonly wantListService: WantListService,
     private readonly stockAdjustmentService: StockAdjustmentService,
+    private readonly browserSyncService: BrowserSyncService = new BrowserSyncService(null),
   ) {}
 
   /**
@@ -294,6 +296,13 @@ export class InventoryWebService {
    * existing `StockAdjustmentService`, which already enforces the D-04
    * reason requirement and records D-24 actor metadata -- this is never a
    * barcode-scan endpoint (D-37), only a reason-bearing quantity change.
+   *
+   * Plan 10-05, D-05: when `expectedVersion` is present, it is checked
+   * against the item's LIVE `updatedAt` before `StockAdjustmentService.adjust`
+   * ever runs -- a stale claim is rejected with a 409 `STALE_WRITE_CONFLICT`
+   * instead of silently applying a write against a view the caller has not
+   * refreshed since another session changed this item's stock. Omitting
+   * `expectedVersion` (every caller before this plan) is unaffected.
    */
   async adjustStock(
     clinicId: string,
@@ -301,10 +310,28 @@ export class InventoryWebService {
     userName: string,
     itemId: string,
     input: unknown,
+    expectedVersion?: number,
   ) {
     const writeAllowed = await this.resolveWriteAllowed(clinicId, userId);
     if (!writeAllowed) {
       throw forbiddenError('Inventory write access is disabled for your role in the browser (D-18)');
+    }
+
+    if (expectedVersion !== undefined) {
+      const current = (await this.db.inventoryItem.findUnique({
+        where: { id: itemId },
+        select: { updatedAt: true },
+      })) as { updatedAt: Date } | null;
+
+      if (current && this.browserSyncService.checkWriteVersion(current.updatedAt.getTime(), expectedVersion) === 'stale') {
+        throw staleWriteConflictError({
+          domain: 'inventory',
+          entityType: 'INVENTORY_ITEM',
+          entityId: itemId,
+          currentVersion: current.updatedAt.getTime(),
+          expectedVersion,
+        });
+      }
     }
 
     return this.stockAdjustmentService.adjust(clinicId, itemId, userId, userName, input);

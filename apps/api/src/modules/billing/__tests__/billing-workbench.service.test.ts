@@ -201,6 +201,106 @@ describe('BillingWorkbenchService.refundInvoice Admin-only enforcement (D-22)', 
   });
 });
 
+describe('BillingWorkbenchService optimistic-concurrency enforcement (Plan 10-05, D-05)', () => {
+  const LIVE_UPDATED_AT = new Date('2026-08-20T09:00:00.000Z');
+
+  it('collectPayment applies normally when expectedVersion is omitted (no breaking change for existing callers)', async () => {
+    const paymentService = makePaymentService();
+    const db = makeDb();
+    const { service } = buildService({ paymentService, db });
+
+    await service.collectPayment(CLINIC_ID, { userId: FRONT_DESK_USER_ID, userName: 'Priya Sharma' }, 'inv_1', 50000);
+
+    expect(paymentService.recordCashPayment).toHaveBeenCalled();
+  });
+
+  it('collectPayment rejects with a 409 STALE_WRITE_CONFLICT when expectedVersion is behind the invoice\'s live updatedAt', async () => {
+    const paymentService = makePaymentService();
+    const db = makeDb();
+    (db.invoice as unknown as { findUnique: ReturnType<typeof vi.fn> }).findUnique = vi
+      .fn()
+      .mockResolvedValue({ updatedAt: LIVE_UPDATED_AT });
+    const { service } = buildService({ paymentService, db });
+
+    const staleExpectedVersion = LIVE_UPDATED_AT.getTime() - 60_000;
+
+    await expect(
+      service.collectPayment(
+        CLINIC_ID,
+        { userId: FRONT_DESK_USER_ID, userName: 'Priya Sharma' },
+        'inv_1',
+        50000,
+        staleExpectedVersion,
+      ),
+    ).rejects.toMatchObject({ statusCode: 409, code: 'STALE_WRITE_CONFLICT' });
+
+    expect(paymentService.recordCashPayment).not.toHaveBeenCalled();
+  });
+
+  it('collectPayment applies when expectedVersion matches the invoice\'s live updatedAt', async () => {
+    const paymentService = makePaymentService();
+    const db = makeDb();
+    (db.invoice as unknown as { findUnique: ReturnType<typeof vi.fn> }).findUnique = vi
+      .fn()
+      .mockResolvedValue({ updatedAt: LIVE_UPDATED_AT });
+    const { service } = buildService({ paymentService, db });
+
+    await service.collectPayment(
+      CLINIC_ID,
+      { userId: FRONT_DESK_USER_ID, userName: 'Priya Sharma' },
+      'inv_1',
+      50000,
+      LIVE_UPDATED_AT.getTime(),
+    );
+
+    expect(paymentService.recordCashPayment).toHaveBeenCalled();
+  });
+
+  it('refundInvoice rejects a stale expectedVersion before ever calling RefundService, even for Admin', async () => {
+    const refundService = makeRefundService();
+    const db = makeDb();
+    (db.invoice as unknown as { findUnique: ReturnType<typeof vi.fn> }).findUnique = vi
+      .fn()
+      .mockResolvedValue({ updatedAt: LIVE_UPDATED_AT });
+    const { service } = buildService({ roleCode: 'ADMIN', refundService, db });
+
+    await expect(
+      service.refundInvoice(
+        CLINIC_ID,
+        ADMIN_USER_ID,
+        { userId: ADMIN_USER_ID, userName: 'Admin User' },
+        'inv_1',
+        { amountPaise: 10000, reason: 'owner request' } as never,
+        LIVE_UPDATED_AT.getTime() - 60_000,
+      ),
+    ).rejects.toMatchObject({ statusCode: 409, code: 'STALE_WRITE_CONFLICT' });
+
+    expect(refundService.createRefund).not.toHaveBeenCalled();
+  });
+
+  it('voidInvoice rejects a stale expectedVersion before ever calling InvoiceService.voidInvoice, even for Admin', async () => {
+    const invoiceService = makeInvoiceService();
+    const db = makeDb();
+    (db.invoice as unknown as { findUnique: ReturnType<typeof vi.fn> }).findUnique = vi
+      .fn()
+      .mockResolvedValue({ updatedAt: LIVE_UPDATED_AT });
+    const { service } = buildService({ roleCode: 'ADMIN', invoiceService, db });
+
+    await expect(
+      service.voidInvoice(
+        CLINIC_ID,
+        ADMIN_USER_ID,
+        { userId: ADMIN_USER_ID, userName: 'Admin User' },
+        'inv_1',
+        { reason: 'duplicate', restoreStock: true } as never,
+        LIVE_UPDATED_AT.getTime() - 60_000,
+      ),
+    ).rejects.toMatchObject({ statusCode: 409, code: 'STALE_WRITE_CONFLICT' });
+
+    expect(invoiceService.voidInvoice).not.toHaveBeenCalled();
+  });
+});
+
 describe('BillingWorkbenchService.voidInvoice Admin-only enforcement (D-22)', () => {
   it('allows Admin to void an invoice', async () => {
     const invoiceService = makeInvoiceService();

@@ -44,10 +44,16 @@ function makeQueueService(board: {
   };
 }
 
-function makeDb(users: Array<{ id: string; fullName: string }> = []) {
+function makeDb(
+  users: Array<{ id: string; fullName: string }> = [],
+  queueEntry?: { updatedAt: Date } | null,
+) {
   return {
     user: {
       findMany: vi.fn().mockResolvedValue(users),
+    },
+    queueEntry: {
+      findUnique: vi.fn().mockResolvedValue(queueEntry ?? null),
     },
   };
 }
@@ -137,5 +143,44 @@ describe('WebQueueService.updateEntryStatus (D-43)', () => {
       userId: USER_ID,
     });
     expect(result.changeMetadata.staleVersion).toBe(new Date('2026-08-20T09:05:00.000Z').getTime());
+  });
+});
+
+describe('WebQueueService.updateEntryStatus optimistic-concurrency enforcement (Plan 10-05, D-05)', () => {
+  it('applies the write normally when expectedVersion is omitted (no breaking change for existing callers)', async () => {
+    const queueService = makeQueueService({});
+    const db = makeDb([], { updatedAt: new Date('2026-08-20T09:00:00.000Z') });
+    const { service } = buildService({ db, queueService });
+
+    const result = await service.updateEntryStatus(CLINIC_ID, USER_ID, 'entry_1', 'IN_CONSULT' as never);
+
+    expect(queueService.updateStatus).toHaveBeenCalled();
+    expect(result.changeMetadata.staleVersion).toBe(new Date('2026-08-20T09:05:00.000Z').getTime());
+  });
+
+  it('applies the write when expectedVersion is current (matches the row\'s live updatedAt)', async () => {
+    const queueService = makeQueueService({});
+    const liveUpdatedAt = new Date('2026-08-20T09:00:00.000Z');
+    const db = makeDb([], { updatedAt: liveUpdatedAt });
+    const { service } = buildService({ db, queueService });
+
+    await service.updateEntryStatus(CLINIC_ID, USER_ID, 'entry_1', 'IN_CONSULT' as never, liveUpdatedAt.getTime());
+
+    expect(queueService.updateStatus).toHaveBeenCalled();
+  });
+
+  it('rejects the write with a 409 STALE_WRITE_CONFLICT when expectedVersion is behind the row\'s live updatedAt, instead of silently applying it', async () => {
+    const queueService = makeQueueService({});
+    const liveUpdatedAt = new Date('2026-08-20T09:30:00.000Z');
+    const db = makeDb([], { updatedAt: liveUpdatedAt });
+    const { service } = buildService({ db, queueService });
+
+    const staleExpectedVersion = liveUpdatedAt.getTime() - 60_000;
+
+    await expect(
+      service.updateEntryStatus(CLINIC_ID, USER_ID, 'entry_1', 'IN_CONSULT' as never, staleExpectedVersion),
+    ).rejects.toMatchObject({ statusCode: 409, code: 'STALE_WRITE_CONFLICT' });
+
+    expect(queueService.updateStatus).not.toHaveBeenCalled();
   });
 });

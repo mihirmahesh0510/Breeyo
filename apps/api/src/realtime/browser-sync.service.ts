@@ -10,6 +10,55 @@ export interface BuildChangeMetadataInput {
 
 export type StaleStatus = 'fresh' | 'stale';
 
+/** `WriteVersionCheck` result for `BrowserSyncService.checkWriteVersion` -- see that method's header. */
+export type WriteVersionCheck = 'ok' | 'stale';
+
+/**
+ * Plan 10-05: a `no-mistakes` review of the merged Phase 9 branch found that
+ * `knownVersion` (`resolveStaleStatus` above) is READ-ONLY -- no browser
+ * mutation endpoint ever verified a caller's claimed version before
+ * writing, so `StaleStateBanner`'s "conflict" state was never backed by a
+ * real server-side rejection (a stale browser tab could silently clobber a
+ * row a mobile replay or another browser session just changed). This is
+ * the shape a rejected write reports back, deliberately mirroring
+ * `SyncConflictEnvelope`'s (`@breeyo/types`) domain/entityType/entityId/
+ * severity fields -- `currentVersion`/`expectedVersion` stand in for that
+ * envelope's `localPayload`/`serverPayload` because this rejection happens
+ * BEFORE any write is attempted, so there is no local-payload-that-was-applied
+ * to snapshot, only the version mismatch that stopped it.
+ */
+export interface BrowserWriteConflictInfo {
+  domain: string;
+  entityType: string;
+  entityId: string;
+  currentVersion: number;
+  expectedVersion: number;
+}
+
+export interface BrowserWriteConflictError extends Error {
+  statusCode: number;
+  code: string;
+  conflict: BrowserWriteConflictInfo & { severity: 'OPERATIONAL' };
+}
+
+/**
+ * D-05: review before overwrite, not silent last-write-wins -- for the
+ * browser mutation side of an offline-recovery race, same as
+ * `ReplayIngestService`'s `openConflict` deferral does for mobile replay.
+ * `severity` is always `'OPERATIONAL'`: a browser tab racing a stale write
+ * against another session's edit is an operational conflict (D-10), never
+ * the clinical/safety-critical kind `SyncConflictRecord` reserves for EMR.
+ */
+export function staleWriteConflictError(info: BrowserWriteConflictInfo): BrowserWriteConflictError {
+  const error = new Error(
+    'This record changed elsewhere while you were viewing it. Refresh and review before retrying.',
+  ) as BrowserWriteConflictError;
+  error.statusCode = 409;
+  error.code = 'STALE_WRITE_CONFLICT';
+  error.conflict = { ...info, severity: 'OPERATIONAL' };
+  return error;
+}
+
 /**
  * Browser-only stale-state mapping and realtime fan-out for the queue and
  * billing workbenches (Plan 09-04, D-40, D-42, D-43).
@@ -65,6 +114,19 @@ export class BrowserSyncService {
       return 'fresh';
     }
     return clientKnownVersion >= serverVersion ? 'fresh' : 'stale';
+  }
+
+  /**
+   * Plan 10-05, D-05: the write-side counterpart to `resolveStaleStatus`.
+   * `undefined`/`null` means the caller sent no `expectedVersion` claim at
+   * all -- always `'ok'`, so this is a strictly additive check that never
+   * breaks an existing caller that has not adopted `expectedVersion` yet.
+   */
+  checkWriteVersion(currentVersion: number, expectedVersion?: number | null): WriteVersionCheck {
+    if (expectedVersion === undefined || expectedVersion === null) {
+      return 'ok';
+    }
+    return expectedVersion < currentVersion ? 'stale' : 'ok';
   }
 
   /** D-42: one queue entry's change, on the browser-only queue channel -- never the shared mobile `QUEUE_UPDATED` event. */

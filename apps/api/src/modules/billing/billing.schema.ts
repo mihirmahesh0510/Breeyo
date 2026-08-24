@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { PAYMENT_METHODS } from '@breeyo/types';
-import { invoiceListQuerySchema } from '@breeyo/validators';
+import { invoiceListQuerySchema, refundInputSchema, voidInvoiceSchema } from '@breeyo/validators';
 
 /**
  * Path, query and small body schemas local to the billing module.
@@ -67,6 +67,27 @@ export const markPaidBodySchema = z.object({
  */
 export const collectPaymentBodySchema = z.object({
   amountPaise: z.number().int().positive().optional(),
+  /** Plan 10-05, D-05: see `webRefundBodySchema`'s header for the shared `expectedVersion` rationale. */
+  expectedVersion: z.coerce.number().int().nonnegative().optional(),
+});
+
+/**
+ * Plan 10-05: web-only wrappers around the shared mobile `refundInputSchema`/
+ * `voidInvoiceSchema` (`@breeyo/validators`), adding the same optional
+ * `expectedVersion` field `webQueueBoardQuerySchema` established for reads,
+ * now reused for a WRITE-side optimistic-concurrency check (D-05: review
+ * before overwrite, not silent last-write-wins) -- closes the gap where
+ * `knownVersion` was checked on every read but never verified before a
+ * browser mutation. Kept separate from the shared validators so the mobile
+ * refund/void forms (which have no browser-tab-staleness concept) are
+ * untouched.
+ */
+export const webRefundBodySchema = refundInputSchema.extend({
+  expectedVersion: z.coerce.number().int().nonnegative().optional(),
+});
+
+export const webVoidBodySchema = voidInvoiceSchema.extend({
+  expectedVersion: z.coerce.number().int().nonnegative().optional(),
 });
 
 /** Plan 09-04: browser billing workbench board query -- see `queue.schema.ts`'s `webQueueBoardQuerySchema` for the identical D-40 rationale. */

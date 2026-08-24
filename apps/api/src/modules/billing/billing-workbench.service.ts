@@ -2,7 +2,7 @@ import type { RefundInput, VoidInvoiceInput } from '@breeyo/validators';
 import type { InvoiceListItem } from '@breeyo/types';
 import type { TenantPrismaClient } from '../../lib/prisma-rls.js';
 import type { AccessPolicyService } from '../web-dashboard/access-policy.service.js';
-import { BrowserSyncService } from '../../realtime/browser-sync.service.js';
+import { BrowserSyncService, staleWriteConflictError } from '../../realtime/browser-sync.service.js';
 import type { BrowserSyncChangeMetadata } from '../../realtime/socket.events.js';
 import type { InvoiceService } from './invoice.service.js';
 import type { PaymentService } from './payment.service.js';
@@ -136,24 +136,75 @@ export class BillingWorkbenchService {
     };
   }
 
+  /**
+   * Plan 10-05, D-05: rejects with a 409 `STALE_WRITE_CONFLICT` when the
+   * caller's `expectedVersion` is behind the invoice's LIVE `updatedAt`,
+   * instead of letting `collectPayment`/`refundInvoice`/`voidInvoice` apply
+   * a write against a view the caller has not refreshed since another
+   * session changed this invoice. A no-op whenever `expectedVersion` is
+   * omitted -- every caller before this plan is unaffected.
+   */
+  private async assertInvoiceVersionCurrent(invoiceId: string, expectedVersion?: number): Promise<void> {
+    if (expectedVersion === undefined) return;
+
+    const current = (await this.db.invoice.findUnique({
+      where: { id: invoiceId },
+      select: { updatedAt: true },
+    })) as { updatedAt: Date } | null;
+    if (!current) return;
+
+    if (this.browserSyncService.checkWriteVersion(current.updatedAt.getTime(), expectedVersion) === 'stale') {
+      throw staleWriteConflictError({
+        domain: 'billing',
+        entityType: 'INVOICE',
+        entityId: invoiceId,
+        currentVersion: current.updatedAt.getTime(),
+        expectedVersion,
+      });
+    }
+  }
+
   /** D-05: cash quick-collection, open to Front Desk and Admin alike -- delegates to the existing cash-payment path unchanged. */
-  async collectPayment(clinicId: string, actor: BillingActor, invoiceId: string, amountPaise?: number) {
+  async collectPayment(
+    clinicId: string,
+    actor: BillingActor,
+    invoiceId: string,
+    amountPaise?: number,
+    expectedVersion?: number,
+  ) {
+    await this.assertInvoiceVersionCurrent(invoiceId, expectedVersion);
     return this.paymentService.recordCashPayment(clinicId, invoiceId, actor, amountPaise);
   }
 
   /** D-22: Admin-only. Throws 403 FORBIDDEN before touching `RefundService` for any other role. */
-  async refundInvoice(clinicId: string, userId: string, actor: BillingActor, invoiceId: string, input: RefundInput) {
+  async refundInvoice(
+    clinicId: string,
+    userId: string,
+    actor: BillingActor,
+    invoiceId: string,
+    input: RefundInput,
+    expectedVersion?: number,
+  ) {
     if (!(await this.isAdmin(clinicId, userId))) {
       throw forbiddenError('Refunds are Admin-only in the browser, even with routine billing access (D-22)');
     }
+    await this.assertInvoiceVersionCurrent(invoiceId, expectedVersion);
     return this.refundService.createRefund(clinicId, invoiceId, actor, input);
   }
 
   /** D-22: Admin-only. Throws 403 FORBIDDEN before touching `InvoiceService.voidInvoice` for any other role. */
-  async voidInvoice(clinicId: string, userId: string, actor: BillingActor, invoiceId: string, input: VoidInvoiceInput) {
+  async voidInvoice(
+    clinicId: string,
+    userId: string,
+    actor: BillingActor,
+    invoiceId: string,
+    input: VoidInvoiceInput,
+    expectedVersion?: number,
+  ) {
     if (!(await this.isAdmin(clinicId, userId))) {
       throw forbiddenError('Voiding an invoice is Admin-only in the browser, even with routine billing access (D-22)');
     }
+    await this.assertInvoiceVersionCurrent(invoiceId, expectedVersion);
     return this.invoiceService.voidInvoice(clinicId, invoiceId, actor, input);
   }
 

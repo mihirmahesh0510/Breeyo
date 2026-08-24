@@ -9,7 +9,7 @@
 // stale-state prompt (D-42: no blanket toast-only broadcast for every
 // normal change).
 import { describe, it, expect, vi } from 'vitest';
-import { BrowserSyncService } from '../browser-sync.service.js';
+import { BrowserSyncService, staleWriteConflictError } from '../browser-sync.service.js';
 import { BROWSER_SYNC_EVENTS } from '../socket.events.js';
 
 const CLINIC_ID = 'clinic_1';
@@ -77,6 +77,47 @@ describe('BrowserSyncService.resolveStaleStatus (D-40)', () => {
   it('is stale when the caller is behind the server version, rather than silently overwriting it', () => {
     const service = new BrowserSyncService(null);
     expect(service.resolveStaleStatus(2000, 1000)).toBe('stale');
+  });
+});
+
+describe('BrowserSyncService.checkWriteVersion (Plan 10-05: closing the browser optimistic-concurrency gap, D-05)', () => {
+  it('is ok when the caller sent no expectedVersion at all (never a breaking change for existing callers)', () => {
+    const service = new BrowserSyncService(null);
+    expect(service.checkWriteVersion(2000, undefined)).toBe('ok');
+    expect(service.checkWriteVersion(2000, null)).toBe('ok');
+  });
+
+  it('is ok when the caller\'s expectedVersion is current or newer', () => {
+    const service = new BrowserSyncService(null);
+    expect(service.checkWriteVersion(2000, 2000)).toBe('ok');
+  });
+
+  it('is stale when the caller\'s expectedVersion is behind the row\'s current version', () => {
+    const service = new BrowserSyncService(null);
+    expect(service.checkWriteVersion(2000, 1000)).toBe('stale');
+  });
+});
+
+describe('staleWriteConflictError (mirrors SyncConflictEnvelope\'s shape for a rejected browser write)', () => {
+  it('builds a 409 STALE_WRITE_CONFLICT error carrying domain/entity/version info', () => {
+    const error = staleWriteConflictError({
+      domain: 'queue',
+      entityType: 'QUEUE_ENTRY',
+      entityId: 'entry_1',
+      currentVersion: 2000,
+      expectedVersion: 1000,
+    });
+
+    expect(error.statusCode).toBe(409);
+    expect(error.code).toBe('STALE_WRITE_CONFLICT');
+    expect(error.conflict).toMatchObject({
+      domain: 'queue',
+      entityType: 'QUEUE_ENTRY',
+      entityId: 'entry_1',
+      currentVersion: 2000,
+      expectedVersion: 1000,
+      severity: 'OPERATIONAL',
+    });
   });
 });
 

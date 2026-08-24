@@ -1,7 +1,7 @@
 import type { QueueStatus } from '@breeyo/types';
 import type { TenantPrismaClient } from '../../lib/prisma-rls.js';
 import type { BrowserSyncChangeMetadata } from '../../realtime/socket.events.js';
-import { BrowserSyncService } from '../../realtime/browser-sync.service.js';
+import { BrowserSyncService, staleWriteConflictError } from '../../realtime/browser-sync.service.js';
 import type { QueueService } from './queue.service.js';
 
 /** A raw queue entry as `QueueService.getQueueBoard`/`updateStatus` return it (pet + owner included). */
@@ -122,13 +122,43 @@ export class WebQueueService {
     };
   }
 
-  /** D-43: status change, same state machine as mobile, plus browser-sync metadata on the response and a realtime push. */
+  /**
+   * D-43: status change, same state machine as mobile, plus browser-sync
+   * metadata on the response and a realtime push.
+   *
+   * Plan 10-05, D-05: when the caller sends `expectedVersion` (the last
+   * `staleVersion` it rendered for this row), it is checked against the
+   * row's LIVE `updatedAt` before `QueueService.updateStatus` ever runs --
+   * a stale claim is rejected with a 409 `STALE_WRITE_CONFLICT` instead of
+   * silently applying a write against a view the caller has not refreshed
+   * since another session (mobile replay or another browser tab) changed
+   * this row. Omitting `expectedVersion` (every caller before this plan)
+   * is unaffected -- `checkWriteVersion` is `'ok'` whenever it is absent.
+   */
   async updateEntryStatus(
     clinicId: string,
     userId: string,
     entryId: string,
     status: QueueStatus,
+    expectedVersion?: number,
   ): Promise<WebQueueEntry & { changeMetadata: BrowserSyncChangeMetadata }> {
+    if (expectedVersion !== undefined) {
+      const current = (await this.db.queueEntry.findUnique({
+        where: { id: entryId },
+        select: { updatedAt: true },
+      })) as { updatedAt: Date } | null;
+
+      if (current && this.browserSyncService.checkWriteVersion(current.updatedAt.getTime(), expectedVersion) === 'stale') {
+        throw staleWriteConflictError({
+          domain: 'queue',
+          entityType: 'QUEUE_ENTRY',
+          entityId: entryId,
+          currentVersion: current.updatedAt.getTime(),
+          expectedVersion,
+        });
+      }
+    }
+
     const updated = (await this.queueService.updateStatus({
       clinicId,
       entryId,

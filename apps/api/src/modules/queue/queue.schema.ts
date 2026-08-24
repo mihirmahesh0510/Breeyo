@@ -6,8 +6,17 @@ export const checkInBodySchema = checkInSchema.extend({
   reCheckIn: z.boolean().default(false),
 });
 
-/** Body for status update */
-export { queueStatusUpdateSchema as statusUpdateBodySchema };
+/**
+ * Body for status update. Plan 10-05: extends the shared mobile
+ * `queueStatusUpdateSchema` with an optional `expectedVersion` (the same
+ * epoch-ms `knownVersion` scheme `webQueueBoardQuerySchema` already uses
+ * for reads) so the browser write path can be checked against the row's
+ * live version before applying -- see `WebQueueService.updateEntryStatus`.
+ * Optional and additive: a mobile caller that never sends it is unaffected.
+ */
+export const statusUpdateBodySchema = queueStatusUpdateSchema.extend({
+  expectedVersion: z.coerce.number().int().nonnegative().optional(),
+});
 
 /** Params with entryId */
 export const entryParamsSchema = z.object({

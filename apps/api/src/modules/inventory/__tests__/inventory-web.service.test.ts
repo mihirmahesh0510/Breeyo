@@ -10,6 +10,7 @@ const FRONT_DESK_USER_ID = 'user_fd_1';
 function makeDb() {
   return {
     inventoryItem: {
+      findUnique: vi.fn().mockResolvedValue(null),
       findMany: vi.fn().mockResolvedValue([
         {
           id: 'item_1',
@@ -214,6 +215,58 @@ describe('InventoryWebService.adjustStock D-18 enforcement', () => {
 
     expect(stockAdjustmentService.adjust).toHaveBeenCalledWith(CLINIC_ID, 'item_1', ADMIN_USER_ID, 'Admin User', input);
     expect(result).toMatchObject({ movement: { id: 'mov_1' } });
+  });
+});
+
+describe('InventoryWebService.adjustStock optimistic-concurrency enforcement (Plan 10-05, D-05)', () => {
+  const LIVE_UPDATED_AT = new Date('2026-08-20T09:00:00.000Z');
+
+  it('applies normally when expectedVersion is omitted (no breaking change for existing callers)', async () => {
+    const { service, stockAdjustmentService } = buildService({ roleCode: 'ADMIN', inventoryWriteEnabled: true });
+
+    await service.adjustStock(CLINIC_ID, ADMIN_USER_ID, 'Admin User', 'item_1', {
+      quantity: 5,
+      type: 'add',
+      reason: 'correction',
+    });
+
+    expect(stockAdjustmentService.adjust).toHaveBeenCalled();
+  });
+
+  it('applies when expectedVersion matches the item\'s live updatedAt', async () => {
+    const db = makeDb();
+    (db.inventoryItem.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({ updatedAt: LIVE_UPDATED_AT });
+    const { service, stockAdjustmentService } = buildService({ roleCode: 'ADMIN', inventoryWriteEnabled: true, db });
+
+    await service.adjustStock(
+      CLINIC_ID,
+      ADMIN_USER_ID,
+      'Admin User',
+      'item_1',
+      { quantity: 5, type: 'add', reason: 'correction' },
+      LIVE_UPDATED_AT.getTime(),
+    );
+
+    expect(stockAdjustmentService.adjust).toHaveBeenCalled();
+  });
+
+  it('rejects with a 409 STALE_WRITE_CONFLICT when expectedVersion is behind the item\'s live updatedAt, instead of silently applying it', async () => {
+    const db = makeDb();
+    (db.inventoryItem.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({ updatedAt: LIVE_UPDATED_AT });
+    const { service, stockAdjustmentService } = buildService({ roleCode: 'ADMIN', inventoryWriteEnabled: true, db });
+
+    await expect(
+      service.adjustStock(
+        CLINIC_ID,
+        ADMIN_USER_ID,
+        'Admin User',
+        'item_1',
+        { quantity: 5, type: 'add', reason: 'correction' },
+        LIVE_UPDATED_AT.getTime() - 60_000,
+      ),
+    ).rejects.toMatchObject({ statusCode: 409, code: 'STALE_WRITE_CONFLICT' });
+
+    expect(stockAdjustmentService.adjust).not.toHaveBeenCalled();
   });
 });
 

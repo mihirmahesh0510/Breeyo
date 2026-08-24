@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { stockAdjustmentSchema } from '@breeyo/validators';
 
 /** Params with itemId */
 export const itemParamsSchema = z.object({
@@ -45,6 +46,19 @@ export const movementQuerySchema = z.object({
 /** Query params for the alerts endpoint (D-21 configurable lead time) */
 export const alertsQuerySchema = z.object({
   leadDays: z.coerce.number().int().positive().max(365).optional(),
+});
+
+/**
+ * Plan 10-05, D-05: web-only wrapper around the shared mobile
+ * `stockAdjustmentSchema` (`@breeyo/validators`), adding the same optional
+ * `expectedVersion` epoch-ms field `webQueueBoardQuerySchema` established
+ * for reads, now reused for a WRITE-side optimistic-concurrency check --
+ * see `billing.schema.ts`'s `webRefundBodySchema` for the identical
+ * rationale. The mobile barcode-scanner adjust flow (D-37: stays
+ * mobile-first) keeps using the shared schema unmodified.
+ */
+export const webStockAdjustmentBodySchema = stockAdjustmentSchema.extend({
+  expectedVersion: z.coerce.number().int().nonnegative().optional(),
 });
 
 export type ListQuery = z.infer<typeof listQuerySchema>;
