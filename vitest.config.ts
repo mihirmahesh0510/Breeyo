@@ -38,6 +38,9 @@ export default defineConfig({
       'apps/web/src/features/owner-portal/**/__tests__/*.test.tsx',
       // Plan 10-01 Task 1: shared offline-sync contract schema tests.
       'packages/validators/src/offline-sync/__tests__/schemas.test.ts',
+      // Plan 10-01 Task 2: mobile sync coordinator + API replay-ingress tests.
+      'apps/mobile/src/features/offline-sync/**/__tests__/*.test.ts',
+      'apps/api/src/modules/sync/**/__tests__/*.test.ts',
     ],
   },
 });
