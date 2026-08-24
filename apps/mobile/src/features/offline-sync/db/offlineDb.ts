@@ -1,4 +1,5 @@
 import * as SQLite from 'expo-sqlite';
+import type { ResolutionState, SyncConflictEnvelope, SyncFailureTaskRecord } from '@breeyo/types';
 
 /**
  * On-device database name for the Phase 10 offline-sync ledger. Deliberately
@@ -327,6 +328,66 @@ export async function writeWorkingSetSnapshot(
       await statement.finalizeAsync();
     }
   });
+}
+
+/**
+ * Plan 10-05 Task 1: read counterparts for the sync-visibility aggregate
+ * (`useSyncStatus.ts`). `sync_operations`/`sync_failure_tasks`/`sync_conflicts`
+ * are all written elsewhere (the coordinator, replay ingress acks, and
+ * domain adapters); these are the first reads of them for anything other
+ * than replay itself, so the badge/failure center can render the exact same
+ * locally-cached state without a second source of truth.
+ */
+
+/** A row still awaiting replay (`synced_at IS NULL`) -- D-18/D-19's PENDING count. */
+export async function countPendingSyncOperations(db: SQLite.SQLiteDatabase): Promise<number> {
+  const row = await db.getFirstAsync<{ count: number }>(
+    'SELECT COUNT(*) as count FROM sync_operations WHERE synced_at IS NULL',
+  );
+  return row?.count ?? 0;
+}
+
+/** D-11: every failure task that has not reached RESOLVED yet. */
+export async function listUnresolvedSyncFailureTasks(db: SQLite.SQLiteDatabase): Promise<SyncFailureTaskRecord[]> {
+  const rows = await db.getAllAsync<Record<string, unknown>>(
+    "SELECT * FROM sync_failure_tasks WHERE resolution_state != 'RESOLVED'",
+  );
+  return rows.map((row) => ({
+    taskId: row.task_id as string,
+    clinicId: row.clinic_id as string,
+    operationId: row.operation_id as string,
+    domain: row.domain as string,
+    originatingUserId: row.originating_user_id as string,
+    currentOwnerUserId: row.current_owner_user_id as string,
+    guidedRetryCount: row.guided_retry_count as number,
+    resolutionState: row.resolution_state as ResolutionState,
+    nextSuggestedAction: row.next_suggested_action as string,
+    lastAttemptedAt: row.last_attempted_at as string,
+    createdAt: row.created_at as string,
+  }));
+}
+
+/** D-11: every conflict record that has not reached RESOLVED yet. */
+export async function listUnresolvedSyncConflicts(db: SQLite.SQLiteDatabase): Promise<SyncConflictEnvelope[]> {
+  const rows = await db.getAllAsync<Record<string, unknown>>(
+    "SELECT * FROM sync_conflicts WHERE resolution_state != 'RESOLVED'",
+  );
+  return rows.map((row) => ({
+    conflictId: row.conflict_id as string,
+    clinicId: row.clinic_id as string,
+    deviceId: row.device_id as string,
+    operationId: row.operation_id as string,
+    domain: row.domain as string,
+    entityType: row.entity_type as string,
+    entityId: row.entity_id as string,
+    severity: row.severity as SyncConflictEnvelope['severity'],
+    localPayload: JSON.parse(row.local_payload_json as string),
+    serverPayload: JSON.parse(row.server_payload_json as string),
+    recommendedOwnerUserId: (row.recommended_owner_user_id as string | null) ?? undefined,
+    resolutionOwnerUserId: (row.resolution_owner_user_id as string | null) ?? undefined,
+    resolutionState: row.resolution_state as ResolutionState,
+    createdAt: row.created_at as string,
+  }));
 }
 
 export interface WorkingSetSnapshotRow {

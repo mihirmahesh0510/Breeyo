@@ -53,6 +53,14 @@ export default defineConfig({
       // operational-review reconciliation (API, already covered by the
       // Plan 09-03 apps/api/src/modules/inventory glob above).
       'apps/mobile/src/features/inventory/**/__tests__/*.test.ts',
+      // Plan 10-05: sync visibility UX (mobile, needs .tsx for the
+      // component-source-assertion screen test). Retry-escalation +
+      // replay-broadcast services and the browser-sync version-check
+      // extension are already covered by the apps/api/src/modules/sync and
+      // apps/api/src/realtime globs above; the web replay-stale-state test
+      // (driving the existing StaleStateBanner) is already covered by the
+      // apps/web/src/features/dashboard .test.tsx glob above.
+      'apps/mobile/src/features/offline-sync/**/__tests__/*.test.tsx',
     ],
   },
 });
