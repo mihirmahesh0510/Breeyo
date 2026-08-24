@@ -11,7 +11,7 @@ import {
   createTestVetAvailabilityWeek,
   createTestServiceForBooking,
 } from '../helpers/factories.js';
-import { getTodayIST, addDaysIST, weekdayIST, minutesToIstDate } from '../../src/lib/ist-date.js';
+import { futureSlot } from '../helpers/future-slot.js';
 import type { FastifyInstance } from 'fastify';
 
 let app: FastifyInstance;
@@ -20,14 +20,6 @@ let app: FastifyInstance;
  * tests/queue/queue-realtime.test.ts's established pattern exactly. */
 let emitSpy: ReturnType<typeof vi.fn>;
 let toSpy: ReturnType<typeof vi.spyOn>;
-
-function futureSlot(daysAhead: number, minutesOfDay = 600): Date {
-  let day = addDaysIST(getTodayIST(), daysAhead);
-  while (weekdayIST(day) === 0) {
-    day = addDaysIST(day, 1);
-  }
-  return minutesToIstDate(day, minutesOfDay);
-}
 
 async function setupTestContext() {
   const user = await createTestUser();

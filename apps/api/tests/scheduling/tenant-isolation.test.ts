@@ -14,7 +14,8 @@ import {
   createTestBlockedPeriod,
   prisma,
 } from '../helpers/factories.js';
-import { getTodayIST, addDaysIST, weekdayIST, minutesToIstDate } from '../../src/lib/ist-date.js';
+import { getTodayIST, addDaysIST } from '../../src/lib/ist-date.js';
+import { futureSlot } from '../helpers/future-slot.js';
 import type { FastifyInstance } from 'fastify';
 
 let app: FastifyInstance;
@@ -24,14 +25,6 @@ let app: FastifyInstance;
  * contract under test is that `clinicId` comes only from the JWT, and that a
  * cross-tenant miss is ALWAYS 404, never 403 (which would leak existence).
  */
-
-function futureSlot(daysAhead: number, minutesOfDay = 600): Date {
-  let day = addDaysIST(getTodayIST(), daysAhead);
-  while (weekdayIST(day) === 0) {
-    day = addDaysIST(day, 1);
-  }
-  return minutesToIstDate(day, minutesOfDay);
-}
 
 async function setupClinic(slotOffset: number) {
   const user = await createTestUser();

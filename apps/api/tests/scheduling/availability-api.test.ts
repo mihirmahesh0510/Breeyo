@@ -11,7 +11,7 @@ import {
   createTestPetOwner,
   createTestPet,
 } from '../helpers/factories.js';
-import { getTodayIST, addDaysIST, weekdayIST } from '../../src/lib/ist-date.js';
+import { futureWeekday } from '../helpers/future-slot.js';
 import type { FastifyInstance } from 'fastify';
 
 let app: FastifyInstance;
@@ -25,15 +25,6 @@ async function setupTestContext() {
   const pet = await createTestPet(clinic.id, owner.id);
   const service = await createTestServiceForBooking(clinic.id, { durationMinutes: 30 });
   return { user, clinic, accessToken, owner, pet, service };
-}
-
-/** A future weekday (skips Sunday). */
-function futureWeekday(daysAhead: number): Date {
-  let day = addDaysIST(getTodayIST(), daysAhead);
-  while (weekdayIST(day) === 0) {
-    day = addDaysIST(day, 1);
-  }
-  return day;
 }
 
 function sevenDayTemplate(overrides: Partial<{ openMinutes: number; closeMinutes: number }> = {}) {
