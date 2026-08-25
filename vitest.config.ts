@@ -19,6 +19,20 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     environmentMatchGlobs: [['apps/web/**', 'happy-dom']],
+    // Plan 10-06 Task 1: `apps/api/tests/integration/*.e2e.test.ts` are the
+    // first root-included files that hit a REAL Postgres/Redis via
+    // `buildTestApp()` (every other file in this list uses a mocked Prisma
+    // delegate) -- they need the same env bootstrap
+    // (`DATABASE_URL`/`JWT_SECRET`/etc.) `apps/api/vitest.config.ts` already
+    // wires up via this exact file. Harmless no-op for every other suite
+    // in this list (it only loads dotenv + sets a few env vars).
+    setupFiles: ['apps/api/tests/helpers/setup.ts'],
+    // Same reason `apps/api/vitest.config.ts` sets this: the new
+    // integration suites share one real database and each test's
+    // `beforeEach` runs a blanket `cleanupTestData()` truncate -- running
+    // those files concurrently in separate workers would let one file's
+    // cleanup race another file's still-in-progress fixtures.
+    fileParallelism: false,
     include: [
       'packages/validators/src/__tests__/web-dashboard.test.ts',
       'packages/validators/src/__tests__/owner-portal.test.ts',
@@ -61,6 +75,13 @@ export default defineConfig({
       // (driving the existing StaleStateBanner) is already covered by the
       // apps/web/src/features/dashboard .test.tsx glob above.
       'apps/mobile/src/features/offline-sync/**/__tests__/*.test.tsx',
+      // Plan 10-06 Task 1: the final Phase 10 integration proof harnesses --
+      // offline recovery across repeated drop/recover cycles, the
+      // walk-in-to-payment golden path, the WhatsApp-triggered flow (all
+      // three real-Postgres API integration tests), and the browser
+      // reconnect/stale-state proof.
+      'apps/api/tests/integration/*.e2e.test.ts',
+      'apps/web/tests/integration/*.test.ts',
     ],
   },
 });

@@ -1,0 +1,113 @@
+# Plan 10-06 Task 1 (D-29): the on-device half of the mandatory
+# WhatsApp-triggered clinic flow proof (the second mandatory proof path
+# alongside offline recovery). See
+# `apps/api/tests/integration/whatsapp-triggered-flow.e2e.test.ts` for why
+# THIS flow -- a CONFIRMED WhatsApp booking -> a WHATSAPP-sourced
+# Appointment -> the Phase 8 queue-handoff sweep's EXPECTED queue entry ->
+# the front-desk arrival check-in referencing that booking -- is the
+# concrete flow chosen, and 07-CONTEXT.md D-06/D-08 plus
+# `booking.service.ts`'s own header comment for why a confirmed booking does
+# NOT itself create a walk-in queue row (front desk always checks the
+# patient in manually when they physically arrive).
+#
+# ## Precondition (cannot be scripted from the mobile app itself)
+#
+# A WhatsApp conversation is not something Maestro drives from the clinic
+# device -- by the time a human runs this flow, the following must already
+# be true on the staging clinic account, exactly as it would be in
+# production:
+#   1. An owner messaged the clinic's WhatsApp number and confirmed a
+#      booking slot (Phase 7), producing a CONFIRMED `WhatsAppBookingRequest`
+#      and a real, due `Appointment` with `source: WHATSAPP`.
+#   2. The Phase 8 queue-handoff sweep has run at least once since (it runs
+#      on its own schedule in production), producing an `EXPECTED` queue
+#      entry for that appointment.
+# `apps/api/tests/integration/whatsapp-triggered-flow.e2e.test.ts` is the
+# automated proof that steps 1-2 produce exactly this state; this Maestro
+# flow picks up from there and drives the ON-DEVICE arrival/check-in/consult
+# path a real front-desk staff member performs, including a real
+# disconnect/reconnect at the moment of arrival.
+appId: app.breeyo.mobile
+---
+- launchApp:
+    clearState: false
+
+- tapOn: "priya@clinic.com"
+- inputText: "vet@example-clinic.test"
+- tapOn: "Enter your password"
+- inputText: "REPLACE_WITH_REAL_STAGING_PASSWORD"
+- tapOn: "Log In"
+- extendedWaitUntil:
+    visible: "Queue"
+    timeout: 15000
+
+# ---- The WhatsApp-booked patient shows up on the board as an EXPECTED
+# arrival (D-11: an EXPECTED row, not a WAITING walk-in) before anyone has
+# checked them in. ----
+- assertVisible:
+    text: "Expected .*"
+
+# ==================================================================
+# DROP: connectivity drops right as the booked patient physically arrives
+# at the front desk -- the realistic moment this flow exists to prove,
+# per D-29's "connectivity drops and returns" requirement.
+# ==================================================================
+- toggleAirplaneMode # OFF -> ON
+- assertVisible: "You're offline. Changes will sync when you're back online."
+
+# ---- Front desk taps the EXPECTED row and checks the patient in NOW,
+# referencing the WhatsApp booking's own queue entry -- while still
+# offline. This is the same `QUEUE_STATUS_TRANSITION` (EXPECTED -> WAITING)
+# path any other offline queue action uses (Plan 10-02); its WhatsApp origin
+# does not require, or get, any special-cased handling. ----
+- tapOn:
+    text: "Expected .*"
+    index: 0
+- assertVisible:
+    id: "expected-check-in-now"
+- tapOn:
+    id: "expected-check-in-now"
+- assertVisible:
+    id: "queue-card-pending-sync"
+# The entry must now render as an ordinary WAITING check-in (its pending
+# marker aside) -- no longer labelled "Expected ...".
+- assertNotVisible:
+    text: "Expected .*"
+
+# ==================================================================
+# RECOVER: reconnect.
+# ==================================================================
+- toggleAirplaneMode # ON -> OFF
+- extendedWaitUntil:
+    notVisible: "You're offline. Changes will sync when you're back online."
+    timeout: 30000
+- extendedWaitUntil:
+    notVisible:
+      id: "queue-card-pending-sync"
+    timeout: 30000
+
+# ---- The visit continues exactly like any walk-in from here: call the
+# patient in for consult, then a second connectivity drop mid-visit proves
+# the WhatsApp-originated entry keeps reconciling correctly on a SECOND,
+# independent drop/recover, not only the arrival check-in. ----
+- tapOn:
+    text: ".*"
+    index: 0
+- extendedWaitUntil:
+    visible: "Consultation"
+    timeout: 10000
+
+- toggleAirplaneMode # OFF -> ON (second, independent drop)
+- tapOn: "Assessment"
+- inputText: "WhatsApp-booked visit, offline note"
+- assertVisible: "Saved offline"
+- toggleAirplaneMode # ON -> OFF (recover)
+- extendedWaitUntil:
+    visible: "WhatsApp-booked visit, offline note"
+    timeout: 15000
+- assertNotVisible: "Saved offline"
+
+# No stuck/failed replay items, and nothing about the visit's WhatsApp
+# origin left it in a broken or duplicated state.
+- tapOn: "Queue"
+- assertNotVisible: "Needs your retry"

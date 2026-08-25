@@ -1,0 +1,135 @@
+# Plan 10-06 Task 1 (PLT-03, D-25 to D-28, D-31 to D-33): a single real
+# disconnect/reconnect drill for a human tester to run on a mid-range
+# Android device (Task 2's blocking human-verify checkpoint). This is the
+# device-level counterpart to
+# `apps/api/tests/integration/offline-recovery.e2e.test.ts`, which proves the
+# SAME reconnect/replay integrity purely server-side; this file is what
+# actually toggles the radio on real hardware.
+#
+# Network-toggle approach: Maestro's built-in `toggleAirplaneMode` command
+# (Android-only -- iOS simulators cannot flip airplane mode, which is exactly
+# why D-31 names mid-range ANDROID hardware as the proof bar). Each call
+# flips the device's current airplane-mode state, so this flow assumes the
+# device starts with airplane mode OFF (normal connected state) before the
+# flow begins -- the first `toggleAirplaneMode` turns it ON (drop), the
+# second turns it back OFF (recover). A comment marks every toggle with the
+# state it produces so a human reviewing/adapting this script never has to
+# guess which call does which.
+#
+# Real elements referenced below (testID/text) were confirmed against the
+# actual shipped screens (`QueueScreen.tsx`, `CheckInSheet.tsx`,
+# `OfflineBanner.tsx`, `QueueCardItem.tsx`, `ConsultationScreen.tsx`,
+# `BarcodeScannerScreen.tsx`) rather than invented -- see 10-06-SUMMARY.md.
+appId: app.breeyo.mobile
+---
+- launchApp:
+    clearState: false
+
+# ---- Sign in (adjust the credentials below to a real staging clinic
+# account before running on a device -- these are placeholders). ----
+- tapOn: "priya@clinic.com"
+- inputText: "vet@example-clinic.test"
+- tapOn: "Enter your password"
+- inputText: "REPLACE_WITH_REAL_STAGING_PASSWORD"
+- tapOn: "Log In"
+- extendedWaitUntil:
+    visible: "Queue"
+    timeout: 15000
+
+# ==================================================================
+# DROP: go offline.
+# ==================================================================
+- toggleAirplaneMode # now OFF -> ON (offline)
+- assertVisible: "You're offline. Changes will sync when you're back online."
+
+# ---- Offline queue work: check in a returning patient. Per Plan 10-02
+# (D-01 to D-03), this is genuine operational work the moment it is
+# recorded locally -- not a blocked action and not a placeholder. ----
+- tapOn:
+    id: "check-in-fab"
+- tapOn:
+    id: "check-in-mobile-input"
+- inputText: "9000000001"
+- extendedWaitUntil:
+    visible: "Tap a pet to check in"
+    timeout: 10000
+- tapOn:
+    text: "Check in .*"
+    index: 0
+# The new/updated entry renders immediately with a quiet pending-sync
+# marker (D-19) -- never a blocking spinner or a "can't check in offline"
+# error.
+- assertVisible:
+    id: "queue-card-pending-sync"
+
+# ---- Offline clinical note-taking (Plan 10-03, D-05 to D-07): open an
+# existing in-progress consultation and edit its SOAP note while still
+# offline. Adjust the tapped patient name below to one with an open
+# consultation on the real device under test. ----
+- tapOn: "Patients"
+- tapOn:
+    text: ".*"
+    index: 0
+- extendedWaitUntil:
+    visible: "Consultation"
+    timeout: 10000
+- tapOn: "Assessment"
+- inputText: "Offline-recorded assessment note (D-27 drill)"
+- assertVisible: "Saved offline"
+
+# ---- Offline barcode work (Phase 5's offline barcode cache, hardened by
+# Plan 10-04's working-set caching on top of it): scanning and the pending
+# working-set cache continue to work with zero connectivity. Manual entry
+# is used here in place of a real camera scan since Maestro drives a
+# scripted flow, not a physical barcode under the lens -- swap this step
+# for a real scan when running by hand. Note: the actual receive/dispense/
+# adjust SCREENS are not yet wired to the Plan 10-04 offline-capable hook
+# (only the scan-and-cache step is, per 10-06-SUMMARY.md) -- this flow
+# deliberately stops at the scan, not a submitted stock action, so it never
+# scripts a step that the shipped app cannot actually complete offline. ----
+- tapOn: "Inventory"
+- tapOn:
+    id: "inventory-scan-button"
+- assertVisible:
+    id: "barcode-scanner-screen"
+- assertVisible:
+    id: "offline-banner"
+- tapOn:
+    id: "manual-entry-trigger"
+- tapOn:
+    id: "manual-barcode-input"
+- inputText: "8901030826829"
+- pressKey: "Enter"
+- assertVisible:
+    id: "scan-result-card"
+
+# ==================================================================
+# RECOVER: reconnect.
+# ==================================================================
+- toggleAirplaneMode # now ON -> OFF (back online)
+- tapOn: "Queue"
+- extendedWaitUntil:
+    notVisible: "You're offline. Changes will sync when you're back online."
+    timeout: 30000
+# Queue-first replay (D-12): the check-in above must have landed and its
+# pending marker cleared before anything else is asserted.
+- extendedWaitUntil:
+    notVisible:
+      id: "queue-card-pending-sync"
+    timeout: 30000
+
+# The consultation note replayed too (Plan 10-03) -- reopen it and confirm
+# the offline text is now the server's own copy of the draft, not merely a
+# locally-cached echo.
+- tapOn: "Patients"
+- tapOn:
+    text: ".*"
+    index: 0
+- extendedWaitUntil:
+    visible: "Offline-recorded assessment note (D-27 drill)"
+    timeout: 15000
+- assertNotVisible: "Saved offline"
+
+# No stuck/failed items should remain from this single clean cycle.
+- tapOn: "Queue"
+- assertNotVisible: "Needs your retry"
