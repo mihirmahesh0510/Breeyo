@@ -1,0 +1,63 @@
+# Plan 10-07 (PLT-07): human-run Maestro cold-start double-check, run
+# alongside `cold-start.bench.ts`'s `adb shell am start -W` measurement
+# (Task 3, blocking human-verify checkpoint on real mid-range Android
+# hardware -- this cannot be executed here, no device/emulator is attached
+# in this environment; see 10-07-SUMMARY.md).
+#
+# Unlike `cold-start.bench.ts` (which trusts ADB's own `TotalTime` framework
+# metric), this flow measures launch-to-visible from the OUTSIDE: force-stop,
+# launch, and time how long until the queue screen's main element
+# (`check-in-fab`, the one stable testID confirmed on
+# `apps/mobile/src/features/queue/screens/QueueScreen.tsx`) is actually
+# visible and interactive. `extendedWaitUntil` polls repeatedly rather than a
+# single `assertVisible` immediately after `launchApp` so the flow does not
+# fail outright on a slow first frame -- the polling itself is the
+# measurement.
+#
+# Timestamps: run this with `maestro test --format junit -o
+# cold-start-report.xml apps/mobile/.maestro/cold-start-measurement.yaml` (or
+# `--format html`) -- Maestro's own runner records a per-step start/duration
+# in that report, giving the exact wall-clock time the `extendedWaitUntil`
+# step spent polling before `check-in-fab` became visible. That duration is
+# the human-reviewable launch-to-visible number for this flow, the
+# Maestro-side counterpart to `cold-start.bench.ts`'s `TotalTime` value.
+#
+# Login placeholders below must be replaced with a real staging clinic
+# account before running on device, same convention as the sibling
+# `offline-recovery.yaml` flow.
+appId: app.breeyo.mobile
+---
+- stopApp
+# A brief pause after force-stop so the OS has fully torn down the previous
+# process before the next launch is measured as a genuine cold start, not a
+# resume of a still-dying one.
+- wait:
+    timeout: 1000
+
+- launchApp:
+    clearState: false
+
+# ---- Sign in (adjust the credentials below to a real staging clinic
+# account before running on a device -- these are placeholders, matching
+# the sibling offline-recovery.yaml flow's convention). ----
+- tapOn: "priya@clinic.com"
+- inputText: "vet@example-clinic.test"
+- tapOn: "Enter your password"
+- inputText: "REPLACE_WITH_REAL_STAGING_PASSWORD"
+- tapOn: "Log In"
+
+# ---- The measurement: how long from tap-to-launch until the queue
+# screen's main element is visible and interactive. This is first
+# meaningful paint for PLT-07's cold-start target, not merely "some screen
+# rendered." ----
+# Timeout is deliberately looser than the 3000ms PLT-07 target (not a
+# hard-coded pass/fail cutoff at exactly the budget): a human reviewing the
+# report compares the step's ACTUAL recorded duration against the 3000ms
+# target, rather than this flow silently succeeding or failing right at the
+# boundary regardless of the real number.
+- extendedWaitUntil:
+    visible:
+      id: "check-in-fab"
+    timeout: 10000
+- assertVisible:
+    id: "check-in-fab"

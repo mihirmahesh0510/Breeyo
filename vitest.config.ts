@@ -82,6 +82,11 @@ export default defineConfig({
       // reconnect/stale-state proof.
       'apps/api/tests/integration/*.e2e.test.ts',
       'apps/web/tests/integration/*.test.ts',
+      // Plan 10-07 (PLT-07): API p95 and queue real-time latency
+      // performance benchmarks -- `.bench.ts` rather than `.test.ts` because
+      // these assert measured timings, not just pass/fail behavior, but they
+      // still run through vitest per the plan's verify commands.
+      'apps/api/tests/performance/*.bench.ts',
     ],
   },
 });
