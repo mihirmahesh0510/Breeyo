@@ -58,6 +58,8 @@ Each item has: **files**, **root cause**, **fix shape**, and **doc updates requi
 
 ### 10.4 `ClinicalConflictResolutionSheet` (D-08) never mounted in a real screen — **no decision needed**
 
+**Status: ✅ Fixed in `682a976`**
+
 - **Files:** `apps/mobile/src/features/consultation/components/ClinicalConflictResolutionSheet.tsx` (correctly built, just unreached), `apps/mobile/src/features/offline-sync/screens/SyncFailureCenterScreen.tsx` (renders only the generic row today).
 - **Root cause:** `SyncFailureCenterScreen.tsx` was built domain-agnostic and never special-cases a `SAFETY_CRITICAL` clinical conflict to open the structured sheet instead of the generic retry/escalate row.
 - **Fix shape:** in `SyncFailureCenterScreen.tsx`, when a failure-center item's `domain === 'emr'` (or equivalent) and `severity === 'SAFETY_CRITICAL'`, tapping it opens `ClinicalConflictResolutionSheet` instead of (or in addition to) the generic row. TDD: failing component test asserting a clinical conflict item's tap target opens the structured sheet.
