@@ -93,6 +93,8 @@ Each item has: **files**, **root cause**, **fix shape**, and **doc updates requi
 
 ### 10.7 Server-side `queuePreemption.service.ts` is dead code — **no decision needed**
 
+**Status: ✅ Fixed in `e5df6f2`**
+
 - **Files:** `apps/api/src/modules/queue/services/queuePreemption.service.ts` (`pauseLowerTierReplayForQueue`, correctly built, just unreached), `apps/api/src/modules/queue/controllers/queueSync.controller.ts`, and by extension `apps/api/src/modules/emr/controllers/consultationSync.controller.ts` / `apps/api/src/modules/inventory/controllers/inventorySync.controller.ts` (whichever replay path should consult it).
 - **Root cause:** 10-02-PLAN.md's own threat model (T-10-05) names this service as the mitigation for "lower-tier backlog starving live queue recovery" via any replay path, not only the mobile coordinator's own ordering — but no controller ever calls it, so a client bypassing the mobile coordinator (a buggy client, or a direct API call) gets no server-side ordering enforcement at all.
 - **Fix shape:** wire `replayIngest.service.ts` (the shared entry point every domain replay goes through) to call `canRunQueueReplayNow`/`pauseLowerTierReplayForQueue` before applying a non-`QUEUE_HIGH` operation, deferring it if `QUEUE_HIGH` work is pending for the same clinic — genuine server-side enforcement, not just a mobile-side convention. TDD: failing test proving a direct API replay of a `CLINICAL_MEDIUM` operation is deferred while `QUEUE_HIGH` work is outstanding for the same clinic, even without going through the mobile coordinator.
@@ -110,6 +112,8 @@ Each item has: **files**, **root cause**, **fix shape**, and **doc updates requi
 ---
 
 ### 10.9 Unhandled `P2002` on concurrent duplicate replay — **no decision needed**
+
+**Status: ✅ Fixed in `e5df6f2`**
 
 - **Files:** `apps/api/src/modules/sync/services/replayIngest.service.ts` (the `findUnique` → `create` pair).
 - **Root cause:** no transaction or catch around the idempotency check-then-act; a genuine concurrent duplicate submission throws an uncaught `PrismaClientKnownRequestError` (P2002) that falls through to a generic 500.
