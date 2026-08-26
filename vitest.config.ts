@@ -82,6 +82,10 @@ export default defineConfig({
       // reconnect/stale-state proof.
       'apps/api/tests/integration/*.e2e.test.ts',
       'apps/web/tests/integration/*.test.ts',
+      // Verify-fix 10.5: real HTTP + real Postgres integration test for the
+      // conflict-resolve endpoint -- lives outside tests/integration/ since
+      // it's domain-specific (EMR) rather than a cross-module e2e proof.
+      'apps/api/tests/emr/*.test.ts',
       // Plan 10-07 (PLT-07): API p95 and queue real-time latency
       // performance benchmarks -- `.bench.ts` rather than `.test.ts` because
       // these assert measured timings, not just pass/fail behavior, but they
