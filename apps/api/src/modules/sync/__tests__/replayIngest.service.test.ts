@@ -1,7 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { Prisma } from '@prisma/client';
 import { ReplayPriority, ConflictSeverity, ResolutionState } from '@breeyo/types';
 import { ReplayIngestService, type ReplayIngestPrismaClient } from '../services/replayIngest.service';
 import type { ReplayBroadcastService } from '../services/replayBroadcast.service';
+import { QueuePreemptionService } from '../../queue/services/queuePreemption.service';
 
 const CLINIC_ID = '00000000-0000-0000-0000-000000000001';
 const OTHER_CLINIC_ID = '00000000-0000-0000-0000-000000000099';
@@ -37,9 +39,25 @@ function createMockDb() {
         const { clinicId, deviceId, operationId } = clinicId_deviceId_operationId;
         return receipts.get(key(clinicId, deviceId, operationId)) ?? null;
       }),
+      // Verify-fix 10.9: mirrors the real `[clinicId, deviceId, operationId]`
+      // unique constraint -- a `create` for a key that already has a row
+      // throws a real `Prisma.PrismaClientKnownRequestError` (P2002), same
+      // as Postgres would, instead of silently overwriting. This is what
+      // lets a fake, single-threaded `Promise.all` still reproduce the
+      // findUnique-then-create race: both calls' `findUnique` resolve
+      // "not found" before either `create` runs, so the SECOND `create` to
+      // reach this mock hits the same conflict a real concurrent duplicate
+      // request would.
       create: vi.fn(async ({ data }) => {
+        const recordKey = key(data.clinicId as string, data.deviceId as string, data.operationId as string);
+        if (receipts.has(recordKey)) {
+          throw new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+            code: 'P2002',
+            clientVersion: '6.19.3',
+          });
+        }
         const record = { ...data };
-        receipts.set(key(data.clinicId as string, data.deviceId as string, data.operationId as string), record);
+        receipts.set(recordKey, record);
         return record;
       }),
     },
@@ -327,5 +345,246 @@ describe('ReplayIngestService replay-broadcast wiring (verify-fix 10.3)', () => 
     const envelope = buildEnvelope({ operationId: 'op-no-broadcast' });
 
     await expect(bareService.ingest(context, { operations: [envelope] })).resolves.toBeDefined();
+  });
+});
+
+/**
+ * Verify-fix 10.7: `QueuePreemptionService.pauseLowerTierReplayForQueue`
+ * (T-10-05, D-12 to D-14) was built in Plan 10-02 but had no live caller --
+ * a client that skips both the mobile coordinator's own tier-sequencing AND
+ * the queue-specific `/queue/sync/replay` endpoint (e.g. a buggy client, or
+ * a direct API call) could get a lower-tier write applied through this
+ * shared `/sync/replay` ingress with zero server-side ordering enforcement.
+ * These prove the shared entry point itself now enforces queue-first
+ * ordering, independent of what order the caller submitted operations in.
+ */
+describe('ReplayIngestService server-side queue-first preemption (verify-fix 10.7)', () => {
+  let db: ReturnType<typeof createMockDb>;
+  let broadcast: ReturnType<typeof createMockBroadcast>;
+  let service: ReplayIngestService;
+  const context = { clinicId: CLINIC_ID, userId: USER_ID, deviceId: DEVICE_ID };
+
+  beforeEach(() => {
+    db = createMockDb();
+    broadcast = createMockBroadcast();
+    service = new ReplayIngestService(db, broadcast as unknown as ReplayBroadcastService, new QueuePreemptionService());
+  });
+
+  it('defers a CLINICAL_MEDIUM operation submitted directly to the shared ingress while a QUEUE_HIGH operation in the same batch is still outstanding, and applies the QUEUE_HIGH operation', async () => {
+    // Deliberately submitted CLINICAL_MEDIUM FIRST in the array -- a
+    // compliant mobile coordinator would never do this, but nothing stops a
+    // client bypassing it (or calling this endpoint directly) from doing
+    // exactly this. There is no dedicated queue endpoint in play here at
+    // all: this is `POST /sync/replay` alone proving the enforcement.
+    const clinical = buildEnvelope({
+      operationId: 'op-clinical-1',
+      domain: 'emr',
+      entityType: 'Consultation',
+      entityId: 'consultation-preempt-1',
+      priority: ReplayPriority.CLINICAL_MEDIUM,
+    });
+    const queueHigh = buildEnvelope({
+      operationId: 'op-queue-1',
+      domain: 'queue',
+      entityType: 'QueueEntry',
+      entityId: 'entity-preempt-1',
+      priority: ReplayPriority.QUEUE_HIGH,
+    });
+
+    const result = await service.ingest(context, { operations: [clinical, queueHigh] });
+
+    expect(result.acknowledgedOperationIds).toEqual(['op-queue-1']);
+    expect(result.deferredOperationIds).toEqual(['op-clinical-1']);
+    expect(db.__receipts.size).toBe(1);
+    expect(db.syncReplayReceipt.create).toHaveBeenCalledTimes(1);
+    expect(db.syncReplayReceipt.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ operationId: 'op-queue-1' }) }),
+    );
+  });
+
+  it.each([ReplayPriority.CLINICAL_MEDIUM, ReplayPriority.INVENTORY_MEDIUM, ReplayPriority.ANCILLARY_LOW])(
+    'defers a %s operation while QUEUE_HIGH work is outstanding for the same clinic',
+    async (priority) => {
+      const lowerTier = buildEnvelope({
+        operationId: `op-lower-${priority}`,
+        domain: 'inventory',
+        entityType: 'StockMovement',
+        entityId: `entity-lower-${priority}`,
+        priority,
+      });
+      const queueHigh = buildEnvelope({
+        operationId: `op-queue-for-${priority}`,
+        domain: 'queue',
+        entityType: 'QueueEntry',
+        entityId: `entity-queue-${priority}`,
+        priority: ReplayPriority.QUEUE_HIGH,
+      });
+
+      const result = await service.ingest(context, { operations: [lowerTier, queueHigh] });
+
+      expect(result.deferredOperationIds).toContain(`op-lower-${priority}`);
+      expect(result.acknowledgedOperationIds).toContain(`op-queue-for-${priority}`);
+    },
+  );
+
+  it('applies a CLINICAL_MEDIUM operation once every QUEUE_HIGH operation in the batch has already been acknowledged', async () => {
+    const queueHigh = buildEnvelope({
+      operationId: 'op-queue-2',
+      domain: 'queue',
+      entityType: 'QueueEntry',
+      entityId: 'entity-preempt-2',
+      priority: ReplayPriority.QUEUE_HIGH,
+    });
+    const clinical = buildEnvelope({
+      operationId: 'op-clinical-2',
+      domain: 'emr',
+      entityType: 'Consultation',
+      entityId: 'consultation-preempt-2',
+      priority: ReplayPriority.CLINICAL_MEDIUM,
+    });
+
+    // QUEUE_HIGH ordered first this time -- it gets applied, clearing the
+    // batch's outstanding backlog before CLINICAL_MEDIUM is reached.
+    const result = await service.ingest(context, { operations: [queueHigh, clinical] });
+
+    expect(result.acknowledgedOperationIds).toEqual(['op-queue-2', 'op-clinical-2']);
+    expect(result.deferredOperationIds).toEqual([]);
+  });
+
+  it('a QUEUE_HIGH operation with no other pending QUEUE_HIGH work never gets deferred (D-12: queue is always tier 0)', async () => {
+    const queueHigh = buildEnvelope({ operationId: 'op-queue-solo', priority: ReplayPriority.QUEUE_HIGH });
+
+    const result = await service.ingest(context, { operations: [queueHigh] });
+
+    expect(result.acknowledgedOperationIds).toEqual(['op-queue-solo']);
+    expect(result.deferredOperationIds).toEqual([]);
+  });
+
+  it('a QUEUE_HIGH operation deferred by an open conflict still counts as outstanding, so a same-batch lower-tier operation stays deferred too (D-05 + D-12 to D-14)', async () => {
+    db.__seedOpenConflict(CLINIC_ID, 'queue', 'QueueEntry', 'entity-disputed');
+
+    const queueHigh = buildEnvelope({
+      operationId: 'op-queue-disputed',
+      domain: 'queue',
+      entityType: 'QueueEntry',
+      entityId: 'entity-disputed',
+      priority: ReplayPriority.QUEUE_HIGH,
+    });
+    const clinical = buildEnvelope({
+      operationId: 'op-clinical-behind-disputed-queue',
+      domain: 'emr',
+      entityType: 'Consultation',
+      entityId: 'consultation-behind-disputed-queue',
+      priority: ReplayPriority.CLINICAL_MEDIUM,
+    });
+
+    const result = await service.ingest(context, { operations: [queueHigh, clinical] });
+
+    expect(result.deferredOperationIds).toEqual(['op-queue-disputed', 'op-clinical-behind-disputed-queue']);
+    expect(result.acknowledgedOperationIds).toEqual([]);
+  });
+
+  it('D-37: a CLINICAL_MEDIUM operation carrying a safety-critical payload gets no severity-based bypass of queue-first preemption -- it waits its own turn like any other CLINICAL_MEDIUM item', async () => {
+    const queueHigh = buildEnvelope({
+      operationId: 'op-queue-3',
+      domain: 'queue',
+      entityType: 'QueueEntry',
+      entityId: 'entity-preempt-3',
+      priority: ReplayPriority.QUEUE_HIGH,
+    });
+    const clinical = buildEnvelope({
+      operationId: 'op-clinical-safety-critical',
+      domain: 'emr',
+      entityType: 'Consultation',
+      entityId: 'consultation-safety-critical',
+      priority: ReplayPriority.CLINICAL_MEDIUM,
+      payload: { assessment: 'anaphylaxis, requires immediate review' },
+    });
+
+    const result = await service.ingest(context, { operations: [clinical, queueHigh] });
+
+    expect(result.deferredOperationIds).toEqual(['op-clinical-safety-critical']);
+  });
+
+  it('a QUEUE_HIGH operation already acknowledged before this batch (a harmless duplicate resend) does not falsely defer an unrelated lower-tier operation', async () => {
+    const queueHigh = buildEnvelope({
+      operationId: 'op-queue-already-acked',
+      domain: 'queue',
+      entityType: 'QueueEntry',
+      entityId: 'entity-already-acked',
+      priority: ReplayPriority.QUEUE_HIGH,
+    });
+    // Pre-acknowledge it in an earlier call, matching a real flapping resend.
+    await service.ingest(context, { operations: [queueHigh] });
+
+    const clinical = buildEnvelope({
+      operationId: 'op-clinical-after-duplicate-queue',
+      domain: 'emr',
+      entityType: 'Consultation',
+      entityId: 'consultation-after-duplicate-queue',
+      priority: ReplayPriority.CLINICAL_MEDIUM,
+    });
+
+    // Same duplicate QUEUE_HIGH resent again, ahead of the new clinical op.
+    const result = await service.ingest(context, { operations: [queueHigh, clinical] });
+
+    expect(result.acknowledgedOperationIds).toEqual(['op-queue-already-acked', 'op-clinical-after-duplicate-queue']);
+    expect(result.deferredOperationIds).toEqual([]);
+  });
+});
+
+/**
+ * Verify-fix 10.9: the `findUnique` -> `create` idempotency check for
+ * `SyncReplayReceipt` has no transaction and no catch around a concurrent
+ * duplicate's P2002 unique-violation on `[clinicId, deviceId, operationId]`.
+ * `Promise.all` below fires two `ingest()` calls for the exact same
+ * operation without awaiting between them, so both `findUnique` calls
+ * resolve "not found" before either `create` runs -- a genuine race, not
+ * two sequential idempotent calls (the existing "is idempotent" test above
+ * already covers the sequential case and never touches this code path).
+ */
+describe('ReplayIngestService concurrent duplicate replay (verify-fix 10.9)', () => {
+  let db: ReturnType<typeof createMockDb>;
+  let broadcast: ReturnType<typeof createMockBroadcast>;
+  let service: ReplayIngestService;
+  const context = { clinicId: CLINIC_ID, userId: USER_ID, deviceId: DEVICE_ID };
+
+  beforeEach(() => {
+    db = createMockDb();
+    broadcast = createMockBroadcast();
+    service = new ReplayIngestService(db, broadcast as unknown as ReplayBroadcastService);
+  });
+
+  it('two genuinely concurrent replays of the same operation both resolve successfully with equivalent ack envelopes, and only one receipt row is created', async () => {
+    const envelope = buildEnvelope({ operationId: 'op-concurrent-1' });
+
+    const [first, second] = await Promise.all([
+      service.ingest(context, { operations: [envelope] }),
+      service.ingest(context, { operations: [envelope] }),
+    ]);
+
+    expect(first.acknowledgedOperationIds).toEqual(['op-concurrent-1']);
+    expect(second.acknowledgedOperationIds).toEqual(['op-concurrent-1']);
+    expect(first.deferredOperationIds).toEqual([]);
+    expect(second.deferredOperationIds).toEqual([]);
+    expect(first.failureTaskIds).toEqual([]);
+    expect(second.failureTaskIds).toEqual([]);
+
+    // The real proof: exactly one row exists, and exactly one of the two
+    // concurrent `create` calls actually landed -- the other hit P2002 and
+    // was translated into a re-fetch instead of propagating as a 500.
+    expect(db.__receipts.size).toBe(1);
+    expect(db.syncReplayReceipt.create).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not let a genuine P2002 race propagate as an uncaught error', async () => {
+    const envelope = buildEnvelope({ operationId: 'op-concurrent-2' });
+
+    await expect(
+      Promise.all([
+        service.ingest(context, { operations: [envelope] }),
+        service.ingest(context, { operations: [envelope] }),
+      ]),
+    ).resolves.toBeDefined();
   });
 });

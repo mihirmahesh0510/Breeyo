@@ -1,6 +1,8 @@
+import { Prisma } from '@prisma/client';
 import { offlineOperationEnvelopeSchema, syncConflictEnvelopeSchema } from '@breeyo/validators';
-import { ResolutionState, SyncVisibilityState, type SyncConflictEnvelope } from '@breeyo/types';
+import { ReplayPriority, ResolutionState, SyncVisibilityState, type SyncConflictEnvelope } from '@breeyo/types';
 import { ReplayBroadcastService } from './replayBroadcast.service.js';
+import { QueuePreemptionService } from '../../queue/services/queuePreemption.service.js';
 
 /**
  * Minimal Prisma delegate surface this service needs, kept as a local
@@ -94,10 +96,17 @@ export class ReplayIngestService {
    * `routes.ts` wires a real `ReplayBroadcastService(fastify.io)` in for
    * production so a browser tab watching the affected clinic actually hears
    * about a replayed mobile write instead of the push being dead code.
+   *
+   * Verify-fix 10.7: `queuePreemption` defaults to a real
+   * `QueuePreemptionService` instance (it is stateless, same convention) so
+   * every existing/test caller that does not pass one keeps working
+   * unchanged, while every real call site gets genuine server-side D-12 to
+   * D-14 enforcement without having to remember to wire it in.
    */
   constructor(
     private readonly db: ReplayIngestPrismaClient,
     private readonly broadcast: ReplayBroadcastService = new ReplayBroadcastService(null),
+    private readonly queuePreemption: QueuePreemptionService = new QueuePreemptionService(),
   ) {}
 
   async ingest(context: AuthenticatedReplayContext, input: ReplayIngestInput): Promise<ReplayAckResult> {
@@ -107,10 +116,52 @@ export class ReplayIngestService {
     const conflictsCreated: SyncConflictEnvelope[] = [];
 
     const rawOperations = Array.isArray(input.operations) ? input.operations : [];
+
+    // Verify-fix 10.7 (T-10-05, D-12 to D-14): this shared ingress is the one
+    // path any client -- including one bypassing the mobile coordinator's own
+    // tier-ordering, or bypassing the queue-specific `/queue/sync/replay`
+    // endpoint entirely -- can reach for ANY domain, including 'queue'. Start
+    // from "every QUEUE_HIGH envelope in this clinic-scoped batch counts as
+    // not-yet-acknowledged" and only shrink the set once that operation is
+    // actually acknowledged below, so `pauseLowerTierReplayForQueue` (built
+    // in Plan 10-02 but never called by anything until this fix) has a real,
+    // server-computed `queueHighPendingCount` to enforce against instead of
+    // trusting the submitting device's own ordering.
+    const queueHighPending = new Set<string>();
+    for (const raw of rawOperations) {
+      const parsed = offlineOperationEnvelopeSchema.safeParse(raw);
+      if (parsed.success && parsed.data.priority === ReplayPriority.QUEUE_HIGH) {
+        // A QUEUE_HIGH envelope that already has a receipt (a duplicate or
+        // flapping resend of already-acknowledged work) must not count as
+        // outstanding backlog -- otherwise a harmless duplicate resend in
+        // the same batch would needlessly defer an unrelated lower-tier
+        // operation that appears earlier in the array.
+        // eslint-disable-next-line no-await-in-loop -- small, bounded
+        // pre-scan; correctness here matters more than batching these.
+        const existing = await this.db.syncReplayReceipt.findUnique({
+          where: {
+            clinicId_deviceId_operationId: {
+              clinicId: context.clinicId,
+              deviceId: context.deviceId,
+              operationId: parsed.data.operationId,
+            },
+          },
+        });
+        if (!existing) queueHighPending.add(parsed.data.operationId);
+      }
+    }
+
     for (const raw of rawOperations) {
       // eslint-disable-next-line no-await-in-loop -- idempotency/conflict
       // checks must happen in submission order within one batch.
-      await this.ingestOneOperation(context, raw, acknowledgedOperationIds, deferredOperationIds, failureTaskIds);
+      await this.ingestOneOperation(
+        context,
+        raw,
+        queueHighPending,
+        acknowledgedOperationIds,
+        deferredOperationIds,
+        failureTaskIds,
+      );
     }
 
     const rawConflicts = Array.isArray(input.conflicts) ? input.conflicts : [];
@@ -143,6 +194,7 @@ export class ReplayIngestService {
   private async ingestOneOperation(
     context: AuthenticatedReplayContext,
     raw: unknown,
+    queueHighPending: Set<string>,
     acknowledgedOperationIds: string[],
     deferredOperationIds: string[],
     failureTaskIds: string[],
@@ -163,6 +215,24 @@ export class ReplayIngestService {
 
     const envelope = parsed.data;
 
+    // Verify-fix 10.7 (T-10-05, D-12 to D-14, D-37): genuine server-side
+    // enforcement of queue-first replay, independent of the mobile
+    // coordinator's own ordering -- a lower-tier operation is deferred
+    // (never applied) while QUEUE_HIGH work is still outstanding for this
+    // clinic-scoped batch. `pauseLowerTierReplayForQueue` has no severity
+    // parameter at all (D-37), so this cannot be bypassed by a
+    // SAFETY_CRITICAL envelope either.
+    if (envelope.priority !== ReplayPriority.QUEUE_HIGH) {
+      const preemption = this.queuePreemption.pauseLowerTierReplayForQueue({
+        currentTierPriority: envelope.priority,
+        queueHighPendingCount: queueHighPending.size,
+      });
+      if (preemption.shouldPause) {
+        deferredOperationIds.push(envelope.operationId);
+        return;
+      }
+    }
+
     const existingReceipt = await this.db.syncReplayReceipt.findUnique({
       where: {
         clinicId_deviceId_operationId: {
@@ -178,6 +248,7 @@ export class ReplayIngestService {
       // already-acknowledged operation must not create a second receipt or
       // re-apply any side effect.
       acknowledgedOperationIds.push(envelope.operationId);
+      queueHighPending.delete(envelope.operationId);
       return;
     }
 
@@ -195,25 +266,59 @@ export class ReplayIngestService {
       // D-05: review before overwrite -- do not stack another write on an
       // entity that already has an unresolved conflict. The operation stays
       // in the mobile backlog (not dropped) and is expected to be replayed
-      // again after the conflict resolves.
+      // again after the conflict resolves. Deliberately NOT removed from
+      // `queueHighPending` here even if this is itself a QUEUE_HIGH
+      // envelope: an unresolved conflict means the queue-tier operation is
+      // still not acknowledged, so lower tiers must keep waiting on it too.
       deferredOperationIds.push(envelope.operationId);
       return;
     }
 
-    await this.db.syncReplayReceipt.create({
-      data: {
-        clinicId: context.clinicId,
-        deviceId: context.deviceId,
-        operationId: envelope.operationId,
-        // Server-derived, never the envelope's own userId (T-10-01).
-        userId: context.userId,
-        domain: envelope.domain,
-        entityType: envelope.entityType,
-        entityId: envelope.entityId,
-      },
-    });
+    try {
+      await this.db.syncReplayReceipt.create({
+        data: {
+          clinicId: context.clinicId,
+          deviceId: context.deviceId,
+          operationId: envelope.operationId,
+          // Server-derived, never the envelope's own userId (T-10-01).
+          userId: context.userId,
+          domain: envelope.domain,
+          entityType: envelope.entityType,
+          entityId: envelope.entityId,
+        },
+      });
+    } catch (err) {
+      // Verify-fix 10.9: the `findUnique` above and this `create` are not
+      // transactional, so a genuinely concurrent duplicate replay (two
+      // requests for the same clinicId+deviceId+operationId racing each
+      // other) can both see no existing receipt and both attempt to create
+      // one. The `[clinicId, deviceId, operationId]` unique constraint lets
+      // exactly one of them win; the loser hits P2002 here. Matching this
+      // repo's established pattern (`inventory-item.repository.ts`,
+      // `invoice.service.ts`): treat that as "already acknowledged by the
+      // request that won the race" and return the real receipt's ack
+      // envelope, instead of letting a genuine concurrent duplicate 500.
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        const racedReceipt = await this.db.syncReplayReceipt.findUnique({
+          where: {
+            clinicId_deviceId_operationId: {
+              clinicId: context.clinicId,
+              deviceId: context.deviceId,
+              operationId: envelope.operationId,
+            },
+          },
+        });
+        if (racedReceipt) {
+          acknowledgedOperationIds.push(envelope.operationId);
+          queueHighPending.delete(envelope.operationId);
+          return;
+        }
+      }
+      throw err;
+    }
 
     acknowledgedOperationIds.push(envelope.operationId);
+    queueHighPending.delete(envelope.operationId);
 
     // Verify-fix 10.3: a browser tab watching this entity should hear about
     // the applied mobile replay without waiting for its own next fetch.

@@ -89,3 +89,17 @@ npx vitest run apps/mobile/src/features/offline-sync/__tests__/syncCoordinator.t
 ```
 
 38/38 tests passing. `npx prisma validate --schema apps/api/prisma/schema.prisma` valid. Full repo `npx vitest run` (491 tests) green with the generated client in place — the 12 pre-`prisma generate` failures seen mid-Task-2 (`Cannot find module '.prisma/client/default'`) are gone now that Task 3 has run.
+
+## Verify-Fix Follow-Up
+
+Per `.planning/PHASE-10-VERIFY-FIX-PLAN.md` finding **10.9**: a `no-mistakes --verify phase 10` pass found the `SyncReplayReceipt` idempotency check in `apps/api/src/modules/sync/services/replayIngest.service.ts` -- a `findUnique` on `[clinicId, deviceId, operationId]` followed by a `create` -- had no transaction and no catch around the create. Two genuinely concurrent replay requests for the exact same operation could both see "no existing receipt" from `findUnique` before either `create` ran, and the second `create` to reach Postgres would throw an uncaught `PrismaClientKnownRequestError` (P2002) on the `[clinicId, deviceId, operationId]` unique constraint, surfacing as a generic 500 to a legitimate concurrent duplicate replay instead of the idempotent no-op every other duplicate path in this service already provides.
+
+Fixed by wrapping the `create` call in a `try/catch`: on a `P2002` whose failing constraint is this receipt's own unique key, the service re-fetches the real (winning) receipt via the same `findUnique` shape and returns it as an ordinary acknowledged operation, matching this repo's established pattern (`inventory-item.repository.ts`'s barcode uniqueness handling, `billing/invoice.service.ts`'s one-draft-per-consultation handling). If no receipt is found on re-fetch (an unexpected case, since the `P2002` must have come from something), the original error is re-thrown rather than silently swallowed.
+
+TDD: `createMockDb()` in `replayIngest.service.test.ts` was extended so its `syncReplayReceipt.create` mock throws a real `Prisma.PrismaClientKnownRequestError('...', { code: 'P2002', clientVersion: '6.19.3' })` when called twice for the same key -- mirroring the real unique index -- which two new unit tests exercise via `Promise.all` (JS's single-threaded interleaving still reproduces the race here: both calls' `findUnique` resolve "not found" before either `create` runs, since `Promise.all` starts both calls before awaiting either). A new real-HTTP-plus-real-Postgres test in `apps/api/tests/sync/replay-ingest-server-side-enforcement.test.ts` fires two genuinely concurrent `POST /sync/replay` requests for the same operation and confirms both resolve 200 with equivalent ack envelopes and exactly one `SyncReplayReceipt` row exists in the database -- re-run four times in isolation against the pre-fix code to confirm the race reliably reproduces (it is not a flaky, order-dependent artifact) before the fix made it reliably pass.
+
+Verify: `npx vitest run apps/api/src/modules/sync/__tests__/replayIngest.service.test.ts apps/api/tests/sync/replay-ingest-server-side-enforcement.test.ts`.
+- `replayIngest.service.test.ts`: 26/26 passing (18 pre-existing + 8 new: 6 for verify-fix 10.7, 2 for verify-fix 10.9).
+- `replay-ingest-server-side-enforcement.test.ts` (new file): 3/3 passing.
+- Root `npx vitest run`: 83 test files, 1130 tests passed, 0 failed.
+- `apps/api` full suite (real Postgres 16 + Redis 7): 173 test files passed, 9 skipped, 2151 tests passed, 80 todo (pre-existing), 0 failed.
