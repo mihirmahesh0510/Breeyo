@@ -196,4 +196,58 @@ describe('runReplayCycle', () => {
     // retry flow -- runReplayCycle never silently drops it.
     expect(store[ReplayPriority.QUEUE_HIGH]).toHaveLength(1);
   });
+
+  describe('working-set anchor lifecycle on catch-up (D-35, verify-fix 10.8)', () => {
+    it('calls clearWorkingSetAnchor once the cycle ends with every tier genuinely empty', async () => {
+      const store = createStore({
+        [ReplayPriority.QUEUE_HIGH]: [op('q1', ReplayPriority.QUEUE_HIGH)],
+      });
+      const sendOperation = vi.fn(async (pending: ReplayableOperation) => {
+        store[pending.priority] = store[pending.priority].filter((o) => o.operationId !== pending.operationId);
+        return { operationId: pending.operationId, succeeded: true };
+      });
+      const clearWorkingSetAnchor = vi.fn(async () => undefined);
+
+      const result = await runReplayCycle({
+        getPendingOperations: (priority) => store[priority],
+        sendOperation,
+        clearWorkingSetAnchor,
+      });
+
+      expect(result.caughtUp).toBe(true);
+      expect(clearWorkingSetAnchor).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not call clearWorkingSetAnchor when a tier still has a leftover failed operation', async () => {
+      const store = createStore({
+        [ReplayPriority.QUEUE_HIGH]: [op('q-fail', ReplayPriority.QUEUE_HIGH)],
+      });
+      const sendOperation = vi.fn(async () => ({
+        operationId: 'q-fail',
+        succeeded: false,
+        errorCode: 'SERVER_ERROR',
+      }));
+      const clearWorkingSetAnchor = vi.fn(async () => undefined);
+
+      const result = await runReplayCycle({
+        getPendingOperations: (priority) => store[priority],
+        sendOperation,
+        clearWorkingSetAnchor,
+      });
+
+      expect(result.caughtUp).toBe(false);
+      expect(clearWorkingSetAnchor).not.toHaveBeenCalled();
+    });
+
+    it('reports caughtUp with no clearWorkingSetAnchor dep supplied, without throwing (dep stays optional)', async () => {
+      const store = createStore({});
+
+      const result = await runReplayCycle({
+        getPendingOperations: (priority) => store[priority],
+        sendOperation: vi.fn(),
+      });
+
+      expect(result.caughtUp).toBe(true);
+    });
+  });
 });

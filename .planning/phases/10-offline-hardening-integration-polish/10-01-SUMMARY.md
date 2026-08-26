@@ -103,3 +103,16 @@ Verify: `npx vitest run apps/api/src/modules/sync/__tests__/replayIngest.service
 - `replay-ingest-server-side-enforcement.test.ts` (new file): 3/3 passing.
 - Root `npx vitest run`: 83 test files, 1130 tests passed, 0 failed.
 - `apps/api` full suite (real Postgres 16 + Redis 7): 173 test files passed, 9 skipped, 2151 tests passed, 80 todo (pre-existing), 0 failed.
+
+Per `.planning/PHASE-10-VERIFY-FIX-PLAN.md` finding **10.8**: a `no-mistakes --verify phase 10` pass found `clearWorkingSetAnchor` in `apps/mobile/src/features/offline-sync/db/offlineDb.ts` -- correctly built to clear the same-day working-set anchor (D-35) once a device fully reconnects -- had zero live callers. `runReplayCycle` in `syncCoordinator.ts` (the natural call site: it already knows exactly when every priority tier's local backlog has drained) never invoked it, so after the first offline stretch the anchor stayed frozen forever, silently defeating D-35's same-day working-set boundary for every subsequent offline stretch on that device.
+
+Fixed by giving `ReplayCycleDeps` an optional `clearWorkingSetAnchor` dependency and `ReplayCycleResult` a `caughtUp` field. After the drain loop, `runReplayCycle` re-checks every priority tier's pending count fresh (deliberately not trusting the loop's own natural exit, since a head-of-line failure earlier in the same cycle can advance `priorityIndex` past a tier that still has a real pending operation left in it) and only calls `deps.clearWorkingSetAnchor()` when the backlog is genuinely empty across ALL tiers. The real caller wires this to `clearWorkingSetAnchor(db)`; the dependency stays optional so existing tests/callers that don't care about the anchor lifecycle are unaffected.
+
+TDD: three new unit tests in `syncCoordinator.test.ts` cover the hook firing only on a genuine full drain, NOT firing when a tier is left with a leftover failed operation, and the dependency staying optional. A new integration test in `offlineDb.test.ts` composes `runReplayCycle` with the REAL `getOrCreateWorkingSetAnchor`/`clearWorkingSetAnchor` functions against the fake SQLite db, proving the `sync_meta` anchor row is actually deleted after a fully-caught-up cycle and that the next `getOrCreateWorkingSetAnchor` call (simulating the next offline stretch) mints a genuinely new anchor value rather than reusing the stale one. Confirmed RED against the pre-fix code (all four new assertions failed with `caughtUp`/anchor-clearing behavior undefined) before the fix made them pass.
+
+Verify: `npx vitest run apps/mobile/src/features/offline-sync/__tests__/syncCoordinator.test.ts apps/mobile/src/features/offline-sync/__tests__/offlineDb.test.ts`.
+- `syncCoordinator.test.ts`: 11/11 passing (8 pre-existing + 3 new).
+- `offlineDb.test.ts`: 9/9 passing (8 pre-existing + 1 new).
+- Root `npx vitest run`: 83 test files, 1136 tests passed, 0 failed.
+- `apps/mobile` full suite: 54 test files, 878 tests passed, 0 failed.
+- `apps/api` full suite (real Postgres 16 + Redis 7): 173 test files passed, 9 skipped, 2153 tests passed, 80 todo (pre-existing), 0 failed.

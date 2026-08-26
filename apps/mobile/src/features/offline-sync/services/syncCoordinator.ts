@@ -32,11 +32,31 @@ export interface ReplayCycleDeps {
   getPendingOperations: (priority: ReplayPriority) => ReplayableOperation[] | Promise<ReplayableOperation[]>;
   /** Sends exactly one operation to the server and reports the outcome. */
   sendOperation: (operation: ReplayableOperation) => Promise<ReplayOperationOutcome>;
+  /**
+   * Called once this replay cycle ends with an empty backlog across EVERY
+   * priority tier -- the genuine "caught up" transition (D-35), not just
+   * one tier draining while another still has pending/failed work left in
+   * it. The real caller wires this to `clearWorkingSetAnchor(db)` from
+   * `offlineDb.ts` so the NEXT offline stretch mints its own fresh anchor
+   * instead of silently reusing a stale one (verify-fix 10.8). Optional so
+   * existing callers/tests that don't care about the anchor lifecycle don't
+   * need to supply it.
+   */
+  clearWorkingSetAnchor?: () => void | Promise<void>;
 }
 
 export interface ReplayCycleResult {
   processedOperationIds: string[];
   preemptions: ReplayPreemptionEvent[];
+  /**
+   * True only when this cycle ended with every priority tier's backlog
+   * genuinely empty, checked fresh after the drain loop below -- NOT
+   * inferred from the loop merely reaching the end of the tier ladder. A
+   * head-of-line failure advances `priorityIndex` past a tier that can
+   * still have a real pending (unsent) operation left in it, so relying on
+   * loop completion alone would misreport that as "caught up."
+   */
+  caughtUp: boolean;
 }
 
 /**
@@ -135,5 +155,17 @@ export async function runReplayCycle(deps: ReplayCycleDeps): Promise<ReplayCycle
     // Otherwise stay on the same tier and keep draining it.
   }
 
-  return { processedOperationIds, preemptions };
+  // Verify-fix 10.8 (D-35): re-check every tier fresh rather than trusting
+  // the loop's natural exit -- a head-of-line failure earlier in this same
+  // cycle can leave a tier non-empty even after `priorityIndex` has moved
+  // past it. Only a genuinely empty backlog across ALL tiers is the
+  // "caught up" transition that should clear the working-set anchor.
+  const finalCounts = await collectPendingCounts(deps, REPLAY_PRIORITIES);
+  const caughtUp = REPLAY_PRIORITIES.every((tierPriority) => (finalCounts[tierPriority] ?? 0) === 0);
+
+  if (caughtUp && deps.clearWorkingSetAnchor) {
+    await deps.clearWorkingSetAnchor();
+  }
+
+  return { processedOperationIds, preemptions, caughtUp };
 }

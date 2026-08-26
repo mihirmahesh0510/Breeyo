@@ -282,6 +282,23 @@ export class QueueOfflineReplayService {
       // still gets its own replay receipt so a future flapping replay of
       // THIS operationId also resolves as an idempotent no-op rather than
       // re-merging (harmlessly) or, worse, re-creating a review task.
+      //
+      // Verify-fix 10.11: "keep its check-in time" must mean the
+      // chronologically earlier of the two operations' own payload
+      // `checkedInAt` instants, not whichever operation's replay merely won
+      // the race to reach the server first. `existingActive.queuePriorityAt`
+      // already holds the payload `checkedInAt` of the operation that
+      // created it (see the "preserves the offline device's original
+      // check-in instant" rule above) -- if THIS operation's payload
+      // `checkedInAt` is actually earlier, this operation lost the
+      // arrival-order race but was the real first check-in, so the entry's
+      // ordering timestamp is corrected to match instead of silently
+      // keeping the later arrival's value.
+      const incomingCheckedInAt = new Date(payload.checkedInAt);
+      if (incomingCheckedInAt.getTime() < existingActive.queuePriorityAt.getTime()) {
+        await this.gateway.updateEntry(existingActive.id, { queuePriorityAt: incomingCheckedInAt });
+      }
+
       await this.recordReceipt(context, operationId, 'queue', QUEUE_CHECK_IN_ENTITY_TYPE, existingActive.id);
       const reviewTaskId = await this.createOperationalReviewTask(context, {
         operationId,

@@ -181,4 +181,30 @@ describe('offlineDb', () => {
     expect(row.working_set_anchored_at).toBeTruthy();
     expect(row.is_fully_editable).toBe(1);
   });
+
+  it('a fully-caught-up runReplayCycle clears the anchor so the next offline write mints a fresh one (verify-fix 10.8, D-35)', async () => {
+    const { runReplayCycle } = await import('../services/syncCoordinator');
+
+    const first = await getOrCreateWorkingSetAnchor(db);
+
+    const result = await runReplayCycle({
+      getPendingOperations: () => [],
+      sendOperation: vi.fn(),
+      clearWorkingSetAnchor: () => clearWorkingSetAnchor(db),
+    });
+
+    expect(result.caughtUp).toBe(true);
+    // The anchor row is really gone from sync_meta, not just reported clear.
+    expect(db.__tables.sync_meta).toHaveLength(0);
+
+    // The next offline write (a fresh writeWorkingSetSnapshot call, standing
+    // in for "the next offline stretch") must mint a NEW anchor rather than
+    // reusing the stale one from before reconnect.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2027-01-01T00:00:00.000Z'));
+    const second = await getOrCreateWorkingSetAnchor(db);
+    vi.useRealTimers();
+
+    expect(second).not.toBe(first);
+  });
 });

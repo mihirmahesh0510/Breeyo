@@ -248,6 +248,78 @@ describe('QueueOfflineReplayService', () => {
       expect(deviceBResult.entryId).toBe(deviceAResult.entryId);
       expect(entries).toHaveLength(1);
     });
+
+    it('keeps the chronologically earlier checkedInAt when it arrives at the server AFTER the later check-in already created the live entry (verify-fix 10.11)', async () => {
+      // Operation A (payload checkedInAt = T2, the LATER instant) already
+      // replayed and created the live entry -- its queuePriorityAt reflects
+      // that later instant, per the "preserves the offline device's
+      // original check-in instant as queuePriorityAt" rule above.
+      const existingEntry = makeEntry({
+        id: ENTRY_ID,
+        checkedInAt: FIXED_NOW,
+        queuePriorityAt: new Date('2026-08-24T09:35:00.000Z'), // T2, later
+      });
+      vi.mocked(gateway.findTodayActiveEntryForPet).mockResolvedValue(existingEntry);
+      vi.mocked(gateway.updateEntry).mockResolvedValue(
+        makeEntry({
+          id: ENTRY_ID,
+          checkedInAt: FIXED_NOW,
+          queuePriorityAt: new Date('2026-08-24T09:30:00.000Z'),
+        }),
+      );
+
+      // Operation B (payload checkedInAt = T1, the EARLIER instant) is only
+      // replaying now, out of network-arrival order.
+      const secondDeviceContext = { clinicId: CLINIC_ID, userId: USER_ID, deviceId: DEVICE_B };
+      const secondEnvelope = baseEnvelope({
+        deviceId: DEVICE_B,
+        operationId: 'op-2',
+        payload: {
+          petId: PET_ID,
+          isEmergency: false,
+          checkedInAt: '2026-08-24T09:30:00.000Z', // T1, earlier than existingEntry's T2
+        },
+      });
+
+      const result = await service.replayQueueOperation(secondDeviceContext, secondEnvelope);
+
+      expect(result.status).toBe('MERGED_DUPLICATE_CHECK_IN');
+      expect(result.entryId).toBe(ENTRY_ID);
+      // The chronologically-earlier operation's instant wins, correcting
+      // the entry's queue-ordering timestamp even though it lost the race
+      // to create the live row.
+      expect(gateway.updateEntry).toHaveBeenCalledWith(
+        ENTRY_ID,
+        expect.objectContaining({ queuePriorityAt: new Date('2026-08-24T09:30:00.000Z') }),
+      );
+    });
+
+    it('does not touch the existing entry\'s timestamp when the newly-arriving operation is not actually earlier', async () => {
+      const existingEntry = makeEntry({
+        id: ENTRY_ID,
+        checkedInAt: FIXED_NOW,
+        queuePriorityAt: new Date('2026-08-24T09:30:00.000Z'),
+      });
+      vi.mocked(gateway.findTodayActiveEntryForPet).mockResolvedValue(existingEntry);
+
+      const secondEnvelope = baseEnvelope({
+        deviceId: DEVICE_B,
+        operationId: 'op-2',
+        payload: {
+          petId: PET_ID,
+          isEmergency: false,
+          checkedInAt: '2026-08-24T09:31:00.000Z', // later than existingEntry's queuePriorityAt
+        },
+      });
+
+      const result = await service.replayQueueOperation(
+        { clinicId: CLINIC_ID, userId: USER_ID, deviceId: DEVICE_B },
+        secondEnvelope,
+      );
+
+      expect(result.status).toBe('MERGED_DUPLICATE_CHECK_IN');
+      expect(gateway.updateEntry).not.toHaveBeenCalled();
+    });
   });
 
   describe('status transition replay preserves Phase 3 rules and reviews mismatches', () => {
