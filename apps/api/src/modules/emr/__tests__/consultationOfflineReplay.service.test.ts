@@ -195,6 +195,11 @@ describe('ConsultationOfflineReplayService', () => {
       // D-08: both full payloads must be captured for explicit comparison.
       expect(createArgs.localPayloadJson).toEqual(local);
       expect(createArgs.serverPayloadJson).toEqual(liveServerDraft);
+      // verify-fix 10.5: the offline device's own last-known-synced baseline
+      // is captured too, so `POST .../conflicts/:conflictId/resolve`'s
+      // MERGE_SAFE_FIELDS action can rerun the real three-way diff instead of
+      // guessing.
+      expect(createArgs.baselinePayloadJson).toEqual(base);
       // D-09/D-24: the assigned clinician (the consultation's own vetId) owns
       // resolution -- both the recommendation and the actual resolution
       // owner, since a consultation always has a definite assigned vet.

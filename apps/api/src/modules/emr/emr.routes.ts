@@ -7,6 +7,7 @@ import { createEmrController } from './emr.controller.js';
 import {
   createConsultationSyncController,
   buildConsultationOfflineReplayService,
+  buildConsultationConflictResolutionService,
 } from './controllers/consultationSync.controller.js';
 import { createNotificationBus } from '../notifications/notification-bus.js';
 import { ReplayBroadcastService } from '../sync/services/replayBroadcast.service.js';
@@ -76,8 +77,9 @@ export default async function emrRoutes(fastify: FastifyInstance) {
   // scoped `replay:applied`/`replay:conflict-opened` event instead of
   // `ReplayBroadcastService` sitting unreached.
   const replayBroadcast = new ReplayBroadcastService(fastify.io ?? null);
-  const consultationSyncController = createConsultationSyncController((db) =>
-    buildConsultationOfflineReplayService(db, replayBroadcast),
+  const consultationSyncController = createConsultationSyncController(
+    (db) => buildConsultationOfflineReplayService(db, replayBroadcast),
+    (db) => buildConsultationConflictResolutionService(db, replayBroadcast),
   );
 
   const preHandler = [authenticate, tenantContext];
@@ -95,6 +97,18 @@ export default async function emrRoutes(fastify: FastifyInstance) {
   // queue's `/queue/sync/replay` -- Fastify's radix router does not confuse
   // it with the parametric `/consultations/:consultationId` routes above.
   fastify.post('/consultations/sync/replay', { preHandler, handler: consultationSyncController.replayHandler });
+
+  // Verify-fix 10.5: moves a `SyncConflictRecord` off `OPEN`/`GUIDED_RETRY`/
+  // `ESCALATED` via one of `ClinicalConflictResolutionSheet.tsx`'s four
+  // resolve actions (KEEP_LOCAL/KEEP_SERVER/MERGE_SAFE_FIELDS/ESCALATE).
+  // Registered as its own parametric segment under `/consultations/:consultationId`
+  // -- Fastify's radix router distinguishes it from the fixed
+  // `/consultations/sync/replay` segment above and from the other
+  // `/consultations/:consultationId/*` routes below by its trailing path.
+  fastify.post(
+    '/consultations/:consultationId/conflicts/:conflictId/resolve',
+    { preHandler, handler: consultationSyncController.resolveHandler },
+  );
 
   // Lock management
   fastify.post('/consultations/:consultationId/heartbeat', { preHandler, handler: controller.heartbeatHandler });

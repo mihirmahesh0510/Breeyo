@@ -1914,6 +1914,13 @@ model SyncConflictRecord {
   entityType             String              @map("entity_type")
   entityId               String              @map("entity_id")
   severity               SyncConflictSeverity
+  /// verify-fix 10.5: the offline device's own last-known-synced draft
+  /// snapshot, captured at conflict-creation time so `POST
+  /// .../conflicts/:conflictId/resolve`'s MERGE_SAFE_FIELDS action can rerun
+  /// `classifyClinicalConflict`'s real three-way diff instead of guessing.
+  /// Nullable because non-EMR (queue/inventory) OPERATIONAL conflicts have no
+  /// three-way-diff concept and never set it.
+  baselinePayloadJson    Json?               @map("baseline_payload_json")
   localPayloadJson       Json                @map("local_payload_json")
   serverPayloadJson      Json                @map("server_payload_json")
   recommendedOwnerUserId String?             @map("recommended_owner_user_id") @db.Uuid

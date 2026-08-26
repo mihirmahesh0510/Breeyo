@@ -9,6 +9,12 @@ import {
   type ConsultationReplayReceiptStore,
   type ClinicalConflictRecordStore,
 } from '../services/consultationOfflineReplay.service.js';
+import {
+  ConsultationConflictResolutionService,
+  CONSULTATION_CONFLICT_RESOLUTION_ACTIONS,
+  type ConsultationConflictResolutionGateway,
+  type ConflictResolutionRecordStore,
+} from '../services/consultationConflictResolution.service.js';
 import { ReplayBroadcastService } from '../../sync/services/replayBroadcast.service.js';
 
 /**
@@ -23,6 +29,23 @@ import { ReplayBroadcastService } from '../../sync/services/replayBroadcast.serv
 const consultationReplayRequestBodySchema = z.object({
   deviceId: z.string().trim().min(1),
   operations: z.array(z.unknown()).default([]),
+});
+
+/**
+ * Verify-fix 10.5: params for `POST
+ * /consultations/:consultationId/conflicts/:conflictId/resolve`. The sheet's
+ * four actions are whole-conflict choices (D-08) -- no per-field selection
+ * data exists in the request body because the UI never offers per-field
+ * granularity (`ClinicalConflictResolutionSheet.tsx` has no per-field
+ * controls, only the four buttons this schema's `action` enum mirrors).
+ */
+const conflictResolveParamsSchema = z.object({
+  consultationId: z.string().min(1),
+  conflictId: z.string().min(1),
+});
+
+const conflictResolveBodySchema = z.object({
+  action: z.enum(CONSULTATION_CONFLICT_RESOLUTION_ACTIONS),
 });
 
 function validationError(reply: FastifyReply, issues: { message: string }[]) {
@@ -57,12 +80,32 @@ export function buildConsultationOfflineReplayService(
 }
 
 /**
+ * Verify-fix 10.5: same construction convention as
+ * `buildConsultationOfflineReplayService` just above -- `EmrRepository`'s
+ * public method names/signatures satisfy `ConsultationConflictResolutionGateway`
+ * structurally, and `db.syncConflictRecord`'s generated Prisma delegate
+ * satisfies `ConflictResolutionRecordStore` structurally (`findFirst`/
+ * `update` are both real Prisma Client methods).
+ */
+export function buildConsultationConflictResolutionService(
+  db: TenantPrismaClient,
+  broadcast: ReplayBroadcastService = new ReplayBroadcastService(null),
+): ConsultationConflictResolutionService {
+  return new ConsultationConflictResolutionService(
+    new EmrRepository(db) as unknown as ConsultationConflictResolutionGateway,
+    db.syncConflictRecord as unknown as ConflictResolutionRecordStore,
+    broadcast,
+  );
+}
+
+/**
  * D-30: takes a factory rather than a prebuilt service, so every handler
  * resolves its Prisma handle from `request.db` (the tenant-scoped,
  * RLS-bound client) instead of sharing one admin client across all clinics.
  */
 export function createConsultationSyncController(
   buildReplayService: (db: TenantPrismaClient) => ConsultationOfflineReplayService,
+  buildResolutionService: (db: TenantPrismaClient) => ConsultationConflictResolutionService,
 ) {
   return {
     async replayHandler(request: FastifyRequest, reply: FastifyReply) {
@@ -130,6 +173,41 @@ export function createConsultationSyncController(
       }
 
       return reply.status(200).send(responseBody);
+    },
+
+    /**
+     * POST /consultations/:consultationId/conflicts/:conflictId/resolve
+     * (verify-fix 10.5). Any error the service throws (not-found, already
+     * resolved) carries `.statusCode`/`.code` and is left to propagate to
+     * the centralized `error-handler.ts`, the same convention
+     * `EmrService.addAddendum` already uses -- no try/catch here.
+     */
+    async resolveHandler(request: FastifyRequest, reply: FastifyReply) {
+      const params = conflictResolveParamsSchema.safeParse(request.params);
+      if (!params.success) {
+        return validationError(reply, params.error.errors);
+      }
+
+      const body = conflictResolveBodySchema.safeParse(request.body);
+      if (!body.success) {
+        return validationError(reply, body.error.errors);
+      }
+
+      const resolutionService = buildResolutionService(request.db);
+      const context = {
+        clinicId: request.user.activeClinicId,
+        userId: request.user.id,
+        userName: (request as any).userName ?? 'Unknown',
+      };
+
+      const outcome = await resolutionService.resolveConflict(
+        context,
+        params.data.consultationId,
+        params.data.conflictId,
+        body.data.action,
+      );
+
+      return reply.status(200).send({ data: outcome });
     },
   };
 }

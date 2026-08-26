@@ -245,6 +245,7 @@ export class ConsultationOfflineReplayService {
       const conflictId = await this.createConflictRecord(context, {
         operationId: envelope.operationId,
         consultationId: consultation.id,
+        baselinePayload: baseline,
         localPayload: draft,
         serverPayload: serverDraft,
         ownerUserId: classification.recommendedOwnerUserId!,
@@ -362,6 +363,7 @@ export class ConsultationOfflineReplayService {
     input: {
       operationId: string;
       consultationId: string;
+      baselinePayload: SaveDraftInput;
       localPayload: SaveDraftInput;
       serverPayload: SaveDraftInput;
       ownerUserId: string;
@@ -376,6 +378,11 @@ export class ConsultationOfflineReplayService {
         entityType: CONSULTATION_DRAFT_ENTITY_TYPE,
         entityId: input.consultationId,
         severity: ConflictSeverity.SAFETY_CRITICAL,
+        // verify-fix 10.5: persisted so `POST .../conflicts/:conflictId/resolve`'s
+        // MERGE_SAFE_FIELDS action can rerun `classifyClinicalConflict`'s real
+        // three-way diff at resolution time instead of guessing from only the
+        // two payload snapshots.
+        baselinePayloadJson: input.baselinePayload,
         localPayloadJson: input.localPayload,
         serverPayloadJson: input.serverPayload,
         // D-09/D-24: a consultation always has a definite owning vet, so
