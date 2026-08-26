@@ -8,6 +8,28 @@
 
 ---
 
+## Execution status (2026-08-26)
+
+All 11 findings executed, TDD throughout (failing test first, confirmed failing for the right reason against real behavior — real concurrency/real HTTP where the finding called for it, not just a mock — then minimal implementation), each committed separately on `breeyo/phase-10-offline-hardening-integration-polish`:
+
+| # | Finding | Commit | Status |
+|---|---|---|---|
+| 10.1 | EMR replay doesn't check `consultation.status` — late replay after finalization | `55bdcf5` | ✅ Fixed |
+| 10.2 | Inventory offline actions never wired into any screen | `4985761` | ✅ Fixed |
+| 10.3 | `ReplayBroadcastService` never called from replay-ingest | `f5ce535` | ✅ Fixed |
+| 10.4 | `ClinicalConflictResolutionSheet` (D-08) never mounted in a real screen | `682a976` | ✅ Fixed |
+| 10.5 | No route can move a `SyncConflictRecord` to `RESOLVED` | `6178f86` | ✅ Fixed |
+| 10.6 | `retryEscalation.service.ts` has no live caller; `OnDutyRosterProvider` has no implementation | `5ded1ef` | ✅ Fixed |
+| 10.7 | Server-side `queuePreemption.service.ts` is dead code | `e5df6f2` | ✅ Fixed |
+| 10.8 | `clearWorkingSetAnchor` never called | `eae9ab3` | ✅ Fixed |
+| 10.9 | Unhandled `P2002` on concurrent duplicate replay | `e5df6f2` | ✅ Fixed |
+| 10.10 | Browser version-check is check-then-act; only mock-based tests exist | `eaa06dc` | ✅ Fixed |
+| 10.11 | D-34 merge can pick the later-arriving replay over the earlier check-in | `eae9ab3` | ✅ Fixed |
+
+All 11 findings are now closed. Each fix's own commit and the corresponding `docs(phase-10): record verify-fix ...` commit carry the full before/after detail; per-finding sections below are kept for the original root-cause/fix-shape analysis but no longer need to be read to know current status — this table is the single source of truth for that.
+
+---
+
 ## Decisions resolved before fixing (2026-08-26)
 
 Two findings needed a real product/design call before any code could be written. Both resolved with the user:
@@ -125,6 +147,8 @@ Each item has: **files**, **root cause**, **fix shape**, and **doc updates requi
 ---
 
 ### 10.10 Browser version-check is check-then-act; only mock-based tests exist — **no decision needed**
+
+**Status: ✅ Fixed in `eaa06dc`**
 
 - **Files:** `apps/api/src/realtime/browser-sync.service.ts` (`checkWriteVersion`), `apps/api/src/modules/queue/web-queue.service.ts`, `apps/api/src/modules/billing/billing-workbench.service.ts`, `apps/api/src/modules/inventory/inventory-web.service.ts`.
 - **Root cause:** the version check and the eventual write are two separate reads/writes with no atomicity between them, and every existing test mocks the DB layer rather than proving behavior against two genuinely concurrent real writers.
