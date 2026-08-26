@@ -69,6 +69,8 @@ Each item has: **files**, **root cause**, **fix shape**, and **doc updates requi
 
 ### 10.5 No route can move a `SyncConflictRecord` to `RESOLVED` — **no decision needed**
 
+**Status: ✅ Fixed in `6178f86`**
+
 - **Files:** `apps/api/src/modules/emr/controllers/consultationSync.controller.ts` (no resolve handler), `apps/api/src/modules/emr/emr.routes.ts` (no resolve route registered), `apps/mobile/src/features/consultation/components/ClinicalConflictResolutionSheet.tsx` (already defines the five actions — `KEEP_LOCAL_FIELD`/`KEEP_SERVER_FIELD`/`MERGE_SAFE_FIELDS`/retry/escalate — that just need somewhere to POST to).
 - **Root cause:** the mobile UI (and 10-03-PLAN.md's own action text) already specify the valid resolution actions; the API side was never built to receive them.
 - **Fix shape:** add `POST /consultations/:consultationId/conflicts/:conflictId/resolve` accepting one of the sheet's five actions, applying the corresponding field-level merge (or escalation), and transitioning `SyncConflictRecord.resolutionState` to `RESOLVED` (or `ESCALATED` for the escalate action, deferring to `retryEscalation.service.ts` — see 10.6). TDD: failing test per action verifying the correct field-level outcome and the state transition.
