@@ -10,6 +10,7 @@ import {
   type ClinicalConflictRecordStore,
   type ConsultationRecord,
 } from '../services/consultationOfflineReplay.service.js';
+import type { ReplayBroadcastService } from '../../sync/services/replayBroadcast.service.js';
 
 const CLINIC_ID = '00000000-0000-0000-0000-000000000001';
 const USER_ID = '00000000-0000-0000-0000-000000000010';
@@ -302,5 +303,78 @@ describe('ConsultationOfflineReplayService', () => {
       expect(gateway.addAddendum).not.toHaveBeenCalled();
       expect(gateway.getConsultation).not.toHaveBeenCalled();
     });
+  });
+});
+
+// Verify-fix 10.3: `ReplayBroadcastService` was built but never called from
+// `ConsultationOfflineReplayService` -- proves the broadcast fires from the
+// same public method `consultationSync.controller.ts`'s HTTP handler calls.
+describe('ConsultationOfflineReplayService replay-broadcast wiring (verify-fix 10.3)', () => {
+  let gateway: ReturnType<typeof createMockGateway>;
+  let receipts: ReturnType<typeof createMockReceipts>;
+  let conflictRecords: ReturnType<typeof createMockConflictRecords>;
+  let broadcast: { emitReplayApplied: ReturnType<typeof vi.fn>; emitReplayConflictOpened: ReturnType<typeof vi.fn>; emitReplayFailureEscalated: ReturnType<typeof vi.fn> };
+  let service: ConsultationOfflineReplayService;
+
+  beforeEach(() => {
+    gateway = createMockGateway();
+    receipts = createMockReceipts();
+    conflictRecords = createMockConflictRecords();
+    broadcast = {
+      emitReplayApplied: vi.fn(),
+      emitReplayConflictOpened: vi.fn(),
+      emitReplayFailureEscalated: vi.fn(),
+    };
+    service = new ConsultationOfflineReplayService(gateway, receipts, conflictRecords, broadcast as unknown as ReplayBroadcastService);
+  });
+
+  it('emits a clinic-scoped REPLAY_APPLIED broadcast after a non-conflicting draft edit is applied', async () => {
+    const base = baseline();
+    const local = { ...base, careInstructions: 'Offline-only addition.' };
+    vi.mocked(gateway.loadDraft).mockResolvedValue(base);
+
+    await service.replayConsultationDraft(context, envelope({}, { baseline: base, draft: local }));
+
+    expect(broadcast.emitReplayApplied).toHaveBeenCalledWith({ clinicId: CLINIC_ID, domain: EMR_SYNC_DOMAIN, entityIds: [CONSULTATION_ID] });
+    expect(broadcast.emitReplayConflictOpened).not.toHaveBeenCalled();
+  });
+
+  it('emits a clinic-scoped REPLAY_CONFLICT_OPENED broadcast (not REPLAY_APPLIED) when a SAFETY_CRITICAL conflict is created', async () => {
+    const base = baseline();
+    const local = { ...base, assessment: 'Offline device: suspected pancreatitis.' };
+    vi.mocked(gateway.loadDraft).mockResolvedValue({ ...base, assessment: 'Another device: suspected renal failure.' });
+
+    await service.replayConsultationDraft(context, envelope({}, { baseline: base, draft: local }));
+
+    expect(broadcast.emitReplayConflictOpened).toHaveBeenCalledWith({ clinicId: CLINIC_ID, domain: EMR_SYNC_DOMAIN, entityIds: [CONSULTATION_ID] });
+    expect(broadcast.emitReplayApplied).not.toHaveBeenCalled();
+  });
+
+  it('emits a clinic-scoped REPLAY_APPLIED broadcast when a late replay against a finalized consultation is auto-applied as an addendum', async () => {
+    const base = baseline();
+    const local = { ...base, assessment: 'Owner reports improvement overnight.' };
+    vi.mocked(gateway.getConsultation).mockResolvedValue(makeConsultation({ status: 'finalized' }));
+
+    await service.replayConsultationDraft(context, envelope({}, { baseline: base, draft: local }));
+
+    expect(broadcast.emitReplayApplied).toHaveBeenCalledWith({ clinicId: CLINIC_ID, domain: EMR_SYNC_DOMAIN, entityIds: [CONSULTATION_ID] });
+  });
+
+  it('does not emit REPLAY_APPLIED for a finalized-consultation replay with no real field changes (true no-op)', async () => {
+    const base = baseline();
+    vi.mocked(gateway.getConsultation).mockResolvedValue(makeConsultation({ status: 'finalized' }));
+
+    await service.replayConsultationDraft(context, envelope({}, { baseline: base, draft: base }));
+
+    expect(broadcast.emitReplayApplied).not.toHaveBeenCalled();
+  });
+
+  it('does not emit any broadcast for a duplicate/flapping replay of an already-processed operation', async () => {
+    vi.mocked(receipts.findUnique).mockResolvedValue({ operationId: 'op-1' });
+
+    await service.replayConsultationDraft(context, envelope());
+
+    expect(broadcast.emitReplayApplied).not.toHaveBeenCalled();
+    expect(broadcast.emitReplayConflictOpened).not.toHaveBeenCalled();
   });
 });

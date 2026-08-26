@@ -6,6 +6,7 @@ import { WebQueueService } from './web-queue.service.js';
 import { createWebQueueController } from './web-queue.controller.js';
 import { createQueueSyncController, buildQueueOfflineReplayService } from './controllers/queueSync.controller.js';
 import { BrowserSyncService } from '../../realtime/browser-sync.service.js';
+import { ReplayBroadcastService } from '../sync/services/replayBroadcast.service.js';
 import { authenticate } from '../../middleware/authenticate.js';
 import { tenantContext } from '../../middleware/tenant-context.js';
 import { requireBrowserModuleAccess } from '../web-dashboard/browser-access.middleware.js';
@@ -49,7 +50,13 @@ export default async function queueRoutes(fastify: FastifyInstance) {
   // applies replayed mobile envelopes (idempotent via the shared
   // `SyncReplayReceipt` ledger from Plan 10-01), not live authenticated
   // requests, so it needs its own request/response shape.
-  const queueSyncController = createQueueSyncController(buildQueueOfflineReplayService);
+  //
+  // Verify-fix 10.3: `fastify.io` is shared as the same plugin-scope
+  // singleton `BrowserSyncService` already uses below -- a mobile replay
+  // through this endpoint now actually pushes to an open browser queue
+  // board instead of `ReplayBroadcastService` sitting unreached.
+  const replayBroadcast = new ReplayBroadcastService(fastify.io);
+  const queueSyncController = createQueueSyncController((db) => buildQueueOfflineReplayService(db, replayBroadcast));
 
   // Plan 09-04: the browser queue workbench (D-07, D-40, D-41, D-43). Shares
   // `fastify.io` as its realtime transport with `QueueService` above

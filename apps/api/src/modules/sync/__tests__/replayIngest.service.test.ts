@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ReplayPriority, ConflictSeverity, ResolutionState } from '@breeyo/types';
 import { ReplayIngestService, type ReplayIngestPrismaClient } from '../services/replayIngest.service';
+import type { ReplayBroadcastService } from '../services/replayBroadcast.service';
 
 const CLINIC_ID = '00000000-0000-0000-0000-000000000001';
 const OTHER_CLINIC_ID = '00000000-0000-0000-0000-000000000099';
@@ -108,14 +109,24 @@ function buildConflictEnvelope(overrides: Partial<Record<string, unknown>> = {})
   };
 }
 
+function createMockBroadcast() {
+  return {
+    emitReplayApplied: vi.fn(),
+    emitReplayConflictOpened: vi.fn(),
+    emitReplayFailureEscalated: vi.fn(),
+  };
+}
+
 describe('ReplayIngestService', () => {
   let db: ReturnType<typeof createMockDb>;
+  let broadcast: ReturnType<typeof createMockBroadcast>;
   let service: ReplayIngestService;
   const context = { clinicId: CLINIC_ID, userId: USER_ID, deviceId: DEVICE_ID };
 
   beforeEach(() => {
     db = createMockDb();
-    service = new ReplayIngestService(db);
+    broadcast = createMockBroadcast();
+    service = new ReplayIngestService(db, broadcast as unknown as ReplayBroadcastService);
   });
 
   it('acknowledges a valid operation and persists exactly one replay receipt', async () => {
@@ -239,5 +250,82 @@ describe('ReplayIngestService', () => {
 
     expect(result.acknowledgedOperationIds).toEqual(['op-unrelated']);
     expect(result.deferredOperationIds).toEqual([]);
+  });
+});
+
+// Verify-fix 10.3: `ReplayBroadcastService` was built (Plan 10-05 Task 2) but
+// never actually called from `ReplayIngestService` -- the browser
+// stale-state push it exists to drive was dead in production. These prove
+// the shared replay-ingress entry point now emits the scoped broadcast a
+// real HTTP replay through `POST /sync/replay` (`routes.ts`'s `buildService`)
+// triggers, not just that the underlying DB row changed.
+describe('ReplayIngestService replay-broadcast wiring (verify-fix 10.3)', () => {
+  let db: ReturnType<typeof createMockDb>;
+  let broadcast: ReturnType<typeof createMockBroadcast>;
+  let service: ReplayIngestService;
+  const context = { clinicId: CLINIC_ID, userId: USER_ID, deviceId: DEVICE_ID };
+
+  beforeEach(() => {
+    db = createMockDb();
+    broadcast = createMockBroadcast();
+    service = new ReplayIngestService(db, broadcast as unknown as ReplayBroadcastService);
+  });
+
+  it('emits a clinic-scoped REPLAY_APPLIED broadcast after a real operation replay is applied', async () => {
+    const envelope = buildEnvelope({ operationId: 'op-broadcast-1', domain: 'queue', entityId: 'entity-broadcast-1' });
+
+    await service.ingest(context, { operations: [envelope] });
+
+    expect(broadcast.emitReplayApplied).toHaveBeenCalledTimes(1);
+    expect(broadcast.emitReplayApplied).toHaveBeenCalledWith({
+      clinicId: CLINIC_ID,
+      domain: 'queue',
+      entityIds: ['entity-broadcast-1'],
+    });
+    expect(broadcast.emitReplayConflictOpened).not.toHaveBeenCalled();
+  });
+
+  it('does not re-emit REPLAY_APPLIED for an idempotent duplicate replay of an already-acknowledged operation', async () => {
+    const envelope = buildEnvelope({ operationId: 'op-broadcast-dup' });
+    await service.ingest(context, { operations: [envelope] });
+    broadcast.emitReplayApplied.mockClear();
+
+    await service.ingest(context, { operations: [envelope] });
+
+    expect(broadcast.emitReplayApplied).not.toHaveBeenCalled();
+  });
+
+  it('emits a clinic-scoped REPLAY_CONFLICT_OPENED broadcast after a new conflict record is persisted', async () => {
+    const conflict = buildConflictEnvelope({ operationId: 'op-conflict-broadcast', entityId: 'consultation-broadcast-1' });
+
+    await service.ingest(context, { operations: [], conflicts: [conflict] });
+
+    expect(broadcast.emitReplayConflictOpened).toHaveBeenCalledTimes(1);
+    expect(broadcast.emitReplayConflictOpened).toHaveBeenCalledWith({
+      clinicId: CLINIC_ID,
+      domain: 'emr',
+      entityIds: ['consultation-broadcast-1'],
+    });
+    expect(broadcast.emitReplayApplied).not.toHaveBeenCalled();
+  });
+
+  it('emits a clinic-scoped REPLAY_FAILURE_ESCALATED broadcast when a malformed envelope creates a failure task', async () => {
+    const malformed = { deviceId: DEVICE_ID, entityId: 'entity-malformed-1' };
+
+    await service.ingest(context, { operations: [malformed] });
+
+    expect(broadcast.emitReplayFailureEscalated).toHaveBeenCalledTimes(1);
+    expect(broadcast.emitReplayFailureEscalated).toHaveBeenCalledWith({
+      clinicId: CLINIC_ID,
+      domain: 'unknown',
+      entityIds: ['entity-malformed-1'],
+    });
+  });
+
+  it('defaults to a no-op broadcast when no ReplayBroadcastService is injected (no crash, matches BrowserSyncService convention)', async () => {
+    const bareService = new ReplayIngestService(db);
+    const envelope = buildEnvelope({ operationId: 'op-no-broadcast' });
+
+    await expect(bareService.ingest(context, { operations: [envelope] })).resolves.toBeDefined();
   });
 });

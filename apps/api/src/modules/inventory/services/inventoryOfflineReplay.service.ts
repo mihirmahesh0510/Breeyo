@@ -3,6 +3,7 @@ import { dispenseSchema, stockReceiptSchema, stockAdjustmentSchema } from '@bree
 import { offlineOperationEnvelopeSchema } from '@breeyo/validators';
 import type { DispenseResult } from '@breeyo/types';
 import { InventoryConflictReviewService, type InventoryMismatchOperationType } from './inventoryConflictReview.service.js';
+import { ReplayBroadcastService } from '../../sync/services/replayBroadcast.service.js';
 
 /** Domain-specific `entityType` values this service dispatches on. Inventory
  *  envelopes always carry `domain: 'inventory'` and one of these four
@@ -169,6 +170,10 @@ export class InventoryOfflineReplayService {
     private readonly replayReceipts: InventoryReplayReceiptStore,
     private readonly conflictReview: InventoryConflictReviewService,
     private readonly now: () => Date = () => new Date(),
+    // Verify-fix 10.3: defaults to a no-op broadcast, matching the other
+    // three domain replay services' convention; `inventorySync.controller.ts`
+    // wires a real `ReplayBroadcastService(fastify.io)` in for production.
+    private readonly broadcast: ReplayBroadcastService = new ReplayBroadcastService(null),
   ) {}
 
   async replayInventoryOperation(context: InventoryOfflineReplayContext, raw: unknown): Promise<InventoryReplayOutcome> {
@@ -257,6 +262,9 @@ export class InventoryOfflineReplayService {
     try {
       await run();
       await this.recordReceipt(context, operationId, entityType, itemId);
+      // Verify-fix 10.3: an open browser inventory view watching this item
+      // should hear about the applied replay without waiting for its own poll.
+      this.broadcast.emitReplayApplied({ clinicId: context.clinicId, domain: 'inventory', entityIds: [itemId] });
       return { operationId, status: 'APPLIED', itemId };
     } catch (error) {
       if (!isKnownMismatchError(error)) {
@@ -276,6 +284,9 @@ export class InventoryOfflineReplayService {
           availableQuantity: error.available,
         },
       });
+      // Verify-fix 10.3: D-05/D-10 -- a known mismatch produced a new
+      // unresolved review task, not a silent overwrite.
+      this.broadcast.emitReplayConflictOpened({ clinicId: context.clinicId, domain: 'inventory', entityIds: [itemId] });
       return { operationId, status: 'REVIEW_CREATED', itemId, reviewTaskId };
     }
   }

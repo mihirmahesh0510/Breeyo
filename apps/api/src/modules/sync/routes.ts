@@ -4,6 +4,7 @@ import { authenticate } from '../../middleware/authenticate.js';
 import { tenantContext } from '../../middleware/tenant-context.js';
 import type { TenantPrismaClient } from '../../lib/prisma-rls.js';
 import { ReplayIngestService, type ReplayIngestPrismaClient } from './services/replayIngest.service.js';
+import { ReplayBroadcastService } from './services/replayBroadcast.service.js';
 
 /**
  * Top-level shape check only -- each individual operation/conflict envelope
@@ -38,12 +39,18 @@ function validationError(reply: FastifyReply, issues: { message: string }[]) {
  * between "schema + service written and tested" (this task) and "schema
  * live against a real database" (Task 3).
  */
-function buildService(db: TenantPrismaClient): ReplayIngestService {
-  return new ReplayIngestService(db as unknown as ReplayIngestPrismaClient);
+function buildService(db: TenantPrismaClient, broadcast: ReplayBroadcastService): ReplayIngestService {
+  return new ReplayIngestService(db as unknown as ReplayIngestPrismaClient, broadcast);
 }
 
 export default async function syncRoutes(fastify: FastifyInstance) {
   const preHandler = [authenticate, tenantContext];
+
+  // Verify-fix 10.3: plugin-scope singleton, same `fastify.io` convention
+  // `queue.routes.ts`/`billing.routes.ts` already use for `BrowserSyncService`
+  // -- the Socket.IO server is transport, not tenant data, so it is built
+  // once per plugin registration, not per request.
+  const replayBroadcast = new ReplayBroadcastService(fastify.io ?? null);
 
   fastify.post('/sync/replay', {
     preHandler,
@@ -53,7 +60,7 @@ export default async function syncRoutes(fastify: FastifyInstance) {
         return validationError(reply, body.error.errors);
       }
 
-      const service = buildService(request.db);
+      const service = buildService(request.db, replayBroadcast);
 
       // T-10-01: clinicId/userId ALWAYS come from the authenticated session
       // (`request.user`, populated by `authenticate` from the verified JWT),

@@ -9,6 +9,7 @@ import { WantListService } from './want-list.service.js';
 import { DispenseController } from './dispense.controller.js';
 import { SyncOperationService } from './sync-operation.service.js';
 import { createInventorySyncController, buildInventoryOfflineReplayService } from './controllers/inventorySync.controller.js';
+import { ReplayBroadcastService } from '../sync/services/replayBroadcast.service.js';
 import { PermissionService } from '../auth/permission.service.js';
 import { authenticate } from '../../middleware/authenticate.js';
 import { tenantContext } from '../../middleware/tenant-context.js';
@@ -49,7 +50,13 @@ export default async function dispenseRoutes(fastify: FastifyInstance) {
   // 10-01/10-02/10-03 use, matching this phase's cross-domain replay
   // contract rather than Phase 5's own bespoke one. Both endpoints stay live
   // side by side -- neither replaces the other in this plan.
-  const inventorySyncController = createInventorySyncController(buildInventoryOfflineReplayService);
+  // Verify-fix 10.3: plugin-scope singleton, same `fastify.io` convention
+  // `queue.routes.ts`/`emr.routes.ts` use -- a mobile inventory replay now
+  // actually pushes to an open browser inventory view.
+  const replayBroadcast = new ReplayBroadcastService(fastify.io ?? null);
+  const inventorySyncController = createInventorySyncController((db) =>
+    buildInventoryOfflineReplayService(db, replayBroadcast),
+  );
 
   // D-53: generic sync dispatcher's own PermissionService instance, built
   // directly from the admin client and the Redis handle.

@@ -13,6 +13,7 @@ import {
   type InventoryReplayReceiptStore,
 } from '../services/inventoryOfflineReplay.service.js';
 import { InventoryConflictReviewService, type InventoryReviewTaskStore } from '../services/inventoryConflictReview.service.js';
+import { ReplayBroadcastService } from '../../sync/services/replayBroadcast.service.js';
 
 /**
  * Top-level shape check only, matching `queueSync.controller.ts`'s /
@@ -80,11 +81,16 @@ export function buildInventoryOfflineReplayGateway(db: TenantPrismaClient): Inve
   };
 }
 
-export function buildInventoryOfflineReplayService(db: TenantPrismaClient): InventoryOfflineReplayService {
+export function buildInventoryOfflineReplayService(
+  db: TenantPrismaClient,
+  broadcast: ReplayBroadcastService = new ReplayBroadcastService(null),
+): InventoryOfflineReplayService {
   return new InventoryOfflineReplayService(
     buildInventoryOfflineReplayGateway(db),
     db.syncReplayReceipt as unknown as InventoryReplayReceiptStore,
     new InventoryConflictReviewService(db.syncConflictRecord as unknown as InventoryReviewTaskStore),
+    () => new Date(),
+    broadcast,
   );
 }
 

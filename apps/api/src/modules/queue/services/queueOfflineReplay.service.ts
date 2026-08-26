@@ -3,6 +3,7 @@ import { offlineOperationEnvelopeSchema } from '@breeyo/validators';
 import { ConflictSeverity, QueueStatus, ResolutionState, isValidTransition } from '@breeyo/types';
 import { getTodayIST } from '../../../lib/ist-date.js';
 import type { CreateEntryParams } from '../queue.types.js';
+import { ReplayBroadcastService } from '../../sync/services/replayBroadcast.service.js';
 
 /** Domain-specific `entityType` values this service dispatches on. Queue
  *  envelopes always carry `domain: 'queue'` and one of these two shapes --
@@ -149,6 +150,11 @@ export class QueueOfflineReplayService {
     private readonly replayReceipts: QueueReplayReceiptStore,
     private readonly reviewTasks: QueueOperationalReviewTaskStore,
     private readonly now: () => Date = () => new Date(),
+    // Verify-fix 10.3: defaults to a no-op broadcast (matches
+    // `ReplayIngestService`'s own convention) so every existing caller/test
+    // that does not pass one keeps working; `queueSync.controller.ts` wires
+    // a real `ReplayBroadcastService(fastify.io)` in for production.
+    private readonly broadcast: ReplayBroadcastService = new ReplayBroadcastService(null),
   ) {}
 
   async replayQueueOperation(context: QueueOfflineReplayContext, raw: unknown): Promise<QueueReplayOutcome> {
@@ -282,6 +288,15 @@ export class QueueOfflineReplayService {
         entryId: existingActive.id,
         note: `Duplicate offline check-in for the same patient merged into existing queue entry ${existingActive.id} (D-34).`,
       });
+      // Verify-fix 10.3: a merge still leaves a review note behind (D-10) --
+      // treated as a conflict-opened broadcast, not an applied one, so an
+      // open browser tab surfaces it for review rather than silently
+      // refreshing as if nothing needed a second look.
+      this.broadcast.emitReplayConflictOpened({
+        clinicId: context.clinicId,
+        domain: 'queue',
+        entityIds: [existingActive.id],
+      });
       return {
         operationId,
         status: 'MERGED_DUPLICATE_CHECK_IN',
@@ -308,6 +323,10 @@ export class QueueOfflineReplayService {
     });
 
     await this.recordReceipt(context, operationId, 'queue', QUEUE_CHECK_IN_ENTITY_TYPE, entry.id);
+
+    // Verify-fix 10.3: an open browser queue board watching this entity
+    // should hear about the applied replay without waiting for its own poll.
+    this.broadcast.emitReplayApplied({ clinicId: context.clinicId, domain: 'queue', entityIds: [entry.id] });
 
     return { operationId, status: 'APPLIED', entryId: entry.id };
   }
@@ -379,6 +398,9 @@ export class QueueOfflineReplayService {
     const updated = await this.gateway.updateEntry(entry.id, updateData);
     await this.recordReceipt(context, operationId, 'queue', QUEUE_STATUS_TRANSITION_ENTITY_TYPE, updated.id);
 
+    // Verify-fix 10.3: same broadcast the check-in path fires above.
+    this.broadcast.emitReplayApplied({ clinicId: context.clinicId, domain: 'queue', entityIds: [updated.id] });
+
     return { operationId, status: 'APPLIED', entryId: updated.id };
   }
 
@@ -390,6 +412,9 @@ export class QueueOfflineReplayService {
   ): Promise<QueueReplayOutcome> {
     await this.recordReceipt(context, operationId, 'queue', QUEUE_STATUS_TRANSITION_ENTITY_TYPE, entryId);
     const reviewTaskId = await this.createOperationalReviewTask(context, { operationId, entryId, note });
+    // Verify-fix 10.3: D-05 review-before-overwrite -- a browser tab
+    // watching this entry needs the conflict prompt, not a stale render.
+    this.broadcast.emitReplayConflictOpened({ clinicId: context.clinicId, domain: 'queue', entityIds: [entryId] });
     return { operationId, status: 'REVIEW_CREATED', entryId, reviewTaskId };
   }
 }

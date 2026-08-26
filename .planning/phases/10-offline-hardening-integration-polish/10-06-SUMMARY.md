@@ -108,3 +108,19 @@ Maestro tests were **not** executed (`npx maestro test` was not run) -- no devic
 ## Task 2 -- NOT done, and cannot be done by an agent
 
 **Task 2 (the blocking human-verify checkpoint) has explicitly NOT been performed.** It requires a real mid-range Android device running the real mobile app against a real staging clinic account, a human physically toggling airplane mode and observing the app, and a human judgment call ("approved" or a described issue) per the plan's own `<resume-signal>`. No agent -- this one included -- can hold a phone, and no amount of additional automation substitutes for D-27's explicit requirement that Phase 10 proof include **real** disconnect/reconnect drills, not only mocked automation. This summary's automated proof (Task 1) is a necessary precondition for that checkpoint, not a replacement for it. **Phase 10 is not signed off until a human runs the three Maestro scripts above (or an equivalent manual drill) on real hardware and either approves or reports an issue to resume execution against.**
+
+## Verify-Fix Follow-Up
+
+Per `.planning/PHASE-10-VERIFY-FIX-PLAN.md` finding **10.3**: `reconnect-live-sync.test.ts` (this plan's own Task 1 harness) proves the reusable `useReplayStaleState`/`StaleStateBanner` MECHANISM correctly composed with the real production hooks -- but it does so in small purpose-built widget components (`renderDomainWidget`/`BillingWidget`), not the real `QueuePage`/`BillingPage`. A `no-mistakes --verify phase 10` pass found the real pages never actually mounted `useQueueReplayRealtime`/`useReplayStaleState`, and `QueueBoard.tsx`/`BillingWorkbench.tsx` hardcoded `<StaleStateBanner status="stale" .../>` regardless of what happened server-side -- so this file's own passing assertions did not prove what a real user would see. See `10-05-SUMMARY.md`'s Verify-Fix Follow-Up for the full fix description (broadcast wiring in the four domain replay services, `apiClient`'s `.conflict` forwarding, and the real-page wiring in `QueueBoard.tsx`/`useBillingWorkbench.ts`).
+
+New real-page-level proof added alongside the existing hook-level harness (not replacing it -- both are valuable: this file proves the mechanism in isolation, the new tests prove the real page wires it up): `apps/web/src/features/queue/__tests__/queue-board.test.tsx` (3 new cases rendering the real `QueuePage`, simulating a scoped `replay:conflict-opened`/`replay:applied` socket event, asserting the real `StaleStateBanner` shows `"conflict"` vs `"stale"` copy) and `apps/web/src/features/billing/__tests__/billing-workbench.test.tsx` (1 new case rendering the real `BillingPage`, mocking a real 409 `STALE_WRITE_CONFLICT` response from `collect-payment`, asserting the same real banner shows the conflict copy).
+
+Verify, run from the repo root:
+```
+npx vitest run apps/web/src/features/dashboard/__tests__/replayStaleState.test.tsx apps/web/tests/integration/reconnect-live-sync.test.ts apps/api/src/modules/sync/__tests__/replayIngest.service.test.ts apps/api/src/modules/queue/__tests__/queueOfflineReplay.service.test.ts apps/api/src/modules/emr/__tests__/consultationOfflineReplay.service.test.ts apps/api/src/modules/inventory/__tests__/inventoryOfflineReplay.service.test.ts
+```
+85/85 passing (17 + 19 + 18 + 15 + 12 + 4).
+
+Full-suite re-run after this fix, confirming zero regressions:
+- Root aggregate `npx vitest run` (the cross-package sweep `vitest.config.ts` defines): **76 test files, 1045 tests passed**, 0 failed. Grew from 10-06's original 73 files/1015 tests by exactly this fix's 3 new files (`api.test.ts`, plus the new cases added to `queue-board.test.tsx`/`billing-workbench.test.tsx`) / 30 new test cases.
+- `apps/api` full suite (real Postgres 16 + Redis 7): **177 test files (168 passed, 9 skipped -- pre-existing), 2173 tests (2093 passed, 80 todo -- pre-existing)**, 0 failed.

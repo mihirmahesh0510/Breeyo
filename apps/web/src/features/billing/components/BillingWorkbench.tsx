@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import type { BillingInvoiceRow, BillingWorkbenchResponse } from '../hooks/useBillingWorkbench';
 import { StaleStateBanner } from '../../dashboard/components/StaleStateBanner';
+import type { ReplayStaleStatus } from '../../dashboard/hooks/useReplayStaleState';
 import { HighRiskConfirmDialog } from '../../dashboard/components/HighRiskConfirmDialog';
 import styles from './BillingWorkbench.module.css';
 
@@ -11,6 +12,8 @@ export interface BillingWorkbenchProps {
   /** D-24: the signed-in user about to confirm a risky action. */
   actorName: string;
   hasRealtimeStaleNotice: boolean;
+  /** Verify-fix 10.3: `useBillingWorkbench.ts`'s `useReplayStaleState` status -- `'conflict'` after `collectPayment` is rejected with a real 409 `.conflict`, driving the same `StaleStateBanner` instead of only a toast. */
+  replayStatus: ReplayStaleStatus;
   onRefresh: () => void;
   onReviewChanges: () => void;
   onCollectPayment: (invoiceId: string) => Promise<void>;
@@ -129,6 +132,7 @@ export function BillingWorkbench({
   data,
   actorName,
   hasRealtimeStaleNotice,
+  replayStatus,
   onRefresh,
   onReviewChanges,
   onCollectPayment,
@@ -138,7 +142,12 @@ export function BillingWorkbench({
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const showStaleBanner = data.staleState === 'stale' || hasRealtimeStaleNotice;
+  // Verify-fix 10.3: `replayStatus` adds a real "conflict" case on top of
+  // the existing two always-"stale" signals -- a rejected stale write
+  // (D-05) must not render as the same generic "may be out of date" prompt
+  // a routine background push would.
+  const showStaleBanner = data.staleState === 'stale' || hasRealtimeStaleNotice || replayStatus !== 'fresh';
+  const bannerStatus: 'stale' | 'conflict' = replayStatus === 'conflict' ? 'conflict' : 'stale';
 
   const handleCollectPayment = async (invoiceId: string) => {
     setIsSubmitting(true);
@@ -168,7 +177,7 @@ export function BillingWorkbench({
 
   return (
     <div>
-      {showStaleBanner ? <StaleStateBanner status="stale" onRefresh={onRefresh} onReviewChanges={onReviewChanges} /> : null}
+      {showStaleBanner ? <StaleStateBanner status={bannerStatus} onRefresh={onRefresh} onReviewChanges={onReviewChanges} /> : null}
 
       <InvoiceTable
         title="Unpaid"

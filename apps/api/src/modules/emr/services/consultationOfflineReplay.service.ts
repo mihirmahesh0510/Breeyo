@@ -3,6 +3,7 @@ import { offlineOperationEnvelopeSchema, saveDraftSchema } from '@breeyo/validat
 import { ConflictSeverity, ResolutionState } from '@breeyo/types';
 import type { SaveDraftInput, AddendumEntry } from '@breeyo/types';
 import { classifyClinicalConflict, CLINICAL_DRAFT_FIELDS } from './clinicalConflict.service.js';
+import { ReplayBroadcastService } from '../../sync/services/replayBroadcast.service.js';
 
 /** Wire contract with `apps/mobile/src/features/consultation/services/offlineConsultationDraftStore.ts`. */
 export const EMR_SYNC_DOMAIN = 'emr';
@@ -158,6 +159,11 @@ export class ConsultationOfflineReplayService {
     private readonly gateway: ConsultationOfflineReplayGateway,
     private readonly replayReceipts: ConsultationReplayReceiptStore,
     private readonly conflictRecords: ClinicalConflictRecordStore,
+    // Verify-fix 10.3: defaults to a no-op broadcast, matching
+    // `ReplayIngestService`'s/`QueueOfflineReplayService`'s own convention;
+    // `consultationSync.controller.ts` wires a real
+    // `ReplayBroadcastService(fastify.io)` in for production.
+    private readonly broadcast: ReplayBroadcastService = new ReplayBroadcastService(null),
   ) {}
 
   async replayConsultationDraft(
@@ -247,6 +253,14 @@ export class ConsultationOfflineReplayService {
       // resolves as an idempotent no-op instead of creating a second
       // conflict record for the same offline edit.
       await this.recordReceipt(context, envelope.operationId, consultation.id);
+      // Verify-fix 10.3: D-05/D-06/D-08 -- a SAFETY_CRITICAL conflict is
+      // exactly the case an already-open browser/mobile view must not
+      // silently keep rendering stale/disputed state for.
+      this.broadcast.emitReplayConflictOpened({
+        clinicId: context.clinicId,
+        domain: EMR_SYNC_DOMAIN,
+        entityIds: [consultation.id],
+      });
       return {
         operationId: envelope.operationId,
         status: 'CONFLICT_CREATED',
@@ -263,6 +277,14 @@ export class ConsultationOfflineReplayService {
     }
 
     await this.recordReceipt(context, envelope.operationId, consultation.id);
+    // Verify-fix 10.3: applied even for the true-no-op branch above (no
+    // safe-merge fields) -- the replay was still processed and acknowledged,
+    // matching `emitReplayApplied`'s "affected views should refresh" intent.
+    this.broadcast.emitReplayApplied({
+      clinicId: context.clinicId,
+      domain: EMR_SYNC_DOMAIN,
+      entityIds: [consultation.id],
+    });
     return { operationId: envelope.operationId, status: 'APPLIED', consultationId: consultation.id };
   }
 
@@ -296,6 +318,14 @@ export class ConsultationOfflineReplayService {
         addedAt: parseEnvelopeCreatedAt(envelope.createdAt),
       };
       await this.gateway.addAddendum(consultation.id, addendum);
+      // Verify-fix 10.3: only for a genuine apply (a real addendum was
+      // added) -- the true-no-op case just below never touched anything, so
+      // it must not fire a broadcast implying a view refresh is warranted.
+      this.broadcast.emitReplayApplied({
+        clinicId: context.clinicId,
+        domain: EMR_SYNC_DOMAIN,
+        entityIds: [consultation.id],
+      });
     }
 
     await this.recordReceipt(context, envelope.operationId, consultation.id);

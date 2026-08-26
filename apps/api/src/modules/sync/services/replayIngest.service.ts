@@ -1,5 +1,6 @@
 import { offlineOperationEnvelopeSchema, syncConflictEnvelopeSchema } from '@breeyo/validators';
 import { ResolutionState, SyncVisibilityState, type SyncConflictEnvelope } from '@breeyo/types';
+import { ReplayBroadcastService } from './replayBroadcast.service.js';
 
 /**
  * Minimal Prisma delegate surface this service needs, kept as a local
@@ -86,7 +87,18 @@ function stringField(raw: unknown, field: string): string {
  * clinic's tenant space by spoofing those fields.
  */
 export class ReplayIngestService {
-  constructor(private readonly db: ReplayIngestPrismaClient) {}
+  /**
+   * Verify-fix 10.3: `broadcast` defaults to a no-op instance (`io: null`)
+   * matching `BrowserSyncService`'s own convention -- every existing/test
+   * caller that does not pass one keeps working unchanged, while
+   * `routes.ts` wires a real `ReplayBroadcastService(fastify.io)` in for
+   * production so a browser tab watching the affected clinic actually hears
+   * about a replayed mobile write instead of the push being dead code.
+   */
+  constructor(
+    private readonly db: ReplayIngestPrismaClient,
+    private readonly broadcast: ReplayBroadcastService = new ReplayBroadcastService(null),
+  ) {}
 
   async ingest(context: AuthenticatedReplayContext, input: ReplayIngestInput): Promise<ReplayAckResult> {
     const acknowledgedOperationIds: string[] = [];
@@ -138,7 +150,13 @@ export class ReplayIngestService {
     const parsed = offlineOperationEnvelopeSchema.safeParse(raw);
     if (!parsed.success) {
       const message = parsed.error.issues.map((issue) => issue.message).join(', ');
-      const taskId = await this.createFailureTask(context, stringField(raw, 'operationId'), stringField(raw, 'domain'), message);
+      const taskId = await this.createFailureTask(
+        context,
+        stringField(raw, 'operationId'),
+        stringField(raw, 'domain'),
+        stringField(raw, 'entityId'),
+        message,
+      );
       failureTaskIds.push(taskId);
       return;
     }
@@ -196,6 +214,14 @@ export class ReplayIngestService {
     });
 
     acknowledgedOperationIds.push(envelope.operationId);
+
+    // Verify-fix 10.3: a browser tab watching this entity should hear about
+    // the applied mobile replay without waiting for its own next fetch.
+    this.broadcast.emitReplayApplied({
+      clinicId: context.clinicId,
+      domain: envelope.domain,
+      entityIds: [envelope.entityId],
+    });
   }
 
   private async ingestOneConflict(
@@ -207,7 +233,13 @@ export class ReplayIngestService {
     const parsed = syncConflictEnvelopeSchema.safeParse(raw);
     if (!parsed.success) {
       const message = parsed.error.issues.map((issue) => issue.message).join(', ');
-      const taskId = await this.createFailureTask(context, stringField(raw, 'operationId'), stringField(raw, 'domain'), message);
+      const taskId = await this.createFailureTask(
+        context,
+        stringField(raw, 'operationId'),
+        stringField(raw, 'domain'),
+        stringField(raw, 'entityId'),
+        message,
+      );
       failureTaskIds.push(taskId);
       return;
     }
@@ -257,12 +289,22 @@ export class ReplayIngestService {
     });
 
     conflictsCreated.push({ ...conflict, clinicId: context.clinicId, deviceId: context.deviceId });
+
+    // Verify-fix 10.3: D-05/D-08 -- a new unresolved conflict is exactly the
+    // case an already-open browser tab must not silently keep rendering
+    // stale/disputed state for.
+    this.broadcast.emitReplayConflictOpened({
+      clinicId: context.clinicId,
+      domain: conflict.domain,
+      entityIds: [conflict.entityId],
+    });
   }
 
   private async createFailureTask(
     context: AuthenticatedReplayContext,
     operationId: string,
     domain: string,
+    entityId: string,
     validationMessage: string,
   ): Promise<string> {
     const task = await this.db.syncFailureTask.create({
@@ -280,6 +322,16 @@ export class ReplayIngestService {
         lastAttemptedAt: new Date(),
       },
     });
+
+    // Verify-fix 10.3: D-20 -- a failed replay must escalate into an
+    // actionable, visible failure rather than a push that only exists in
+    // the database with no live notice for an open tab.
+    this.broadcast.emitReplayFailureEscalated({
+      clinicId: context.clinicId,
+      domain,
+      entityIds: [entityId],
+    });
+
     return task.id;
   }
 }

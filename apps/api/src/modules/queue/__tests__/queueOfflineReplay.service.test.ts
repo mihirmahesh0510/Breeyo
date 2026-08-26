@@ -9,6 +9,7 @@ import {
   type QueueOperationalReviewTaskStore,
   type QueueEntryRecord,
 } from '../services/queueOfflineReplay.service.js';
+import type { ReplayBroadcastService } from '../../sync/services/replayBroadcast.service.js';
 
 const CLINIC_ID = '00000000-0000-0000-0000-000000000001';
 const USER_ID = '00000000-0000-0000-0000-000000000010';
@@ -328,7 +329,7 @@ describe('QueueOfflineReplayService', () => {
         note: 'test note',
       });
 
-      expect(taskId).toBe('review-task-1');
+  expect(taskId).toBe('review-task-1');
       expect(reviewTasks.create).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
@@ -340,5 +341,87 @@ describe('QueueOfflineReplayService', () => {
         }),
       );
     });
+  });
+});
+
+// Verify-fix 10.3: `ReplayBroadcastService` was built but never called from
+// `QueueOfflineReplayService` -- a real queue-board tab never heard about a
+// mobile replay landing. These prove the broadcast fires from the same
+// public method `queueSync.controller.ts`'s HTTP handler calls per operation.
+describe('QueueOfflineReplayService replay-broadcast wiring (verify-fix 10.3)', () => {
+  let gateway: ReturnType<typeof createMockGateway>;
+  let receipts: ReturnType<typeof createMockReceipts>;
+  let reviewTasks: ReturnType<typeof createMockReviewTasks>;
+  let broadcast: { emitReplayApplied: ReturnType<typeof vi.fn>; emitReplayConflictOpened: ReturnType<typeof vi.fn>; emitReplayFailureEscalated: ReturnType<typeof vi.fn> };
+  let service: QueueOfflineReplayService;
+
+  beforeEach(() => {
+    gateway = createMockGateway();
+    receipts = createMockReceipts();
+    reviewTasks = createMockReviewTasks();
+    broadcast = {
+      emitReplayApplied: vi.fn(),
+      emitReplayConflictOpened: vi.fn(),
+      emitReplayFailureEscalated: vi.fn(),
+    };
+    service = new QueueOfflineReplayService(gateway, receipts, reviewTasks, () => FIXED_NOW, broadcast as unknown as ReplayBroadcastService);
+  });
+
+  it('emits a clinic-scoped REPLAY_APPLIED broadcast after a new check-in is applied', async () => {
+    vi.mocked(gateway.createEntry).mockResolvedValue(makeEntry({ position: 1 }));
+
+    await service.replayQueueOperation(context, baseEnvelope());
+
+    expect(broadcast.emitReplayApplied).toHaveBeenCalledWith({ clinicId: CLINIC_ID, domain: 'queue', entityIds: [ENTRY_ID] });
+    expect(broadcast.emitReplayConflictOpened).not.toHaveBeenCalled();
+  });
+
+  it('emits a clinic-scoped REPLAY_CONFLICT_OPENED broadcast (not REPLAY_APPLIED) when a duplicate check-in auto-merges into a review task (D-34)', async () => {
+    const existingEntry = makeEntry({ id: ENTRY_ID, position: 1 });
+    vi.mocked(gateway.findTodayActiveEntryForPet).mockResolvedValue(existingEntry);
+
+    await service.replayQueueOperation(context, baseEnvelope({ operationId: 'op-merge-broadcast' }));
+
+    expect(broadcast.emitReplayConflictOpened).toHaveBeenCalledWith({ clinicId: CLINIC_ID, domain: 'queue', entityIds: [ENTRY_ID] });
+    expect(broadcast.emitReplayApplied).not.toHaveBeenCalled();
+  });
+
+  it('emits a clinic-scoped REPLAY_APPLIED broadcast after a valid status transition is applied', async () => {
+    vi.mocked(gateway.findEntryById).mockResolvedValue(makeEntry({ status: 'WAITING' }));
+    vi.mocked(gateway.updateEntry).mockResolvedValue(makeEntry({ status: 'IN_CONSULT' }));
+
+    const statusEnvelope = baseEnvelope({
+      entityType: QUEUE_STATUS_TRANSITION_ENTITY_TYPE,
+      entityId: ENTRY_ID,
+      payload: { entryId: ENTRY_ID, status: QueueStatus.IN_CONSULT },
+    });
+
+    await service.replayQueueOperation(context, statusEnvelope);
+
+    expect(broadcast.emitReplayApplied).toHaveBeenCalledWith({ clinicId: CLINIC_ID, domain: 'queue', entityIds: [ENTRY_ID] });
+  });
+
+  it('emits REPLAY_CONFLICT_OPENED (not REPLAY_APPLIED) when a status transition creates a review task instead of overwriting', async () => {
+    vi.mocked(gateway.findEntryById).mockResolvedValue(null);
+
+    const statusEnvelope = baseEnvelope({
+      entityType: QUEUE_STATUS_TRANSITION_ENTITY_TYPE,
+      entityId: ENTRY_ID,
+      payload: { entryId: ENTRY_ID, status: QueueStatus.IN_CONSULT },
+    });
+
+    await service.replayQueueOperation(context, statusEnvelope);
+
+    expect(broadcast.emitReplayConflictOpened).toHaveBeenCalledWith({ clinicId: CLINIC_ID, domain: 'queue', entityIds: [ENTRY_ID] });
+    expect(broadcast.emitReplayApplied).not.toHaveBeenCalled();
+  });
+
+  it('does not emit any broadcast for a duplicate/flapping replay of an already-acknowledged operation', async () => {
+    vi.mocked(receipts.findUnique).mockResolvedValue({ operationId: 'op-1' });
+
+    await service.replayQueueOperation(context, baseEnvelope());
+
+    expect(broadcast.emitReplayApplied).not.toHaveBeenCalled();
+    expect(broadcast.emitReplayConflictOpened).not.toHaveBeenCalled();
   });
 });

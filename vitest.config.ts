@@ -87,6 +87,14 @@ export default defineConfig({
       // these assert measured timings, not just pass/fail behavior, but they
       // still run through vitest per the plan's verify commands.
       'apps/api/tests/performance/*.bench.ts',
+      // Verify-fix 10.3: `apiClient` forwards a structured `.conflict`
+      // payload onto `ApiClientError` (alongside the existing `.details`),
+      // and `QueueBoard`/`BillingWorkbench` now drive `StaleStateBanner`
+      // from real replay-broadcast/write-rejection state instead of a
+      // hardcoded `"stale"` string -- the latter two are already covered by
+      // the `apps/web/src/features/queue` and `apps/web/src/features/billing`
+      // globs above.
+      'apps/web/src/lib/__tests__/api.test.ts',
     ],
   },
 });

@@ -10,6 +10,7 @@ import {
   type QueueOperationalReviewTaskStore,
 } from '../services/queueOfflineReplay.service.js';
 import { QueuePreemptionService } from '../services/queuePreemption.service.js';
+import { ReplayBroadcastService } from '../../sync/services/replayBroadcast.service.js';
 
 /**
  * Top-level shape check only, matching `apps/api/src/modules/sync/routes.ts`'s
@@ -48,13 +49,18 @@ function readPriority(raw: unknown): unknown {
   return undefined;
 }
 
-export function buildQueueOfflineReplayService(db: TenantPrismaClient): QueueOfflineReplayService {
+export function buildQueueOfflineReplayService(
+  db: TenantPrismaClient,
+  broadcast: ReplayBroadcastService = new ReplayBroadcastService(null),
+): QueueOfflineReplayService {
   return new QueueOfflineReplayService(
     // `QueueRepository`'s public method names/signatures satisfy
     // `QueueOfflineReplayGateway` structurally -- no adapter needed.
     new QueueRepository(db),
     db.syncReplayReceipt as unknown as QueueReplayReceiptStore,
     db.syncConflictRecord as unknown as QueueOperationalReviewTaskStore,
+    () => new Date(),
+    broadcast,
   );
 }
 

@@ -9,6 +9,7 @@ import {
   type ConsultationReplayReceiptStore,
   type ClinicalConflictRecordStore,
 } from '../services/consultationOfflineReplay.service.js';
+import { ReplayBroadcastService } from '../../sync/services/replayBroadcast.service.js';
 
 /**
  * Top-level shape check only, matching `queueSync.controller.ts`'s
@@ -33,7 +34,10 @@ function validationError(reply: FastifyReply, issues: { message: string }[]) {
   });
 }
 
-export function buildConsultationOfflineReplayService(db: TenantPrismaClient): ConsultationOfflineReplayService {
+export function buildConsultationOfflineReplayService(
+  db: TenantPrismaClient,
+  broadcast: ReplayBroadcastService = new ReplayBroadcastService(null),
+): ConsultationOfflineReplayService {
   return new ConsultationOfflineReplayService(
     // `EmrRepository`'s public method names/signatures (`getConsultation`,
     // `loadDraft`, `saveDraft`) satisfy `ConsultationOfflineReplayGateway`
@@ -48,6 +52,7 @@ export function buildConsultationOfflineReplayService(db: TenantPrismaClient): C
     new EmrRepository(db) as unknown as ConsultationOfflineReplayGateway,
     db.syncReplayReceipt as unknown as ConsultationReplayReceiptStore,
     db.syncConflictRecord as unknown as ClinicalConflictRecordStore,
+    broadcast,
   );
 }
 

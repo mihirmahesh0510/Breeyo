@@ -10,6 +10,7 @@ import {
   type InventoryReplayReceiptStore,
 } from '../services/inventoryOfflineReplay.service.js';
 import { InventoryConflictReviewService, type InventoryReviewTaskStore } from '../services/inventoryConflictReview.service.js';
+import type { ReplayBroadcastService } from '../../sync/services/replayBroadcast.service.js';
 
 const CLINIC_ID = '00000000-0000-0000-0000-000000000001';
 const USER_ID = '00000000-0000-0000-0000-000000000010';
@@ -267,6 +268,74 @@ describe('InventoryOfflineReplayService', () => {
       await expect(service.replayInventoryOperation(context, baseEnvelope())).rejects.toThrow('database connection lost');
       expect(reviewTasks.create).not.toHaveBeenCalled();
     });
+  });
+});
+
+// Verify-fix 10.3: `ReplayBroadcastService` was built but never called from
+// `InventoryOfflineReplayService` -- proves the broadcast fires from the
+// same `applyOrReview` path every one of the four operation types shares,
+// which is exactly what `inventorySync.controller.ts`'s HTTP handler calls.
+describe('InventoryOfflineReplayService replay-broadcast wiring (verify-fix 10.3)', () => {
+  let gateway: ReturnType<typeof createMockGateway>;
+  let receipts: ReturnType<typeof createMockReceipts>;
+  let reviewTasks: ReturnType<typeof createMockReviewTasks>;
+  let reviewService: InventoryConflictReviewService;
+  let broadcast: { emitReplayApplied: ReturnType<typeof vi.fn>; emitReplayConflictOpened: ReturnType<typeof vi.fn>; emitReplayFailureEscalated: ReturnType<typeof vi.fn> };
+  let service: InventoryOfflineReplayService;
+
+  beforeEach(() => {
+    gateway = createMockGateway();
+    receipts = createMockReceipts();
+    reviewTasks = createMockReviewTasks();
+    reviewService = new InventoryConflictReviewService(reviewTasks);
+    broadcast = {
+      emitReplayApplied: vi.fn(),
+      emitReplayConflictOpened: vi.fn(),
+      emitReplayFailureEscalated: vi.fn(),
+    };
+    service = new InventoryOfflineReplayService(gateway, receipts, reviewService, () => FIXED_NOW, broadcast as unknown as ReplayBroadcastService);
+  });
+
+  it('emits a clinic-scoped REPLAY_APPLIED broadcast after a successful dispense', async () => {
+    vi.mocked(gateway.dispense).mockResolvedValue({
+      deductions: [{ batchId: 'batch-1', lotNumber: null, quantity: 3 }],
+      newTotal: 7,
+      movementIds: ['movement-1'],
+    } as any);
+
+    await service.replayInventoryOperation(context, baseEnvelope());
+
+    expect(broadcast.emitReplayApplied).toHaveBeenCalledWith({ clinicId: CLINIC_ID, domain: 'inventory', entityIds: [ITEM_ID] });
+    expect(broadcast.emitReplayConflictOpened).not.toHaveBeenCalled();
+  });
+
+  it('emits a clinic-scoped REPLAY_CONFLICT_OPENED broadcast (not REPLAY_APPLIED) when a known mismatch creates a review task', async () => {
+    vi.mocked(gateway.dispense).mockRejectedValue(
+      structuredError('INSUFFICIENT_STOCK', 'Insufficient stock', 409, { itemId: ITEM_ID, requested: 3, available: 1 }),
+    );
+
+    await service.replayInventoryOperation(context, baseEnvelope());
+
+    expect(broadcast.emitReplayConflictOpened).toHaveBeenCalledWith({ clinicId: CLINIC_ID, domain: 'inventory', entityIds: [ITEM_ID] });
+    expect(broadcast.emitReplayApplied).not.toHaveBeenCalled();
+  });
+
+  it('does not emit any broadcast for a duplicate/flapping replay of an already-processed operation', async () => {
+    vi.mocked(receipts.findUnique).mockResolvedValue({ operationId: 'op-1' });
+
+    await service.replayInventoryOperation(context, baseEnvelope());
+
+    expect(broadcast.emitReplayApplied).not.toHaveBeenCalled();
+    expect(broadcast.emitReplayConflictOpened).not.toHaveBeenCalled();
+  });
+
+  it('does not emit any broadcast when an unexpected error propagates (no false "applied"/"reviewed" signal)', async () => {
+    vi.mocked(gateway.dispense).mockRejectedValue(new Error('database connection lost'));
+
+    await expect(service.replayInventoryOperation(context, baseEnvelope())).rejects.toThrow();
+
+    expect(broadcast.emitReplayApplied).not.toHaveBeenCalled();
+    expect(broadcast.emitReplayConflictOpened).not.toHaveBeenCalled();
   });
 });
 

@@ -50,6 +50,7 @@ export default function BillingPage() {
             data={workbench.data}
             actorName={user?.fullName ?? 'You'}
             hasRealtimeStaleNotice={workbench.realtimeNotice !== null}
+            replayStatus={workbench.replayStatus}
             onRefresh={handleRefresh}
             onReviewChanges={handleReviewChanges}
             onCollectPayment={workbench.collectPayment}

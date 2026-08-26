@@ -6,7 +6,7 @@
 // (D-20's "hidden, not disabled"), never merely disabled buttons a curious
 // Front Desk user could inspect and re-enable client-side.
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent, waitFor, within } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { writeSession, clearSession } from '../../../lib/auth-store';
 import { AuthProvider } from '../../../lib/AuthProvider';
@@ -251,6 +251,62 @@ describe('Billing workbench stale-state prompts (D-40)', () => {
 
     const banner = await waitFor(() => screen.getByTestId('stale-state-banner'));
     expect(banner).toBeInTheDocument();
+  });
+});
+
+describe('Billing workbench stale-write-conflict prompts (verify-fix 10.3)', () => {
+  it('renders the real StaleStateBanner with the conflict copy when collect-payment is rejected with a 409 STALE_WRITE_CONFLICT carrying .conflict', async () => {
+    seedSession();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        if (url.includes('web-dashboard/cockpit')) return jsonResponse(200, cockpitBody);
+        if (url.includes('billing/web/workbench')) return jsonResponse(200, workbenchBody(true));
+        if (url.includes('billing/web/invoices/inv_1/collect-payment') && init?.method === 'POST') {
+          return {
+            ok: false,
+            status: 409,
+            json: async () => ({
+              error: {
+                code: 'STALE_WRITE_CONFLICT',
+                message: 'This record changed elsewhere while you were viewing it. Refresh and review before retrying.',
+                conflict: {
+                  domain: 'billing',
+                  entityType: 'INVOICE',
+                  entityId: 'inv_1',
+                  currentVersion: 2,
+                  expectedVersion: 1,
+                  severity: 'OPERATIONAL',
+                },
+              },
+            }),
+          } as Response;
+        }
+        throw new Error(`Unhandled fetch in test: ${url} ${init?.method ?? 'GET'}`);
+      }),
+    );
+
+    render(
+      <AuthProvider>
+        <BillingPage />
+      </AuthProvider>,
+    );
+
+    await screen.findByText('Bruno');
+    expect(screen.queryByTestId('stale-state-banner')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getAllByRole('button', { name: /collect payment/i })[0]);
+
+    // The load-bearing assertion: the real StaleStateBanner rendered by the
+    // real BillingWorkbench/BillingPage shows the conflict copy off a real
+    // 409 response, not just a generic toast and not the hardcoded "stale"
+    // string the finding reported.
+    const banner = await screen.findByTestId('stale-state-banner');
+    expect(banner).toBeInTheDocument();
+    // Scoped to the banner itself: the error toast (a separate D-42/D-43
+    // mutation-failure surface) happens to share the same server-provided
+    // message text, so this must not accidentally pass off that element.
+    expect(within(banner).getByText(/changed elsewhere/i)).toBeInTheDocument();
   });
 });
 

@@ -9,6 +9,7 @@ import {
   buildConsultationOfflineReplayService,
 } from './controllers/consultationSync.controller.js';
 import { createNotificationBus } from '../notifications/notification-bus.js';
+import { ReplayBroadcastService } from '../sync/services/replayBroadcast.service.js';
 // D-03: the EMR module depends on billing so that ending a consultation can
 // seed a draft invoice. This is a deliberate ONE-DIRECTIONAL dependency — EMR
 // imports billing, never the reverse. Billing reads consultations through its
@@ -70,7 +71,14 @@ export default async function emrRoutes(fastify: FastifyInstance) {
   // mirroring `queue.routes.ts`'s `queueSyncController` -- clinical replay
   // has its own review posture (whole-draft hold on any conflict) and must
   // not share a code path with queue/inventory replay's lighter rules.
-  const consultationSyncController = createConsultationSyncController(buildConsultationOfflineReplayService);
+  // Verify-fix 10.3: plugin-scope singleton, same `fastify.io` convention
+  // `queue.routes.ts` uses -- a late EMR replay now actually pushes a
+  // scoped `replay:applied`/`replay:conflict-opened` event instead of
+  // `ReplayBroadcastService` sitting unreached.
+  const replayBroadcast = new ReplayBroadcastService(fastify.io ?? null);
+  const consultationSyncController = createConsultationSyncController((db) =>
+    buildConsultationOfflineReplayService(db, replayBroadcast),
+  );
 
   const preHandler = [authenticate, tenantContext];
 
