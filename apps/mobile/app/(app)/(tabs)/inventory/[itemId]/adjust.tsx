@@ -39,6 +39,7 @@ export default function InventoryAdjustRoute() {
       visible
       itemId={itemId}
       itemName={itemQuery.data.name}
+      category={itemQuery.data.category}
       unit={itemQuery.data.unit}
       currentStock={itemQuery.data.currentStock}
       onDismiss={() => router.back()}

@@ -44,6 +44,19 @@ export function selectFifoBatch(batches: StockBatch[]): StockBatch | null {
   return sorted.find((batch) => !isBatchExpired(batch) && batch.currentQty > 0) ?? null;
 }
 
+/**
+ * Verify-fix 10.2 (D-04, D-10, D-19): queued-for-sync toast copy when a
+ * dispense's online request fails with a genuine network failure and falls
+ * through to `useOfflineStockActions.dispenseStock` instead. Distinct
+ * wording from the online success toast so staff can tell "this happened"
+ * from "this happened, but only on this device until reconnect" -- the same
+ * calm, non-blocking confirmation posture `QueueCardItem.tsx`'s pending-sync
+ * marker established for queue (D-03, D-19 to D-21).
+ */
+export function getDispenseQueuedToast(quantity: number, unit: string, itemName: string): string {
+  return `${quantity} ${unit} of ${itemName} dispensed -- will sync when back online`;
+}
+
 // --- Quantity clamping ---
 
 /**

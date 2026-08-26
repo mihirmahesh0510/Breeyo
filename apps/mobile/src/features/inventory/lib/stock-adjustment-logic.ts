@@ -34,6 +34,26 @@ export function getAdjustmentSuccessToast(
     : `${quantity} ${unit} removed from ${itemName}`;
 }
 
+/**
+ * Verify-fix 10.2 (D-04, D-10, D-19): queued-for-sync toast copy when a
+ * stock adjustment's online request fails with a genuine network failure
+ * and falls through to `useOfflineStockActions.adjustStock` instead.
+ * Distinct wording from the online success toast so staff can tell "this
+ * happened" from "this happened, but only on this device until reconnect"
+ * -- the same calm, non-blocking confirmation posture `QueueCardItem.tsx`'s
+ * pending-sync marker established for queue (D-03, D-19 to D-21).
+ */
+export function getAdjustmentQueuedToast(
+  type: AdjustmentType,
+  quantity: number,
+  unit: string,
+  itemName: string,
+): string {
+  return type === 'add'
+    ? `${quantity} ${unit} added to ${itemName} -- will sync when back online`
+    : `${quantity} ${unit} removed from ${itemName} -- will sync when back online`;
+}
+
 export type StockAdjustmentSubmissionResult =
   | { success: true; payload: StockAdjustmentSchemaInput }
   | { success: false; errors: StockAdjustmentFormErrors };
