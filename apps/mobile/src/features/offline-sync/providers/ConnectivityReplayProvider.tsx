@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import NetInfo from '@react-native-community/netinfo';
 import * as SecureStore from 'expo-secure-store';
 import { useAuth } from '../../../providers/AuthProvider';
-import { getOfflineSyncDb } from '../db/offlineDb';
+import { countPendingSyncOperations, getOfflineSyncDb } from '../db/offlineDb';
 import { runReplayCycle } from '../services/syncCoordinator';
 import { buildReplayCycleDeps } from '../services/buildReplayCycleDeps';
 import { createConnectivityReplayDriver, type ConnectivitySnapshot } from '../services/connectivityReplayDriver';
@@ -81,6 +81,10 @@ export function ConnectivityReplayProvider(): null {
         const db = await getOfflineSyncDb();
         const deviceId = await getOrCreateDeviceId();
         await runReplayCycle(buildReplayCycleDeps({ db, deviceId, accessToken: token }));
+      },
+      hasPendingWork: async () => {
+        const db = await getOfflineSyncDb();
+        return (await countPendingSyncOperations(db)) > 0;
       },
     });
   }

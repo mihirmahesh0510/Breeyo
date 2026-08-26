@@ -32,6 +32,12 @@ export interface ConnectivityReplayDriverDeps {
   /** Runs exactly one replay cycle. The real caller wires this to
    *  `runReplayCycle(buildReplayCycleDeps(...))`. */
   runReplayCycle: () => Promise<unknown>;
+  /** F9: checked ONLY on the very first connectivity snapshot this driver
+   *  ever observes, and only when that snapshot is already online -- a cold
+   *  app launch/login has no offline->online transition to detect, but an
+   *  offline-captured op from a PRIOR session still needs to replay. The
+   *  real caller wires this to `countPendingSyncOperations(db) > 0`. */
+  hasPendingWork: () => Promise<boolean>;
 }
 
 export interface ConnectivityReplayDriver {
@@ -40,17 +46,22 @@ export interface ConnectivityReplayDriver {
 
 /**
  * Fires `deps.runReplayCycle` exactly once per genuine offline->online
- * transition -- never on the very first snapshot (previous state unknown,
- * so there is nothing to have "recovered" from -- mirrors
- * `sync-status.ts`'s `shouldShowRecoveryCue` convention for the same
- * reason), and never again on a repeated online snapshot (e.g. from the
+ * transition, and never again on a repeated online snapshot (e.g. from the
  * periodic re-check the real provider runs every 60s in case a reconnect
  * event from the OS is missed).
  *
- * Also guards against overlapping cycles: a transition arriving while a
- * previously-triggered cycle is still in flight (the connection flapping
- * offline/online mid-cycle) is a no-op rather than a second concurrent
- * `runReplayCycle` call.
+ * The very first snapshot this driver ever observes has no prior state to
+ * compare against, so it is never treated as an offline->online
+ * "transition" -- but F9: if that first snapshot is already online, a
+ * cold app launch/login can still be sitting on offline-captured work from
+ * a PRIOR session that has no transition left to trigger its replay, so
+ * `deps.hasPendingWork()` is checked once in that one case and a replay
+ * cycle fires immediately if it resolves true.
+ *
+ * Also guards against overlapping cycles: a transition (or the first-
+ * snapshot pending-work check) arriving while a previously-triggered cycle
+ * is still in flight (the connection flapping offline/online mid-cycle) is
+ * a no-op rather than a second concurrent `runReplayCycle` call.
  */
 export function createConnectivityReplayDriver(deps: ConnectivityReplayDriverDeps): ConnectivityReplayDriver {
   let previousOnline: boolean | null = null;
@@ -67,11 +78,19 @@ export function createConnectivityReplayDriver(deps: ConnectivityReplayDriverDep
   return {
     handleConnectivityChange(snapshot: ConnectivitySnapshot): void {
       const online = isOnlineSnapshot(snapshot);
+      const isFirstSnapshot = previousOnline === null;
       const wasOffline = previousOnline === false;
       previousOnline = online;
 
       if (online && wasOffline) {
         triggerReplayCycle();
+        return;
+      }
+
+      if (online && isFirstSnapshot) {
+        deps.hasPendingWork().then((hasPending) => {
+          if (hasPending) triggerReplayCycle();
+        });
       }
     },
   };

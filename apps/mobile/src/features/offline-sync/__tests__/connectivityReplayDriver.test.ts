@@ -39,7 +39,8 @@ describe('isOnlineSnapshot', () => {
 describe('createConnectivityReplayDriver', () => {
   it('fires the replay trigger exactly once on a genuine offline->online transition', async () => {
     const runReplayCycle = vi.fn().mockResolvedValue(undefined);
-    const driver = createConnectivityReplayDriver({ runReplayCycle });
+    const hasPendingWork = vi.fn().mockResolvedValue(false);
+    const driver = createConnectivityReplayDriver({ runReplayCycle, hasPendingWork });
 
     driver.handleConnectivityChange(offline());
     driver.handleConnectivityChange(online());
@@ -48,19 +49,48 @@ describe('createConnectivityReplayDriver', () => {
     expect(runReplayCycle).toHaveBeenCalledTimes(1);
   });
 
-  it('never fires on the very first snapshot, even if it is already online', async () => {
+  it('does not fire on the very first snapshot when there is no pending offline work, even if it is already online', async () => {
     const runReplayCycle = vi.fn().mockResolvedValue(undefined);
-    const driver = createConnectivityReplayDriver({ runReplayCycle });
+    const hasPendingWork = vi.fn().mockResolvedValue(false);
+    const driver = createConnectivityReplayDriver({ runReplayCycle, hasPendingWork });
 
     driver.handleConnectivityChange(online());
     await Promise.resolve();
+    await Promise.resolve();
 
+    expect(hasPendingWork).toHaveBeenCalledTimes(1);
+    expect(runReplayCycle).not.toHaveBeenCalled();
+  });
+
+  it('fires immediately on the very first snapshot when it is already online AND there is pending offline work (cold app launch/login while already connected)', async () => {
+    const runReplayCycle = vi.fn().mockResolvedValue(undefined);
+    const hasPendingWork = vi.fn().mockResolvedValue(true);
+    const driver = createConnectivityReplayDriver({ runReplayCycle, hasPendingWork });
+
+    driver.handleConnectivityChange(online());
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(runReplayCycle).toHaveBeenCalledTimes(1);
+  });
+
+  it('never checks pending work when the very first snapshot is offline -- nothing can replay yet either way', async () => {
+    const runReplayCycle = vi.fn().mockResolvedValue(undefined);
+    const hasPendingWork = vi.fn().mockResolvedValue(true);
+    const driver = createConnectivityReplayDriver({ runReplayCycle, hasPendingWork });
+
+    driver.handleConnectivityChange(offline());
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(hasPendingWork).not.toHaveBeenCalled();
     expect(runReplayCycle).not.toHaveBeenCalled();
   });
 
   it('does not re-fire on repeated online snapshots (the periodic re-check while already online)', async () => {
     const runReplayCycle = vi.fn().mockResolvedValue(undefined);
-    const driver = createConnectivityReplayDriver({ runReplayCycle });
+    const hasPendingWork = vi.fn().mockResolvedValue(false);
+    const driver = createConnectivityReplayDriver({ runReplayCycle, hasPendingWork });
 
     driver.handleConnectivityChange(offline());
     driver.handleConnectivityChange(online());
@@ -73,7 +103,8 @@ describe('createConnectivityReplayDriver', () => {
 
   it('fires again on a later offline->online cycle once the previous cycle has resolved', async () => {
     const runReplayCycle = vi.fn().mockResolvedValue(undefined);
-    const driver = createConnectivityReplayDriver({ runReplayCycle });
+    const hasPendingWork = vi.fn().mockResolvedValue(false);
+    const driver = createConnectivityReplayDriver({ runReplayCycle, hasPendingWork });
 
     driver.handleConnectivityChange(offline());
     driver.handleConnectivityChange(online());
@@ -93,7 +124,8 @@ describe('createConnectivityReplayDriver', () => {
       resolveFirstCycle = resolve;
     });
     const runReplayCycle = vi.fn().mockReturnValueOnce(firstCycle).mockResolvedValue(undefined);
-    const driver = createConnectivityReplayDriver({ runReplayCycle });
+    const hasPendingWork = vi.fn().mockResolvedValue(false);
+    const driver = createConnectivityReplayDriver({ runReplayCycle, hasPendingWork });
 
     driver.handleConnectivityChange(offline());
     driver.handleConnectivityChange(online());
