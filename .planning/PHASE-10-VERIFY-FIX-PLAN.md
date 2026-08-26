@@ -80,6 +80,8 @@ Each item has: **files**, **root cause**, **fix shape**, and **doc updates requi
 
 ### 10.6 `retryEscalation.service.ts` has no live caller; `OnDutyRosterProvider` has no implementation — **needs-a-decision (RESOLVED: `listClinicVets`)**
 
+**Status: ✅ Fixed in `5ded1ef`**
+
 - **Files:** `apps/api/src/modules/sync/services/retryEscalation.service.ts` (correctly built, just unreached), `apps/api/src/modules/sync/routes.ts` (no retry/escalate route), a new `apps/api/src/modules/sync/services/onDutyRoster.service.ts` (or similar) implementing `OnDutyRosterProvider` against `apps/api/src/modules/scheduling/availability.repository.ts#listClinicVets`.
 - **Root cause:** the escalation state machine and its interface were built ahead of both (a) a real route to trigger it, and (b) a concrete roster implementation — both were left as an explicit, disclosed deferral in `10-05-SUMMARY.md`.
 - **Fix shape:** (a) implement `OnDutyRosterProvider.listOtherOnDutyClinicianIds(clinicId, excludeUserId)` by calling `listClinicVets(clinicId)` and filtering out `excludeUserId`; (b) add `POST /sync/failures/:failureTaskId/retry` and `POST /sync/failures/:failureTaskId/escalate` routes wiring to `retryEscalation.service.ts`; (c) wire the mobile `SyncFailureCenterScreen`'s Retry/Escalate buttons to these real endpoints instead of dead callbacks. TDD: failing test first for the roster provider (real `listClinicVets` call, correct exclusion) and for each route (real HTTP call transitions `SyncFailureTask.resolutionState`/`currentOwnerUserId` correctly).
