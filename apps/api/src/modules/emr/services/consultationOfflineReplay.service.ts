@@ -1,12 +1,17 @@
 import { z } from 'zod';
 import { offlineOperationEnvelopeSchema, saveDraftSchema } from '@breeyo/validators';
 import { ConflictSeverity, ResolutionState } from '@breeyo/types';
-import type { SaveDraftInput } from '@breeyo/types';
-import { classifyClinicalConflict } from './clinicalConflict.service.js';
+import type { SaveDraftInput, AddendumEntry } from '@breeyo/types';
+import { classifyClinicalConflict, CLINICAL_DRAFT_FIELDS } from './clinicalConflict.service.js';
 
 /** Wire contract with `apps/mobile/src/features/consultation/services/offlineConsultationDraftStore.ts`. */
 export const EMR_SYNC_DOMAIN = 'emr';
 export const CONSULTATION_DRAFT_ENTITY_TYPE = 'CONSULTATION_DRAFT_SAVE';
+
+/** The exact `Consultation.status` string value (`prisma/schema.prisma`,
+ *  `emr.service.ts`/`emr.repository.ts`) once a consultation has been
+ *  finalized. Not an enum -- the column is a plain default-`'draft'` string. */
+const FINALIZED_CONSULTATION_STATUS = 'finalized';
 
 /**
  * The offline device's own current draft (`draft`) plus the draft snapshot
@@ -45,6 +50,11 @@ export interface ConsultationOfflineReplayGateway {
   getConsultation(consultationId: string, clinicId: string): Promise<ConsultationRecord | null>;
   loadDraft(consultationId: string): Promise<SaveDraftInput | null>;
   saveDraft(consultationId: string, clinicId: string, data: SaveDraftInput): Promise<void>;
+  /** Matches `EmrRepository.addAddendum` exactly (verify-fix 10.1) -- the
+   *  post-finalization editability mechanism Phase 4 already built
+   *  (`04-CONTEXT.md`: "addendum-only"). A finalized consultation's late
+   *  offline replay is routed here instead of the draft/conflict-diff path. */
+  addAddendum(consultationId: string, addendum: AddendumEntry): Promise<unknown>;
 }
 
 /** Same `SyncReplayReceipt` idempotency ledger every other domain adapter
@@ -67,6 +77,10 @@ export interface ConsultationOfflineReplayContext {
   clinicId: string;
   userId: string;
   deviceId: string;
+  /** Same `(request as any).userName ?? 'Unknown'` fallback convention as
+   *  the live `addAddendumHandler` in `emr.controller.ts` -- optional here
+   *  because most callers/tests only need `userId` for authorship. */
+  userName?: string;
 }
 
 export type ConsultationReplayOutcomeStatus =
@@ -91,6 +105,40 @@ function stringField(raw: unknown, field: string): string {
     if (typeof value === 'string' && value.length > 0) return value;
   }
   return 'unknown';
+}
+
+/**
+ * Verify-fix 10.1: for a late replay against an already-finalized
+ * consultation, only the top-level `SaveDraftInput` fields the offline
+ * device actually changed relative to its own last-known baseline become
+ * addendum content -- same field set (`CLINICAL_DRAFT_FIELDS`) the
+ * still-in-draft conflict diff reconciles on, so "changed" means the same
+ * thing in both paths. Returns `null` when the offline edit turns out to
+ * be a no-op (nothing to append), matching the safe-merge no-op case just
+ * above it.
+ */
+function buildChangedFieldsSummary(draft: SaveDraftInput, baseline: SaveDraftInput): string | null {
+  const changedFields = CLINICAL_DRAFT_FIELDS.filter((field) => {
+    const draftValue = (draft as Record<string, unknown>)[field];
+    const baselineValue = (baseline as Record<string, unknown>)[field];
+    return JSON.stringify(draftValue) !== JSON.stringify(baselineValue);
+  });
+
+  if (changedFields.length === 0) return null;
+
+  const details = changedFields
+    .map((field) => `${field}: ${JSON.stringify((draft as Record<string, unknown>)[field])}`)
+    .join('; ');
+
+  return `Updated fields -- ${details}`;
+}
+
+/** Prefers the offline device's own edit timestamp (envelope `createdAt`)
+ *  over the replay's arrival time, falling back only when it is missing or
+ *  unparseable. */
+function parseEnvelopeCreatedAt(createdAt: string): Date {
+  const parsed = new Date(createdAt);
+  return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
 }
 
 /**
@@ -166,6 +214,18 @@ export class ConsultationOfflineReplayService {
       return { operationId: envelope.operationId, status: 'REJECTED', message: 'Consultation not found for this clinic.' };
     }
 
+    // Verify-fix 10.1: a consultation finalized before this offline edit
+    // reconnects has no draft row left to diff against (finalization
+    // deletes it) -- `loadDraft` would return null, get misread as
+    // `EMPTY_DRAFT`, and either silently drop the edit or recreate an
+    // orphan `ConsultationDraft` row nothing reads. Branch out BEFORE the
+    // draft/conflict-diff path runs at all: route through Phase 4's
+    // existing addendum mechanism instead (04-CONTEXT.md: "addendum-only"
+    // post-finalization editability).
+    if (consultation.status === FINALIZED_CONSULTATION_STATUS) {
+      return this.replayAsAddendum(context, envelope, consultation, draft, baseline);
+    }
+
     const serverDraft = (await this.gateway.loadDraft(consultation.id)) ?? EMPTY_DRAFT;
 
     const classification = classifyClinicalConflict({
@@ -204,6 +264,49 @@ export class ConsultationOfflineReplayService {
 
     await this.recordReceipt(context, envelope.operationId, consultation.id);
     return { operationId: envelope.operationId, status: 'APPLIED', consultationId: consultation.id };
+  }
+
+  /**
+   * Verify-fix 10.1 / D-38: a replay whose target consultation is already
+   * `finalized` never runs the draft/conflict diff -- `ConsultationDraft`
+   * is not read (`loadDraft`) or written (`saveDraft`) at all in this path.
+   * Instead the changed SOAP/vitals/prescription fields (relative to the
+   * offline device's own last-known baseline) are translated into a single
+   * addendum entry via Phase 4's existing addendum-only post-finalization
+   * edit mechanism (`04-CONTEXT.md`), authored by the originating offline
+   * user.
+   */
+  private async replayAsAddendum(
+    context: ConsultationOfflineReplayContext,
+    envelope: z.infer<typeof offlineOperationEnvelopeSchema>,
+    consultation: ConsultationRecord,
+    draft: SaveDraftInput,
+    baseline: SaveDraftInput,
+  ): Promise<ConsultationReplayOutcome> {
+    const changedFieldsText = buildChangedFieldsSummary(draft, baseline);
+
+    if (changedFieldsText) {
+      const addendum: AddendumEntry = {
+        id: crypto.randomUUID(),
+        text: `Offline edit synced after this consultation was finalized (auto-applied as addendum). ${changedFieldsText}`,
+        addedBy: context.userId,
+        addedByName: context.userName ?? 'Unknown',
+        // Original offline edit time when the envelope's `createdAt` is a
+        // valid timestamp, else the replay's own time.
+        addedAt: parseEnvelopeCreatedAt(envelope.createdAt),
+      };
+      await this.gateway.addAddendum(consultation.id, addendum);
+    }
+
+    await this.recordReceipt(context, envelope.operationId, consultation.id);
+    return {
+      operationId: envelope.operationId,
+      status: 'APPLIED',
+      consultationId: consultation.id,
+      message: changedFieldsText
+        ? 'Applied as a clinical addendum: consultation was already finalized.'
+        : 'No field changes to apply: consultation was already finalized.',
+    };
   }
 
   private async recordReceipt(

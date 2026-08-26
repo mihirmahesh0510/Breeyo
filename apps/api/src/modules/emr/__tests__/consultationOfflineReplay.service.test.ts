@@ -66,6 +66,7 @@ function createMockGateway(): ConsultationOfflineReplayGateway {
     getConsultation: vi.fn().mockResolvedValue(makeConsultation()),
     loadDraft: vi.fn().mockResolvedValue(baseline()),
     saveDraft: vi.fn().mockResolvedValue(undefined),
+    addAddendum: vi.fn().mockResolvedValue({ id: 'addendum-1' }),
   };
 }
 
@@ -226,6 +227,80 @@ describe('ConsultationOfflineReplayService', () => {
       // rather than partially applying the safe fields underneath it.
       expect(result.status).toBe('CONFLICT_CREATED');
       expect(gateway.saveDraft).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('late replay against an already-finalized consultation (verify-fix 10.1)', () => {
+    it('routes the offline edit through addAddendum instead of the draft/conflict diff, and never touches ConsultationDraft', async () => {
+      const base = baseline();
+      const local = { ...base, assessment: 'Owner reports improvement overnight.' };
+      vi.mocked(gateway.getConsultation).mockResolvedValue(
+        makeConsultation({ status: 'finalized' }),
+      );
+
+      const result = await service.replayConsultationDraft(
+        context,
+        envelope({}, { baseline: base, draft: local }),
+      );
+
+      expect(result.status).toBe('APPLIED');
+      expect(result.consultationId).toBe(CONSULTATION_ID);
+
+      // The whole draft/conflict-diff path must never run for a finalized
+      // consultation: no draft row is read or written.
+      expect(gateway.loadDraft).not.toHaveBeenCalled();
+      expect(gateway.saveDraft).not.toHaveBeenCalled();
+      expect(conflictRecords.create).not.toHaveBeenCalled();
+
+      expect(gateway.addAddendum).toHaveBeenCalledTimes(1);
+      const [consultationIdArg, addendumArg] = vi.mocked(gateway.addAddendum).mock.calls[0];
+      expect(consultationIdArg).toBe(CONSULTATION_ID);
+      expect(addendumArg).toEqual(
+        expect.objectContaining({
+          id: expect.any(String),
+          // D-24: authored by the originating (offline) user, not the
+          // consultation's assigned vet -- they may differ.
+          addedBy: USER_ID,
+          addedByName: expect.any(String),
+          addedAt: expect.any(Date),
+          text: expect.stringContaining('assessment'),
+        }),
+      );
+
+      // Still recorded so a flapping resend of the same operationId is an
+      // idempotent no-op rather than a second addendum.
+      expect(receipts.create).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not add an addendum when the offline draft has no real field changes since baseline', async () => {
+      const base = baseline();
+      vi.mocked(gateway.getConsultation).mockResolvedValue(
+        makeConsultation({ status: 'finalized' }),
+      );
+
+      const result = await service.replayConsultationDraft(
+        context,
+        envelope({}, { baseline: base, draft: base }),
+      );
+
+      expect(result.status).toBe('APPLIED');
+      expect(gateway.addAddendum).not.toHaveBeenCalled();
+      expect(gateway.loadDraft).not.toHaveBeenCalled();
+      expect(gateway.saveDraft).not.toHaveBeenCalled();
+      expect(receipts.create).toHaveBeenCalledTimes(1);
+    });
+
+    it('acknowledges a duplicate/flapping replay of an already-applied addendum operation as a no-op', async () => {
+      vi.mocked(gateway.getConsultation).mockResolvedValue(
+        makeConsultation({ status: 'finalized' }),
+      );
+      vi.mocked(receipts.findUnique).mockResolvedValue({ operationId: 'op-1' });
+
+      const result = await service.replayConsultationDraft(context, envelope());
+
+      expect(result.status).toBe('ACKNOWLEDGED_DUPLICATE');
+      expect(gateway.addAddendum).not.toHaveBeenCalled();
+      expect(gateway.getConsultation).not.toHaveBeenCalled();
     });
   });
 });

@@ -27,6 +27,8 @@ Each item has: **files**, **root cause**, **fix shape**, and **doc updates requi
 
 ### 10.1 EMR replay doesn't check `consultation.status` — late replay after finalization can silently misapply/lose a clinical edit — **needs-a-decision (RESOLVED: addendum)**
 
+**Status: ✅ Fixed in `e45cb82`**
+
 - **Files:** `apps/api/src/modules/emr/services/consultationOfflineReplay.service.ts` (never reads `consultation.status`), `apps/api/src/modules/emr/emr.service.ts` (`addAddendum`, the existing mechanism to reuse), `apps/api/src/modules/emr/emr.repository.ts` (`getConsultation`, `addAddendum`).
 - **Root cause:** the replay path treats every consultation as still-draft. A `getConsultation` for an already-finalized consultation returns a real row with `status: 'FINALIZED'`, but the service never inspects it before running the draft/conflict diff — `loadDraft` returns `null` (the draft row was deleted at finalization), gets treated as `EMPTY_DRAFT`, and the offline edit is either silently dropped or recreates an orphan `ConsultationDraft` row nothing ever reads.
 - **Fix shape:** at the top of `consultationOfflineReplay.service.ts`'s reconciliation function, branch on `consultation.status === 'FINALIZED'` (or whatever the real enum value is — check `emr.repository.ts`) before running the draft-diff path at all. Route finalized-target replays through `EmrService.addAddendum` instead, translating the offline SOAP/vitals/prescription payload into an addendum entry (author = originating user, timestamp = original offline edit time if available, else replay time). TDD: failing test first — replay against a finalized consultation must call `addAddendum` (or the underlying repository method) and must NOT touch `ConsultationDraft` at all.

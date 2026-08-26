@@ -92,3 +92,13 @@ Additional verification run beyond the plan's gate:
 - `apps/mobile` full suite: **50 test files, 791 tests passed**, 0 failed.
 - `apps/api` full suite (real Postgres 16 + Redis 7): see final report for pass/fail counts once the run completes.
 - `npx tsc --noEmit` in both `apps/api` and `apps/mobile`: no new type errors introduced by any file this plan touched (both packages carry pre-existing, unrelated type errors predating this plan, confirmed by diffing the error list before and after).
+
+## Verify-Fix Follow-Up
+
+Per `.planning/PHASE-10-VERIFY-FIX-PLAN.md` finding **10.1**: a `no-mistakes --verify phase 10` pass found that `ConsultationOfflineReplayService.replayConsultationDraft` never read `consultation.status` before running the draft/conflict diff. A late offline replay landing after the target consultation was already finalized (its `ConsultationDraft` row deleted at finalize time) got misread as `EMPTY_DRAFT`, and the offline edit was either silently dropped or reconstituted an orphan `ConsultationDraft` row nothing downstream ever reads.
+
+Fixed by branching on `consultation.status === 'finalized'` immediately after `getConsultation` resolves and before `loadDraft`/`classifyClinicalConflict` run at all (Task 2's own `ConsultationOfflineReplayGateway`/`ConsultationRecord` types already exposed `status`, they just weren't checked). The finalized path never reads or writes `ConsultationDraft`; it instead builds an `AddendumEntry` from the changed `CLINICAL_DRAFT_FIELDS` (relative to the offline device's own last-known baseline) and calls `EmrRepository.addAddendum` -- Phase 4's existing addendum-only post-finalization edit mechanism (`04-CONTEXT.md`), authored by the originating offline user (`context.userId`) with the envelope's own `createdAt` as the addendum timestamp where parseable. Recorded as **D-38** in `10-CONTEXT.md`.
+
+TDD: three new tests added to `consultationOfflineReplay.service.test.ts` (routes to `addAddendum` and never touches `loadDraft`/`saveDraft`/`ConsultationDraft`; no-op when the offline draft has no real field changes; duplicate/flapping resend of the same `operationId` stays idempotent) -- confirmed RED against the pre-fix code (asserting `loadDraft` was NOT called failed because it WAS called) before the fix made them pass.
+
+Verify: `npx vitest run apps/api/src/modules/emr/__tests__/consultationOfflineReplay.service.test.ts apps/api/src/modules/emr/__tests__/clinicalConflict.service.test.ts` -- 25/25 passing (13 + 12).

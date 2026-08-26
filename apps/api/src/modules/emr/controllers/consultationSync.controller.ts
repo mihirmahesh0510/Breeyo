@@ -71,6 +71,11 @@ export function createConsultationSyncController(
         clinicId: request.user.activeClinicId,
         userId: request.user.id,
         deviceId: body.data.deviceId,
+        // Verify-fix 10.1: same `(request as any).userName ?? 'Unknown'`
+        // fallback `emr.controller.ts`'s live `addAddendumHandler` already
+        // uses -- needed here too now that a late replay against an
+        // already-finalized consultation can author a real addendum.
+        userName: (request as any).userName ?? 'Unknown',
       };
 
       const acknowledgedOperationIds: string[] = [];

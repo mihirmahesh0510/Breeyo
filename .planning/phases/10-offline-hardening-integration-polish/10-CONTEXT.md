@@ -28,6 +28,7 @@ Harden Breeyo's mobile-first system so the core clinic workflows remain trustwor
 - **D-10:** Queue and inventory conflicts should use a lighter operational review flow than clinical-record conflicts.
 - **D-11:** Unresolved conflicts stay persistently visible until they are actually cleared.
 - **D-34:** If two offline devices independently check in the same patient, reconnect auto-merges the duplicate into a single queue entry (lightweight operational review per D-10) rather than keeping both entries for manual review or merging with no review trace at all.
+- **D-38 (verify-fix 10.1, 2026-08-26):** A late offline replay targeting an already-finalized consultation is auto-applied as a clinical addendum via Phase 4's existing addendum mechanism (`EmrService`/`EmrRepository.addAddendum`, `04-CONTEXT.md`'s "addendum-only" post-finalization editability), not treated as a draft conflict. `consultationOfflineReplay.service.ts` checks `consultation.status === 'finalized'` before running the draft/conflict diff at all; `ConsultationDraft` is never read or written on this path.
 
 ### Reconnect Priority
 - **D-12:** On reconnect, queue actions sync first.
