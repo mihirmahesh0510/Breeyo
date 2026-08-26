@@ -38,6 +38,8 @@ Each item has: **files**, **root cause**, **fix shape**, and **doc updates requi
 
 ### 10.2 Inventory offline actions never wired into any screen — **no decision needed**
 
+**Status: ✅ Fixed in `4985761`**
+
 - **Files:** `apps/mobile/src/features/inventory/screens/DispenseScreen.tsx` (still uses `useFifoDispense`), `apps/mobile/src/features/inventory/screens/StockReceiptScreen.tsx` (still uses `useReceiveStock`), the stock-adjustment sheet, `apps/mobile/src/features/inventory/hooks/useOfflineStockActions.ts` (correctly built, just unreached).
 - **Root cause:** Plan 10-04 built and unit-tested the full offline action store/hook but only wired the barcode scanner's read/cache-seed path; the actual mutation screens were left on their original network-only hooks.
 - **Fix shape:** in each screen, catch the network-failure branch of the existing mutation (same pattern already used in `CheckInSheet.tsx`/`QueueScreen.tsx` for Plan 10-02) and fall through to `useOfflineStockActions`'s offline equivalent instead of just setting `serverError`. TDD: failing component test per screen asserting a network failure results in a queued `INVENTORY_MEDIUM` operation, not a dead-end error state.
