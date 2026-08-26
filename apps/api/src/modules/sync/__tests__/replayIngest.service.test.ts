@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Prisma } from '@prisma/client';
 import { ReplayPriority, ConflictSeverity, ResolutionState } from '@breeyo/types';
-import { ReplayIngestService, type ReplayIngestPrismaClient } from '../services/replayIngest.service';
-import type { ReplayBroadcastService } from '../services/replayBroadcast.service';
-import { QueuePreemptionService } from '../../queue/services/queuePreemption.service';
+import { ReplayIngestService, type ReplayIngestPrismaClient } from '../services/replayIngest.service.js';
+import type { ReplayBroadcastService } from '../services/replayBroadcast.service.js';
+import { QueuePreemptionService } from '../../queue/services/queuePreemption.service.js';
 
 const CLINIC_ID = '00000000-0000-0000-0000-000000000001';
 const OTHER_CLINIC_ID = '00000000-0000-0000-0000-000000000099';

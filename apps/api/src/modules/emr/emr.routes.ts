@@ -85,6 +85,10 @@ export default async function emrRoutes(fastify: FastifyInstance) {
   // `fastify.prisma` per `AvailabilityRepository`'s own no-DB-RLS
   // tenancy-boundary convention (see `scheduling.routes.ts`). Stateless, so
   // it stays a plugin-scope singleton alongside `replayBroadcast`.
+  // D-30 exemption: those scheduling tables have no DB-level RLS, so
+  // `clinicId` is the only tenancy boundary, always supplied explicitly by
+  // `resolveNextOnDutyClinicianId` from the authenticated session, never
+  // from client input.
   const onDutyRosterProvider = new ClinicVetRosterProvider(new AvailabilityRepository(fastify.prisma));
 
   const consultationSyncController = createConsultationSyncController(
