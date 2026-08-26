@@ -113,6 +113,8 @@ An earlier full-suite run reported 40 failed files / 341 failed tests; root-caus
 
 **Task 3 (the blocking human-verify checkpoint on real mid-range Android hardware) has explicitly NOT been performed.** It requires a real Galaxy A14/Redmi Note 12-class device (Android 12+, 4GB RAM) connected over USB, a release build of the mobile app installed on it, a human running `cold-start.bench.ts` (no `--emulator` flag) and the Maestro flow against that device, and a human judgment call ("approved" with device model + measured values, or a description of which metric failed) per the plan's own `<resume-signal>`. No agent -- this one included -- has a physical device to connect, and D-31 is explicit that emulator-only measurement is insufficient for PLT-07 sign-off.
 
+**Deferred, not skipped (2026-08-26):** at the user's direction, this checkpoint is intentionally deferred until after the upcoming UI rebrand lands, since cold-start/queue-latency measurements against screens that are about to be replaced would just need re-measuring afterward. The API p95 and queue-realtime benchmarks (Task 2, above) already passed on the assembled system with 8x+ margin and are not affected by the rebrand.
+
 What Task 3 will need once a device is available:
 ```
 npx tsx apps/mobile/tests/performance/cold-start.bench.ts        # no --emulator flag, device connected over USB
