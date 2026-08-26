@@ -27,7 +27,7 @@ Each item has: **files**, **root cause**, **fix shape**, and **doc updates requi
 
 ### 10.1 EMR replay doesn't check `consultation.status` — late replay after finalization can silently misapply/lose a clinical edit — **needs-a-decision (RESOLVED: addendum)**
 
-**Status: ✅ Fixed in `e45cb82`**
+**Status: ✅ Fixed in `55bdcf5`**
 
 - **Files:** `apps/api/src/modules/emr/services/consultationOfflineReplay.service.ts` (never reads `consultation.status`), `apps/api/src/modules/emr/emr.service.ts` (`addAddendum`, the existing mechanism to reuse), `apps/api/src/modules/emr/emr.repository.ts` (`getConsultation`, `addAddendum`).
 - **Root cause:** the replay path treats every consultation as still-draft. A `getConsultation` for an already-finalized consultation returns a real row with `status: 'FINALIZED'`, but the service never inspects it before running the draft/conflict diff — `loadDraft` returns `null` (the draft row was deleted at finalization), gets treated as `EMPTY_DRAFT`, and the offline edit is either silently dropped or recreates an orphan `ConsultationDraft` row nothing ever reads.
