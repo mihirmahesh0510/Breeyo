@@ -48,12 +48,23 @@ function makeDb(
   users: Array<{ id: string; fullName: string }> = [],
   queueEntry?: { updatedAt: Date } | null,
 ) {
+  const liveRow = queueEntry ?? null;
   return {
     user: {
       findMany: vi.fn().mockResolvedValue(users),
     },
     queueEntry: {
-      findUnique: vi.fn().mockResolvedValue(queueEntry ?? null),
+      findUnique: vi.fn().mockResolvedValue(liveRow),
+      // Verify-fix 10.10: mirrors the real atomic conditional UPDATE --
+      // matches (and "claims" the version) only when the caller's
+      // `expectedVersion` equals this row's live `updatedAt`, exactly like
+      // Postgres's `WHERE id = ? AND updated_at = ?` would.
+      updateMany: vi.fn().mockImplementation(({ where }: { where: { updatedAt: Date } }) => {
+        if (liveRow && where.updatedAt.getTime() === liveRow.updatedAt.getTime()) {
+          return Promise.resolve({ count: 1 });
+        }
+        return Promise.resolve({ count: 0 });
+      }),
     },
   };
 }

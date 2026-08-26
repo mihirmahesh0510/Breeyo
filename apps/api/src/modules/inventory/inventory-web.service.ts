@@ -303,6 +303,15 @@ export class InventoryWebService {
    * instead of silently applying a write against a view the caller has not
    * refreshed since another session changed this item's stock. Omitting
    * `expectedVersion` (every caller before this plan) is unaffected.
+   *
+   * Verify-fix 10.10: this used to be a separate `findUnique` read, with
+   * `StockAdjustmentService.adjust` running several awaits later -- two
+   * genuinely concurrent callers sharing a stale `expectedVersion` could
+   * both read the row before either had written and both proceed.
+   * Replaced with a single atomic conditional UPDATE via `updateMany`
+   * (`WHERE id = ? AND updated_at = ?`, `updatedAt` as the optimistic-lock
+   * version stamp) -- see `WebQueueService.updateEntryStatus` for the
+   * identical pattern and full row-locking rationale.
    */
   async adjustStock(
     clinicId: string,
@@ -318,19 +327,28 @@ export class InventoryWebService {
     }
 
     if (expectedVersion !== undefined) {
-      const current = (await this.db.inventoryItem.findUnique({
-        where: { id: itemId },
-        select: { updatedAt: true },
-      })) as { updatedAt: Date } | null;
+      const claim = await this.db.inventoryItem.updateMany({
+        where: { id: itemId, updatedAt: new Date(expectedVersion) },
+        data: { updatedAt: new Date() },
+      });
 
-      if (current && this.browserSyncService.checkWriteVersion(current.updatedAt.getTime(), expectedVersion) === 'stale') {
-        throw staleWriteConflictError({
-          domain: 'inventory',
-          entityType: 'INVENTORY_ITEM',
-          entityId: itemId,
-          currentVersion: current.updatedAt.getTime(),
-          expectedVersion,
-        });
+      if (claim.count !== 1) {
+        const current = (await this.db.inventoryItem.findUnique({
+          where: { id: itemId },
+          select: { updatedAt: true },
+        })) as { updatedAt: Date } | null;
+
+        // No row at all -- let `StockAdjustmentService.adjust` below raise
+        // its own not-found error.
+        if (current) {
+          throw staleWriteConflictError({
+            domain: 'inventory',
+            entityType: 'INVENTORY_ITEM',
+            entityId: itemId,
+            currentVersion: current.updatedAt.getTime(),
+            expectedVersion,
+          });
+        }
       }
     }
 

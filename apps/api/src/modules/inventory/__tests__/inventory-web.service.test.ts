@@ -11,6 +11,10 @@ function makeDb() {
   return {
     inventoryItem: {
       findUnique: vi.fn().mockResolvedValue(null),
+      // Verify-fix 10.10: defaults to "claimed" (one row affected) so tests
+      // that never touch optimistic concurrency are unaffected; the
+      // version-check tests below override this per-case.
+      updateMany: vi.fn().mockResolvedValue({ count: 1 }),
       findMany: vi.fn().mockResolvedValue([
         {
           id: 'item_1',
@@ -253,6 +257,9 @@ describe('InventoryWebService.adjustStock optimistic-concurrency enforcement (Pl
   it('rejects with a 409 STALE_WRITE_CONFLICT when expectedVersion is behind the item\'s live updatedAt, instead of silently applying it', async () => {
     const db = makeDb();
     (db.inventoryItem.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({ updatedAt: LIVE_UPDATED_AT });
+    // Verify-fix 10.10: the atomic claim's WHERE (id + live updatedAt) does
+    // not match a stale expectedVersion -- zero rows affected.
+    (db.inventoryItem.updateMany as ReturnType<typeof vi.fn>).mockResolvedValue({ count: 0 });
     const { service, stockAdjustmentService } = buildService({ roleCode: 'ADMIN', inventoryWriteEnabled: true, db });
 
     await expect(

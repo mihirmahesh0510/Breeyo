@@ -220,6 +220,12 @@ describe('BillingWorkbenchService optimistic-concurrency enforcement (Plan 10-05
     (db.invoice as unknown as { findUnique: ReturnType<typeof vi.fn> }).findUnique = vi
       .fn()
       .mockResolvedValue({ updatedAt: LIVE_UPDATED_AT });
+    // Verify-fix 10.10: the atomic claim's WHERE (id + live updatedAt)
+    // does not match a stale `expectedVersion` -- zero rows affected,
+    // mirroring what a real conditional UPDATE would report.
+    (db.invoice as unknown as { updateMany: ReturnType<typeof vi.fn> }).updateMany = vi
+      .fn()
+      .mockResolvedValue({ count: 0 });
     const { service } = buildService({ paymentService, db });
 
     const staleExpectedVersion = LIVE_UPDATED_AT.getTime() - 60_000;
@@ -243,6 +249,10 @@ describe('BillingWorkbenchService optimistic-concurrency enforcement (Plan 10-05
     (db.invoice as unknown as { findUnique: ReturnType<typeof vi.fn> }).findUnique = vi
       .fn()
       .mockResolvedValue({ updatedAt: LIVE_UPDATED_AT });
+    // Verify-fix 10.10: matching expectedVersion claims the row -- one row affected.
+    (db.invoice as unknown as { updateMany: ReturnType<typeof vi.fn> }).updateMany = vi
+      .fn()
+      .mockResolvedValue({ count: 1 });
     const { service } = buildService({ paymentService, db });
 
     await service.collectPayment(
@@ -262,6 +272,9 @@ describe('BillingWorkbenchService optimistic-concurrency enforcement (Plan 10-05
     (db.invoice as unknown as { findUnique: ReturnType<typeof vi.fn> }).findUnique = vi
       .fn()
       .mockResolvedValue({ updatedAt: LIVE_UPDATED_AT });
+    (db.invoice as unknown as { updateMany: ReturnType<typeof vi.fn> }).updateMany = vi
+      .fn()
+      .mockResolvedValue({ count: 0 });
     const { service } = buildService({ roleCode: 'ADMIN', refundService, db });
 
     await expect(
@@ -284,6 +297,9 @@ describe('BillingWorkbenchService optimistic-concurrency enforcement (Plan 10-05
     (db.invoice as unknown as { findUnique: ReturnType<typeof vi.fn> }).findUnique = vi
       .fn()
       .mockResolvedValue({ updatedAt: LIVE_UPDATED_AT });
+    (db.invoice as unknown as { updateMany: ReturnType<typeof vi.fn> }).updateMany = vi
+      .fn()
+      .mockResolvedValue({ count: 0 });
     const { service } = buildService({ roleCode: 'ADMIN', invoiceService, db });
 
     await expect(

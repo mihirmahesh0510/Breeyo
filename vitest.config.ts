@@ -105,6 +105,16 @@ export default defineConfig({
       // the `apps/web/src/features/queue` and `apps/web/src/features/billing`
       // globs above.
       'apps/web/src/lib/__tests__/api.test.ts',
+      // Verify-fix 10.10: real HTTP + real Postgres integration tests
+      // proving the browser optimistic-concurrency write paths
+      // (`WebQueueService.updateEntryStatus`, `BillingWorkbenchService.
+      // collectPayment`) resolve two genuinely concurrent stale-version
+      // writes to exactly one success and one real 409 `.conflict` on the
+      // wire -- named explicitly (not a directory glob) since
+      // `apps/api/tests/queue/` and `apps/api/tests/billing/` already hold
+      // many pre-existing suites this run does not otherwise include.
+      'apps/api/tests/queue/queue-web-optimistic-concurrency.test.ts',
+      'apps/api/tests/billing/billing-web-optimistic-concurrency.test.ts',
     ],
   },
 });

@@ -133,7 +133,23 @@ export class WebQueueService {
    * silently applying a write against a view the caller has not refreshed
    * since another session (mobile replay or another browser tab) changed
    * this row. Omitting `expectedVersion` (every caller before this plan)
-   * is unaffected -- `checkWriteVersion` is `'ok'` whenever it is absent.
+   * is unaffected.
+   *
+   * Verify-fix 10.10: the check used to be a separate `findUnique` read
+   * followed, several awaits later, by `QueueService.updateStatus`'s own
+   * write -- two genuinely concurrent callers with the same stale
+   * `expectedVersion` could both read the row BEFORE either had written,
+   * both see themselves as current, and both proceed. The claim below
+   * closes that window with a single atomic conditional UPDATE
+   * (`updateMany`'s `WHERE id = ? AND updated_at = ?`, `updatedAt`
+   * doubling as the optimistic-lock version stamp): Postgres locks the row
+   * for the duration of whichever UPDATE reaches it first, and the second
+   * statement only proceeds once that lock releases, at which point it
+   * re-evaluates `WHERE updated_at = expectedVersion` against the FIRST
+   * caller's already-committed (newer) `updatedAt` and matches zero rows.
+   * `updateMany`'s affected-row count is therefore a true compare-and-swap:
+   * exactly one of any number of concurrent callers sharing a stale
+   * `expectedVersion` can ever see `count === 1`.
    */
   async updateEntryStatus(
     clinicId: string,
@@ -143,19 +159,29 @@ export class WebQueueService {
     expectedVersion?: number,
   ): Promise<WebQueueEntry & { changeMetadata: BrowserSyncChangeMetadata }> {
     if (expectedVersion !== undefined) {
-      const current = (await this.db.queueEntry.findUnique({
-        where: { id: entryId },
-        select: { updatedAt: true },
-      })) as { updatedAt: Date } | null;
+      const claim = await this.db.queueEntry.updateMany({
+        where: { id: entryId, updatedAt: new Date(expectedVersion) },
+        data: { updatedAt: new Date() },
+      });
 
-      if (current && this.browserSyncService.checkWriteVersion(current.updatedAt.getTime(), expectedVersion) === 'stale') {
-        throw staleWriteConflictError({
-          domain: 'queue',
-          entityType: 'QUEUE_ENTRY',
-          entityId: entryId,
-          currentVersion: current.updatedAt.getTime(),
-          expectedVersion,
-        });
+      if (claim.count !== 1) {
+        const current = (await this.db.queueEntry.findUnique({
+          where: { id: entryId },
+          select: { updatedAt: true },
+        })) as { updatedAt: Date } | null;
+
+        // No row at all -- let `QueueService.updateStatus` below raise its
+        // own not-found error; a version conflict is only meaningful when a
+        // row exists carrying a DIFFERENT version than the caller expected.
+        if (current) {
+          throw staleWriteConflictError({
+            domain: 'queue',
+            entityType: 'QUEUE_ENTRY',
+            entityId: entryId,
+            currentVersion: current.updatedAt.getTime(),
+            expectedVersion,
+          });
+        }
       }
     }
 
