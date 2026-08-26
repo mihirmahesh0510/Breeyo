@@ -104,6 +104,8 @@ Each item has: **files**, **root cause**, **fix shape**, and **doc updates requi
 
 ### 10.8 `clearWorkingSetAnchor` never called — same-day boundary defeated after first offline stretch — **no decision needed**
 
+**Status: ✅ Fixed in `eae9ab3`**
+
 - **Files:** `apps/mobile/src/features/offline-sync/db/offlineDb.ts` (`clearWorkingSetAnchor`, correctly built, just unreached), `apps/mobile/src/features/offline-sync/services/syncCoordinator.ts` (the natural call site — reconnect/replay-complete).
 - **Root cause:** the anchor-freeze mechanism (D-35) was built correctly but nothing calls the corresponding clear function once a reconnect cycle fully drains.
 - **Fix shape:** in `syncCoordinator.ts`, once `runReplayCycle` finishes with an empty backlog across all tiers (the `CAUGHT_UP` transition), call `clearWorkingSetAnchor` so the next offline stretch gets a fresh anchor. TDD: failing test proving the anchor is cleared after a full successful replay cycle and gets re-created (to the new current time) on the next offline write.
@@ -132,6 +134,8 @@ Each item has: **files**, **root cause**, **fix shape**, and **doc updates requi
 ---
 
 ### 10.11 D-34 merge can pick the later-arriving replay over the earlier check-in — **no decision needed, low priority**
+
+**Status: ✅ Fixed in `eae9ab3`**
 
 - **Files:** `apps/api/src/modules/queue/services/queueOfflineReplay.service.ts` (`replayCheckIn`).
 - **Root cause:** the merge keeps whichever operation's replay reaches the server first, not the one with the earlier payload-provided `checkedInAt`.
