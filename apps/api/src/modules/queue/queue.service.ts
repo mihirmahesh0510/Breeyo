@@ -1,6 +1,7 @@
 import { checkInSchema, queueStatusUpdateSchema } from '@breeyo/validators';
 import { QueueStatus, isValidTransition, SOCKET_EVENTS } from '@breeyo/types';
 import type { Server } from 'socket.io';
+import { staleWriteConflictError } from '../../realtime/browser-sync.service.js';
 import { QueueRepository } from './queue.repository.js';
 import type {
   CheckInParams,
@@ -183,7 +184,27 @@ export class QueueService {
       updateData.completedAt = new Date();
     }
 
-    const updated = await this.repository.updateEntry(params.entryId, updateData);
+    const updated =
+      params.expectedVersion === undefined
+        ? await this.repository.updateEntry(params.entryId, updateData)
+        : await this.repository.updateEntry(params.entryId, updateData, params.expectedVersion);
+
+    if (updated === null) {
+      const current = await this.repository.findEntryById(params.entryId);
+      if (current) {
+        throw staleWriteConflictError({
+          domain: 'queue',
+          entityType: 'QUEUE_ENTRY',
+          entityId: params.entryId,
+          currentVersion: current.updatedAt.getTime(),
+          expectedVersion: params.expectedVersion!,
+        });
+      }
+      const error = new Error('Queue entry not found') as Error & { statusCode: number; code: string };
+      error.statusCode = 404;
+      error.code = 'ENTRY_NOT_FOUND';
+      throw error;
+    }
 
     // Broadcast status change
     this.broadcast(entry.clinicId, SOCKET_EVENTS.QUEUE_UPDATED, {

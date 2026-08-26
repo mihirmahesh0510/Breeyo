@@ -8,6 +8,7 @@ vi.mock('expo-sqlite', () => ({
   }),
 }));
 
+import { ReplayPriority } from '@breeyo/types';
 import {
   initializeOfflineDb,
   writeOfflineTransaction,
@@ -16,6 +17,8 @@ import {
   clearWorkingSetAnchor,
   isWithinWorkingSet,
   writeWorkingSetSnapshot,
+  listPendingSyncOperationsByPriority,
+  markSyncOperationSynced,
 } from '../db/offlineDb';
 
 /**
@@ -47,6 +50,9 @@ function createFakeDb() {
         tables.sync_meta.push({ key: params.$key, value: params.$value });
       } else if (/^DELETE FROM sync_meta/.test(sql)) {
         tables.sync_meta = tables.sync_meta.filter((r) => r.key !== params.$key);
+      } else if (/^UPDATE sync_operations SET synced_at/.test(sql)) {
+        const row = tables.sync_operations.find((r) => r.operation_id === params.$operationId);
+        if (row) row.synced_at = params.$syncedAt;
       }
       return { changes: 1, lastInsertRowId: 0 };
     }),
@@ -55,6 +61,14 @@ function createFakeDb() {
         return tables.sync_meta.find((r) => r.key === params.$key) ?? null;
       }
       return null;
+    }),
+    getAllAsync: vi.fn(async (sql: string, params: Record<string, unknown>) => {
+      if (/FROM sync_operations/.test(sql)) {
+        return tables.sync_operations
+          .filter((r) => r.priority === params.$priority && r.synced_at == null)
+          .sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
+      }
+      return [];
     }),
     prepareAsync: vi.fn(async (sql: string) => ({
       executeAsync: vi.fn(async (params: Record<string, unknown>) => {
@@ -206,5 +220,105 @@ describe('offlineDb', () => {
     vi.useRealTimers();
 
     expect(second).not.toBe(first);
+  });
+
+  it('listPendingSyncOperationsByPriority returns only that priority tier, oldest first, mapped to a ReplayableOperation-shaped envelope', async () => {
+    await enqueueOperation(db, {
+      operationId: 'op-newer',
+      deviceId: 'device-1',
+      clinicId: 'clinic-1',
+      userId: 'user-1',
+      domain: 'queue',
+      entityType: 'QUEUE_CHECK_IN',
+      entityId: 'entry-2',
+      priority: ReplayPriority.QUEUE_HIGH,
+      payload: { petId: 'pet-2' },
+      createdAt: '2026-08-24T10:05:00.000Z',
+    });
+    await enqueueOperation(db, {
+      operationId: 'op-older',
+      deviceId: 'device-1',
+      clinicId: 'clinic-1',
+      userId: 'user-1',
+      domain: 'queue',
+      entityType: 'QUEUE_CHECK_IN',
+      entityId: 'entry-1',
+      priority: ReplayPriority.QUEUE_HIGH,
+      payload: { petId: 'pet-1' },
+      createdAt: '2026-08-24T10:00:00.000Z',
+    });
+    await enqueueOperation(db, {
+      operationId: 'op-other-tier',
+      deviceId: 'device-1',
+      clinicId: 'clinic-1',
+      userId: 'user-1',
+      domain: 'inventory',
+      entityType: 'STOCK_RECEIVE',
+      entityId: 'item-1',
+      priority: ReplayPriority.INVENTORY_MEDIUM,
+      payload: { quantity: 5 },
+      createdAt: '2026-08-24T09:00:00.000Z',
+    });
+
+    const result = await listPendingSyncOperationsByPriority(db, ReplayPriority.QUEUE_HIGH);
+
+    expect(result).toHaveLength(2);
+    expect(result.map((op) => op.operationId)).toEqual(['op-older', 'op-newer']);
+    expect(result[0]).toEqual({
+      operationId: 'op-older',
+      priority: ReplayPriority.QUEUE_HIGH,
+      envelope: {
+        deviceId: 'device-1',
+        operationId: 'op-older',
+        clinicId: 'clinic-1',
+        userId: 'user-1',
+        domain: 'queue',
+        entityType: 'QUEUE_CHECK_IN',
+        entityId: 'entry-1',
+        priority: ReplayPriority.QUEUE_HIGH,
+        createdAt: '2026-08-24T10:00:00.000Z',
+        payload: { petId: 'pet-1' },
+      },
+    });
+  });
+
+  it('listPendingSyncOperationsByPriority excludes rows already marked synced', async () => {
+    await enqueueOperation(db, {
+      operationId: 'op-1',
+      deviceId: 'device-1',
+      clinicId: 'clinic-1',
+      userId: 'user-1',
+      domain: 'queue',
+      entityType: 'QUEUE_CHECK_IN',
+      entityId: 'entry-1',
+      priority: ReplayPriority.QUEUE_HIGH,
+      payload: {},
+      createdAt: '2026-08-24T10:00:00.000Z',
+    });
+
+    await markSyncOperationSynced(db, 'op-1');
+
+    const result = await listPendingSyncOperationsByPriority(db, ReplayPriority.QUEUE_HIGH);
+    expect(result).toHaveLength(0);
+  });
+
+  it('markSyncOperationSynced stamps the row with a synced_at timestamp through a transaction', async () => {
+    await enqueueOperation(db, {
+      operationId: 'op-1',
+      deviceId: 'device-1',
+      clinicId: 'clinic-1',
+      userId: 'user-1',
+      domain: 'queue',
+      entityType: 'QUEUE_CHECK_IN',
+      entityId: 'entry-1',
+      priority: ReplayPriority.QUEUE_HIGH,
+      payload: {},
+      createdAt: '2026-08-24T10:00:00.000Z',
+    });
+
+    await markSyncOperationSynced(db, 'op-1');
+
+    const row = db.__tables.sync_operations.find((r) => r.operation_id === 'op-1');
+    expect(row?.synced_at).toBeTruthy();
   });
 });

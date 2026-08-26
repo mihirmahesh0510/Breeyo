@@ -5,7 +5,7 @@ import type { AccessPolicyService } from '../web-dashboard/access-policy.service
 import type { ParLevelAlertService } from './par-level-alert.service.js';
 import type { WantListService } from './want-list.service.js';
 import type { StockAdjustmentService } from './stock-adjustment.service.js';
-import { BrowserSyncService, staleWriteConflictError } from '../../realtime/browser-sync.service.js';
+import { BrowserSyncService } from '../../realtime/browser-sync.service.js';
 
 function forbiddenError(message: string): Error & { statusCode: number; code: string } {
   const error = new Error(message) as Error & { statusCode: number; code: string };
@@ -297,21 +297,26 @@ export class InventoryWebService {
    * reason requirement and records D-24 actor metadata -- this is never a
    * barcode-scan endpoint (D-37), only a reason-bearing quantity change.
    *
-   * Plan 10-05, D-05: when `expectedVersion` is present, it is checked
-   * against the item's LIVE `updatedAt` before `StockAdjustmentService.adjust`
-   * ever runs -- a stale claim is rejected with a 409 `STALE_WRITE_CONFLICT`
-   * instead of silently applying a write against a view the caller has not
-   * refreshed since another session changed this item's stock. Omitting
-   * `expectedVersion` (every caller before this plan) is unaffected.
+   * Plan 10-05, D-05: when `expectedVersion` is present, the write only
+   * applies if the item's LIVE `updatedAt` still matches it -- a stale claim
+   * is rejected with a 409 `STALE_WRITE_CONFLICT` instead of silently
+   * applying a write against a view the caller has not refreshed since
+   * another session changed this item's stock. Omitting `expectedVersion`
+   * (every caller before this plan) is unaffected.
    *
-   * Verify-fix 10.10: this used to be a separate `findUnique` read, with
-   * `StockAdjustmentService.adjust` running several awaits later -- two
-   * genuinely concurrent callers sharing a stale `expectedVersion` could
-   * both read the row before either had written and both proceed.
-   * Replaced with a single atomic conditional UPDATE via `updateMany`
-   * (`WHERE id = ? AND updated_at = ?`, `updatedAt` as the optimistic-lock
-   * version stamp) -- see `WebQueueService.updateEntryStatus` for the
-   * identical pattern and full row-locking rationale.
+   * Verify-fix 10.10: the check used to be a separate `findUnique` read
+   * followed, several awaits later, by `StockAdjustmentService.adjust`'s own
+   * write -- two genuinely concurrent callers sharing a stale
+   * `expectedVersion` could both read the row before either had written and
+   * both proceed. That was tightened to an atomic conditional `updateMany`
+   * claim run BEFORE `StockAdjustmentService.adjust`, but that always
+   * committed a fresh `updatedAt` even when the downstream adjustment then
+   * failed its own validation -- bumping the version with no real stock
+   * change applied. `StockAdjustmentService.adjust` now takes
+   * `expectedVersion` itself and folds the version check into the SAME
+   * conditional `updateMany` (inside the same transaction as the movement
+   * record) that applies the real stock change, so the version only ever
+   * advances when a real change lands.
    */
   async adjustStock(
     clinicId: string,
@@ -326,33 +331,7 @@ export class InventoryWebService {
       throw forbiddenError('Inventory write access is disabled for your role in the browser (D-18)');
     }
 
-    if (expectedVersion !== undefined) {
-      const claim = await this.db.inventoryItem.updateMany({
-        where: { id: itemId, updatedAt: new Date(expectedVersion) },
-        data: { updatedAt: new Date() },
-      });
-
-      if (claim.count !== 1) {
-        const current = (await this.db.inventoryItem.findUnique({
-          where: { id: itemId },
-          select: { updatedAt: true },
-        })) as { updatedAt: Date } | null;
-
-        // No row at all -- let `StockAdjustmentService.adjust` below raise
-        // its own not-found error.
-        if (current) {
-          throw staleWriteConflictError({
-            domain: 'inventory',
-            entityType: 'INVENTORY_ITEM',
-            entityId: itemId,
-            currentVersion: current.updatedAt.getTime(),
-            expectedVersion,
-          });
-        }
-      }
-    }
-
-    return this.stockAdjustmentService.adjust(clinicId, itemId, userId, userName, input);
+    return this.stockAdjustmentService.adjust(clinicId, itemId, userId, userName, input, expectedVersion);
   }
 
   /** D-36: CSV export of the same analytics summary shown in the tab. */

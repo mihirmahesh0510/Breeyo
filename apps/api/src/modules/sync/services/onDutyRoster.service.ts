@@ -8,22 +8,32 @@ import type { OnDutyRosterProvider } from './retryEscalation.service.js';
  * conflict. "On duty" resolves to Phase 8's existing
  * `AvailabilityRepository.listClinicVets(clinicId)` -- every clinic member
  * holding the `EDIT_EMR` permission (Admin or Clinician role, per that
- * method's own doc comment) -- minus the unreachable clinician. No new
- * shift/on-duty tracking concept is introduced; this is a thin adapter, not
- * a second roster source.
+ * method's own doc comment) -- minus the unreachable clinician and minus
+ * every Admin-role member.
  *
- * `listClinicVets` includes Admin-role members (any Admin also holds
- * `EDIT_EMR` per the seed data), so this provider does NOT itself exclude
- * Admin -- D-36 only rules out ever FALLING BACK to Admin when no other
- * clinician exists (`retryEscalation.service.ts`'s `NO_ON_DUTY_CLINICIAN_AVAILABLE`
- * throw already enforces that half); it does not forbid an Admin who is
- * also clinically on duty from being a legitimate hand-off target.
+ * `listClinicVets` deliberately includes Admin-role members (Admin also
+ * holds `EDIT_EMR` per the seed data, and other callers like
+ * `vetColorForId` need every vet-capable id regardless of role), so this
+ * provider excludes them itself via `AvailabilityRepository.listAdminUserIds`
+ * -- matching the `OnDutyRosterProvider` interface's own doc comment in
+ * `retryEscalation.service.ts` ("Every real implementation MUST exclude
+ * Admin-role members -- D-36 explicitly rules out ever falling back to
+ * Admin"). This holds even for a user who holds BOTH Admin and Clinician
+ * roles -- D-36's "never falling back to Admin" is about the ROLE, not
+ * about whether the same person also happens to be a Clinician.
  */
 export class ClinicVetRosterProvider implements OnDutyRosterProvider {
   constructor(private readonly availabilityRepository: AvailabilityRepository) {}
 
   async listOtherOnDutyClinicianIds(clinicId: string, excludeUserId: string): Promise<string[]> {
-    const vets = await this.availabilityRepository.listClinicVets(clinicId);
-    return vets.map((vet) => vet.id).filter((id) => id !== excludeUserId);
+    const [vets, adminIds] = await Promise.all([
+      this.availabilityRepository.listClinicVets(clinicId),
+      this.availabilityRepository.listAdminUserIds(clinicId),
+    ]);
+    const adminIdSet = new Set(adminIds);
+
+    return vets
+      .map((vet) => vet.id)
+      .filter((id) => id !== excludeUserId && !adminIdSet.has(id));
   }
 }

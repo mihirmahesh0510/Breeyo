@@ -11,6 +11,7 @@ import {
 import type { BillingActor } from './invoice.repository.js';
 import { InvoiceRepository } from './invoice.repository.js';
 import { allocateProRata } from './money.js';
+import { assertLockedInvoiceVersionCurrent } from './payment.service.js';
 import { getRazorpayForClinic, normalizeRazorpayError } from './razorpay.client.js';
 
 /**
@@ -231,6 +232,7 @@ interface LockedInvoiceRow {
   balance_paise: number;
   exception_flag: string | null;
   invoice_number: string | null;
+  updated_at: Date;
 }
 
 interface CapturedPaymentRow {
@@ -380,9 +382,10 @@ export class RefundService {
     invoiceId: string,
     actor: BillingActor,
     input: RefundInput,
+    expectedVersion?: number,
   ): Promise<RefundResult> {
     // ── Phase 1 ── Reserve. Locked, bounded, committed. No network.
-    const reserved = await this.reserveLegs(clinicId, invoiceId, actor, input);
+    const reserved = await this.reserveLegs(clinicId, invoiceId, actor, input, expectedVersion);
 
     // ── Phase 2 ── Send. No transaction is open and no lock is held.
     const outcomes = await this.sendToGateway(clinicId, invoiceId, reserved);
@@ -441,9 +444,11 @@ export class RefundService {
     invoiceId: string,
     actor: BillingActor,
     input: RefundInput,
+    expectedVersion?: number,
   ): Promise<ReservedLeg[]> {
     return this.prisma.$transaction(async (tx) => {
       const invoice = await this.lockInvoice(tx, clinicId, invoiceId);
+      assertLockedInvoiceVersionCurrent(invoice, expectedVersion);
 
       if (NON_REFUNDABLE_INVOICE_STATES.has(invoice.status)) {
         throw invalidStateTransition(invoice.status);
@@ -958,7 +963,7 @@ export class RefundService {
     invoiceId: string,
   ): Promise<LockedInvoiceRow> {
     const rows = await tx.$queryRaw<LockedInvoiceRow[]>(Prisma.sql`
-      SELECT id, status, grand_total_paise, balance_paise, exception_flag, invoice_number
+      SELECT id, status, grand_total_paise, balance_paise, exception_flag, invoice_number, updated_at
       FROM invoices
       WHERE id = ${invoiceId}::uuid
         AND clinic_id = ${clinicId}::uuid

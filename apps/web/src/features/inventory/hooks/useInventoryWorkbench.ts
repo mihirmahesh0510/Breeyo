@@ -8,10 +8,12 @@
 // local to the API module and this hook, the same choice
 // `useDashboardCockpit.ts`'s local `CockpitResponse` already made for the
 // cockpit endpoint.
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { InventoryCategory, LowStockItem, WantListItem } from '@breeyo/types';
 import { apiClient, ApiClientError } from '../../../lib/api';
 import { useAuth, handleUnauthorized } from '../../../lib/AuthProvider';
+import { useReplayStaleState } from '../../dashboard/hooks/useReplayStaleState';
+import { useInventoryReplayRealtime } from './useInventoryReplayRealtime';
 
 export type InventoryWebTab = 'stock' | 'reordering' | 'analytics';
 
@@ -110,13 +112,26 @@ function resolveApiBaseUrl(): string {
  * downloads (D-36).
  */
 export function useInventoryWorkbench(tab: InventoryWebTab) {
-  const { accessToken } = useAuth();
+  const { accessToken, activeClinicId } = useAuth();
   const [data, setData] = useState<WorkbenchResponse | undefined>(undefined);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<ApiClientError | Error | null>(null);
   const [refetchToken, setRefetchToken] = useState(0);
   const tabRef = useRef(tab);
   tabRef.current = tab;
+
+  // Finding 10.3 residual gap (F6): `useInventoryReplayRealtime` existed but
+  // was never called from anywhere, so a mobile inventory replay conflict
+  // was silently dropped in the browser even though the server already
+  // broadcasts it -- wired the same way `useBillingWorkbench.ts` folds its
+  // own realtime subscription directly into the one workbench hook, since
+  // inventory (like billing) has no separate top-level composing component.
+  const watchedItemIds = useMemo(
+    () => (data?.stockAndBatches ? data.stockAndBatches.rows.map((row) => row.itemId) : []),
+    [data],
+  );
+  const replayStale = useReplayStaleState(watchedItemIds);
+  useInventoryReplayRealtime(accessToken, activeClinicId, replayStale.onReplayApplied, replayStale.onReplayConflictOpened);
 
   const load = useCallback(
     async (signal?: AbortSignal) => {
@@ -154,6 +169,11 @@ export function useInventoryWorkbench(tab: InventoryWebTab) {
 
   const refetch = useCallback(() => setRefetchToken((n) => n + 1), []);
 
+  const acknowledgeAndRefetch = useCallback(() => {
+    replayStale.acknowledge();
+    refetch();
+  }, [refetch, replayStale]);
+
   /** D-18: the server 403s when the caller's role lacks `inventoryWriteEnabled` -- this surfaces that error to the caller rather than swallowing it. */
   const adjustStock = useCallback(
     async (itemId: string, input: AdjustStockInput) => {
@@ -189,5 +209,17 @@ export function useInventoryWorkbench(tab: InventoryWebTab) {
     [accessToken],
   );
 
-  return { data, isLoading, error, refetch, adjustStock, exportAnalytics };
+  return {
+    data,
+    isLoading,
+    error,
+    refetch,
+    acknowledgeAndRefetch,
+    adjustStock,
+    exportAnalytics,
+    // Drives a `StaleStateBanner` the same way `useBillingWorkbench.ts`'s
+    // `replayStatus` does -- `'conflict'` once a mobile replay conflict
+    // opens for a currently-rendered item, `'stale'`/`'fresh'` otherwise.
+    replayStatus: replayStale.status,
+  };
 }

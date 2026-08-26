@@ -5,7 +5,7 @@ import { apiClient } from '../../../lib/api';
 import { useAuth } from '../../../providers/AuthProvider';
 import { useConsultationDraftStore } from './useConsultationDraft';
 import { saveOfflineConsultationDraft, isNetworkFailure } from '../services/offlineConsultationDraftStore';
-import { getOfflineSyncDb } from '../../offline-sync/db/offlineDb';
+import { getOfflineSyncDb, markSyncOperationSynced } from '../../offline-sync/db/offlineDb';
 import type { SaveDraftInput } from '@breeyo/types';
 
 function serializeDraft(state: ReturnType<typeof useConsultationDraftStore.getState>): SaveDraftInput {
@@ -51,6 +51,12 @@ export function useAutoSave(consultationId: string) {
   const { accessToken, activeClinicId, user } = useAuth();
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // F7: the operationId of the most recent `sync_operations` row
+  // `persistOffline` wrote (if any) that has not yet been confirmed synced
+  // by a direct online save succeeding. Cleared once that ledger row is
+  // marked synced -- so a direct retry winning the race against replay
+  // never leaves a permanently stale `synced_at IS NULL` entry behind.
+  const pendingOfflineOperationIdRef = useRef<string | null>(null);
   const [saveError, setSaveError] = useState(false);
   // Plan 10-03 (D-01, D-05, D-06): distinct from `saveError` -- this means
   // "the server was never reached, but the edit is safely persisted on
@@ -65,7 +71,7 @@ export function useAutoSave(consultationId: string) {
       try {
         const db = await getOfflineSyncDb();
         const deviceId = await getOrCreateDeviceId();
-        await saveOfflineConsultationDraft(db, {
+        const snapshot = await saveOfflineConsultationDraft(db, {
           consultationId,
           clinicId: activeClinicId,
           deviceId,
@@ -73,6 +79,7 @@ export function useAutoSave(consultationId: string) {
           draft: data,
           baseline: useConsultationDraftStore.getState().syncedSnapshot,
         });
+        pendingOfflineOperationIdRef.current = snapshot.lastOperationId;
       } catch {
         // Best-effort: a failure to persist locally must never throw out of
         // the mutation's own error handling, and must never block the
@@ -81,6 +88,28 @@ export function useAutoSave(consultationId: string) {
     },
     [consultationId, activeClinicId, user],
   );
+
+  /**
+   * F7: called once a direct online save (the 5s retry in `onError` below,
+   * or `forceSave`) actually reaches the server. If `persistOffline` wrote a
+   * ledger entry for an EARLIER offline attempt that this save has now
+   * superseded, that entry is marked synced here -- otherwise it stays
+   * `synced_at IS NULL` forever (inflating the pending-sync count) and risks
+   * pushing a stale draft payload over newer server state if it is ever
+   * replayed. Best-effort, same as `persistOffline`: a failure to mark the
+   * ledger must never surface as a save failure to the clinician.
+   */
+  const markOfflineLedgerSynced = useCallback(async () => {
+    const operationId = pendingOfflineOperationIdRef.current;
+    if (!operationId) return;
+    pendingOfflineOperationIdRef.current = null;
+    try {
+      const db = await getOfflineSyncDb();
+      await markSyncOperationSynced(db, operationId);
+    } catch {
+      // Best-effort -- see persistOffline's identical rationale above.
+    }
+  }, []);
 
   const saveMutation = useMutation({
     mutationFn: (data: SaveDraftInput) =>
@@ -93,6 +122,7 @@ export function useAutoSave(consultationId: string) {
       useConsultationDraftStore.getState().markSaved();
       setSaveError(false);
       setIsOffline(false);
+      markOfflineLedgerSynced().catch(() => undefined);
     },
     onError: (error, data) => {
       if (isNetworkFailure(error)) {
@@ -168,6 +198,7 @@ export function useAutoSave(consultationId: string) {
         useConsultationDraftStore.getState().markSaved();
         setSaveError(false);
         setIsOffline(false);
+        await markOfflineLedgerSynced();
       } catch (error) {
         if (isNetworkFailure(error)) {
           // D-01: leaving/ending a consultation while offline must not
@@ -182,7 +213,7 @@ export function useAutoSave(consultationId: string) {
         }
       }
     }
-  }, [consultationId, accessToken, persistOffline]);
+  }, [consultationId, accessToken, persistOffline, markOfflineLedgerSynced]);
 
   return {
     isSaving: saveMutation.isPending,

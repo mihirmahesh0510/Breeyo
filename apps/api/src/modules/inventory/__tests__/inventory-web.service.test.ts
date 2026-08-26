@@ -11,10 +11,6 @@ function makeDb() {
   return {
     inventoryItem: {
       findUnique: vi.fn().mockResolvedValue(null),
-      // Verify-fix 10.10: defaults to "claimed" (one row affected) so tests
-      // that never touch optimistic concurrency are unaffected; the
-      // version-check tests below override this per-case.
-      updateMany: vi.fn().mockResolvedValue({ count: 1 }),
       findMany: vi.fn().mockResolvedValue([
         {
           id: 'item_1',
@@ -217,14 +213,22 @@ describe('InventoryWebService.adjustStock D-18 enforcement', () => {
     const input = { quantity: 5, type: 'add' as const, reason: 'correction' as const };
     const result = await service.adjustStock(CLINIC_ID, ADMIN_USER_ID, 'Admin User', 'item_1', input);
 
-    expect(stockAdjustmentService.adjust).toHaveBeenCalledWith(CLINIC_ID, 'item_1', ADMIN_USER_ID, 'Admin User', input);
+    expect(stockAdjustmentService.adjust).toHaveBeenCalledWith(CLINIC_ID, 'item_1', ADMIN_USER_ID, 'Admin User', input, undefined);
     expect(result).toMatchObject({ movement: { id: 'mov_1' } });
   });
 });
 
-describe('InventoryWebService.adjustStock optimistic-concurrency enforcement (Plan 10-05, D-05)', () => {
-  const LIVE_UPDATED_AT = new Date('2026-08-20T09:00:00.000Z');
-
+describe('InventoryWebService.adjustStock optimistic-concurrency pass-through (Plan 10-05, D-05, F1)', () => {
+  // F1: the version check used to run here, as a separate `db.inventoryItem.updateMany`
+  // claim BEFORE `StockAdjustmentService.adjust`, which could commit a fresh
+  // `updatedAt` even when the downstream adjustment then failed its own
+  // validation -- a false conflict for a later, genuinely current caller.
+  // `expectedVersion` is now threaded straight through to
+  // `StockAdjustmentService.adjust`, which folds the version check into the
+  // SAME conditional `updateMany` (inside the same transaction as the
+  // movement record) that applies the real stock change -- see
+  // `stock-adjustment.service.test.ts` for the actual staleness/atomicity
+  // coverage.
   it('applies normally when expectedVersion is omitted (no breaking change for existing callers)', async () => {
     const { service, stockAdjustmentService } = buildService({ roleCode: 'ADMIN', inventoryWriteEnabled: true });
 
@@ -234,13 +238,18 @@ describe('InventoryWebService.adjustStock optimistic-concurrency enforcement (Pl
       reason: 'correction',
     });
 
-    expect(stockAdjustmentService.adjust).toHaveBeenCalled();
+    expect(stockAdjustmentService.adjust).toHaveBeenCalledWith(
+      CLINIC_ID,
+      'item_1',
+      ADMIN_USER_ID,
+      'Admin User',
+      expect.anything(),
+      undefined,
+    );
   });
 
-  it('applies when expectedVersion matches the item\'s live updatedAt', async () => {
-    const db = makeDb();
-    (db.inventoryItem.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({ updatedAt: LIVE_UPDATED_AT });
-    const { service, stockAdjustmentService } = buildService({ roleCode: 'ADMIN', inventoryWriteEnabled: true, db });
+  it('passes expectedVersion through to StockAdjustmentService.adjust unchanged', async () => {
+    const { service, stockAdjustmentService } = buildService({ roleCode: 'ADMIN', inventoryWriteEnabled: true });
 
     await service.adjustStock(
       CLINIC_ID,
@@ -248,19 +257,24 @@ describe('InventoryWebService.adjustStock optimistic-concurrency enforcement (Pl
       'Admin User',
       'item_1',
       { quantity: 5, type: 'add', reason: 'correction' },
-      LIVE_UPDATED_AT.getTime(),
+      123456,
     );
 
-    expect(stockAdjustmentService.adjust).toHaveBeenCalled();
+    expect(stockAdjustmentService.adjust).toHaveBeenCalledWith(
+      CLINIC_ID,
+      'item_1',
+      ADMIN_USER_ID,
+      'Admin User',
+      expect.anything(),
+      123456,
+    );
   });
 
-  it('rejects with a 409 STALE_WRITE_CONFLICT when expectedVersion is behind the item\'s live updatedAt, instead of silently applying it', async () => {
-    const db = makeDb();
-    (db.inventoryItem.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({ updatedAt: LIVE_UPDATED_AT });
-    // Verify-fix 10.10: the atomic claim's WHERE (id + live updatedAt) does
-    // not match a stale expectedVersion -- zero rows affected.
-    (db.inventoryItem.updateMany as ReturnType<typeof vi.fn>).mockResolvedValue({ count: 0 });
-    const { service, stockAdjustmentService } = buildService({ roleCode: 'ADMIN', inventoryWriteEnabled: true, db });
+  it('propagates a 409 STALE_WRITE_CONFLICT thrown by StockAdjustmentService.adjust unchanged', async () => {
+    const staleError = Object.assign(new Error('stale'), { statusCode: 409, code: 'STALE_WRITE_CONFLICT' });
+    const stockAdjustmentService = makeStockAdjustmentService();
+    stockAdjustmentService.adjust = vi.fn().mockRejectedValue(staleError);
+    const { service } = buildService({ roleCode: 'ADMIN', inventoryWriteEnabled: true, stockAdjustmentService });
 
     await expect(
       service.adjustStock(
@@ -269,11 +283,9 @@ describe('InventoryWebService.adjustStock optimistic-concurrency enforcement (Pl
         'Admin User',
         'item_1',
         { quantity: 5, type: 'add', reason: 'correction' },
-        LIVE_UPDATED_AT.getTime() - 60_000,
+        123456,
       ),
     ).rejects.toMatchObject({ statusCode: 409, code: 'STALE_WRITE_CONFLICT' });
-
-    expect(stockAdjustmentService.adjust).not.toHaveBeenCalled();
   });
 });
 

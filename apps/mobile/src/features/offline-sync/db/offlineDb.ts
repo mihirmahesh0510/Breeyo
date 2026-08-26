@@ -1,5 +1,11 @@
 import * as SQLite from 'expo-sqlite';
-import type { ResolutionState, SyncConflictEnvelope, SyncFailureTaskRecord } from '@breeyo/types';
+import type {
+  OfflineOperationEnvelope,
+  ReplayPriority,
+  ResolutionState,
+  SyncConflictEnvelope,
+  SyncFailureTaskRecord,
+} from '@breeyo/types';
 
 /**
  * On-device database name for the Phase 10 offline-sync ledger. Deliberately
@@ -226,6 +232,67 @@ export async function enqueueOperation(db: SQLite.SQLiteDatabase, input: Enqueue
     } finally {
       await statement.finalizeAsync();
     }
+  });
+}
+
+/**
+ * One `sync_operations` row still awaiting replay, reconstructed into the
+ * exact `OfflineOperationEnvelope` shape `buildQueueCheckInEnvelope` /
+ * `buildStockReceiveEnvelope` / `buildConsultationDraftEnvelope` (and their
+ * siblings) build on write -- so a real `ReplayCycleDeps.getPendingOperations`
+ * (F2: `syncCoordinator.ts`'s `runReplayCycle` previously had zero
+ * production callers) can hand `runReplayCycle` a `ReplayableOperation`
+ * without a second, parallel definition of what an envelope looks like.
+ */
+export interface PendingSyncOperation {
+  operationId: string;
+  priority: ReplayPriority;
+  envelope: OfflineOperationEnvelope;
+}
+
+/**
+ * Read counterpart to `enqueueOperation`, scoped to one replay priority tier
+ * and ordered oldest-first (D-12 to D-14: the coordinator always replays the
+ * head of a tier's backlog next). Only `synced_at IS NULL` rows are pending;
+ * a row `markSyncOperationSynced` has already stamped never comes back here.
+ */
+export async function listPendingSyncOperationsByPriority(
+  db: SQLite.SQLiteDatabase,
+  priority: ReplayPriority,
+): Promise<PendingSyncOperation[]> {
+  const rows = await db.getAllAsync<Record<string, unknown>>(
+    'SELECT * FROM sync_operations WHERE priority = $priority AND synced_at IS NULL ORDER BY created_at ASC',
+    { $priority: priority },
+  );
+  return rows.map((row) => ({
+    operationId: row.operation_id as string,
+    priority: row.priority as ReplayPriority,
+    envelope: {
+      deviceId: row.device_id as string,
+      operationId: row.operation_id as string,
+      clinicId: row.clinic_id as string,
+      userId: row.user_id as string,
+      domain: row.domain as string,
+      entityType: row.entity_type as string,
+      entityId: row.entity_id as string,
+      priority: row.priority as ReplayPriority,
+      createdAt: row.created_at as string,
+      payload: JSON.parse(row.payload_json as string),
+    },
+  }));
+}
+
+/**
+ * Write counterpart: marks one replay ledger row as durably acknowledged by
+ * the server so it stops being returned by `listPendingSyncOperationsByPriority`.
+ * Mirrors `enqueueOperation`'s transaction-wrapped convention.
+ */
+export async function markSyncOperationSynced(db: SQLite.SQLiteDatabase, operationId: string): Promise<void> {
+  await writeOfflineTransaction(db, async () => {
+    await db.runAsync('UPDATE sync_operations SET synced_at = $syncedAt WHERE operation_id = $operationId', {
+      $syncedAt: new Date().toISOString(),
+      $operationId: operationId,
+    });
   });
 }
 

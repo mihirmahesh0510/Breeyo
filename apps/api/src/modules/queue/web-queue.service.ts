@@ -1,7 +1,7 @@
 import type { QueueStatus } from '@breeyo/types';
 import type { TenantPrismaClient } from '../../lib/prisma-rls.js';
 import type { BrowserSyncChangeMetadata } from '../../realtime/socket.events.js';
-import { BrowserSyncService, staleWriteConflictError } from '../../realtime/browser-sync.service.js';
+import { BrowserSyncService } from '../../realtime/browser-sync.service.js';
 import type { QueueService } from './queue.service.js';
 
 /** A raw queue entry as `QueueService.getQueueBoard`/`updateStatus` return it (pet + owner included). */
@@ -127,29 +127,30 @@ export class WebQueueService {
    * metadata on the response and a realtime push.
    *
    * Plan 10-05, D-05: when the caller sends `expectedVersion` (the last
-   * `staleVersion` it rendered for this row), it is checked against the
-   * row's LIVE `updatedAt` before `QueueService.updateStatus` ever runs --
-   * a stale claim is rejected with a 409 `STALE_WRITE_CONFLICT` instead of
-   * silently applying a write against a view the caller has not refreshed
-   * since another session (mobile replay or another browser tab) changed
-   * this row. Omitting `expectedVersion` (every caller before this plan)
-   * is unaffected.
+   * `staleVersion` it rendered for this row), the write only applies if the
+   * row's LIVE `updatedAt` still matches it -- a stale claim is rejected
+   * with a 409 `STALE_WRITE_CONFLICT` instead of silently applying a write
+   * against a view the caller has not refreshed since another session
+   * (mobile replay or another browser tab) changed this row. Omitting
+   * `expectedVersion` (every caller before this plan) is unaffected.
    *
    * Verify-fix 10.10: the check used to be a separate `findUnique` read
    * followed, several awaits later, by `QueueService.updateStatus`'s own
    * write -- two genuinely concurrent callers with the same stale
    * `expectedVersion` could both read the row BEFORE either had written,
-   * both see themselves as current, and both proceed. The claim below
-   * closes that window with a single atomic conditional UPDATE
-   * (`updateMany`'s `WHERE id = ? AND updated_at = ?`, `updatedAt`
-   * doubling as the optimistic-lock version stamp): Postgres locks the row
-   * for the duration of whichever UPDATE reaches it first, and the second
-   * statement only proceeds once that lock releases, at which point it
-   * re-evaluates `WHERE updated_at = expectedVersion` against the FIRST
-   * caller's already-committed (newer) `updatedAt` and matches zero rows.
-   * `updateMany`'s affected-row count is therefore a true compare-and-swap:
-   * exactly one of any number of concurrent callers sharing a stale
-   * `expectedVersion` can ever see `count === 1`.
+   * both see themselves as current, and both proceed.
+   *
+   * That was tightened to an atomic conditional `updateMany` claim run
+   * BEFORE `QueueService.updateStatus`, but that introduced a different gap:
+   * the claim always committed a fresh `updatedAt`, even when the
+   * downstream state-machine transition then turned out to be invalid --
+   * bumping the version with no real change applied, so a second, genuinely
+   * current caller got a false 409. `QueueService.updateStatus` now takes
+   * `expectedVersion` itself and folds the version check into the SAME
+   * conditional `updateMany` that applies the real field changes
+   * (`QueueRepository.updateEntry`) -- there is no longer a separate write
+   * that can commit ahead of (or independent of) the real mutation, so the
+   * version only ever advances when a real change lands.
    */
   async updateEntryStatus(
     clinicId: string,
@@ -158,38 +159,12 @@ export class WebQueueService {
     status: QueueStatus,
     expectedVersion?: number,
   ): Promise<WebQueueEntry & { changeMetadata: BrowserSyncChangeMetadata }> {
-    if (expectedVersion !== undefined) {
-      const claim = await this.db.queueEntry.updateMany({
-        where: { id: entryId, updatedAt: new Date(expectedVersion) },
-        data: { updatedAt: new Date() },
-      });
-
-      if (claim.count !== 1) {
-        const current = (await this.db.queueEntry.findUnique({
-          where: { id: entryId },
-          select: { updatedAt: true },
-        })) as { updatedAt: Date } | null;
-
-        // No row at all -- let `QueueService.updateStatus` below raise its
-        // own not-found error; a version conflict is only meaningful when a
-        // row exists carrying a DIFFERENT version than the caller expected.
-        if (current) {
-          throw staleWriteConflictError({
-            domain: 'queue',
-            entityType: 'QUEUE_ENTRY',
-            entityId: entryId,
-            currentVersion: current.updatedAt.getTime(),
-            expectedVersion,
-          });
-        }
-      }
-    }
-
     const updated = (await this.queueService.updateStatus({
       clinicId,
       entryId,
       status,
       userId,
+      expectedVersion,
     })) as RawQueueEntry;
 
     const changeMetadata = this.browserSyncService.buildChangeMetadata({

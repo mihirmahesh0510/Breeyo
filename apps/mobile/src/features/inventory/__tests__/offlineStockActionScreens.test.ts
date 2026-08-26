@@ -58,49 +58,55 @@ describe('DispenseScreen.tsx / StockReceiptScreen.tsx / StockAdjustmentSheet.tsx
     return fs.readFileSync(path.resolve(__dirname, relativePath), 'utf-8');
   }
 
-  it('DispenseScreen.tsx falls through to useOfflineStockActions.dispenseStock on a network failure instead of only setting serverError', async () => {
+  it('DispenseScreen.tsx falls through to useOfflineStockActions.dispenseOffline (single-attempt, no second online call) on a network failure instead of only setting serverError', async () => {
     const source = await readSource('../screens/DispenseScreen.tsx');
 
     expect(source).toMatch(/useOfflineStockActions/);
     expect(source).toMatch(/isNetworkFailure/);
-    expect(source).toMatch(/offlineStockActions\.dispenseStock\(/);
+    expect(source).toMatch(/offlineStockActions\.dispenseOffline\(/);
     expect(source).toMatch(/getDispenseQueuedToast/);
+    // F3: the doubled-retry bug this replaces -- the screen already made its
+    // own online attempt via `dispenseStock.mutateAsync`, so the fallback
+    // must never call the online-attempting `dispenseStock` hook method too.
+    expect(source).not.toMatch(/offlineStockActions\.dispenseStock\(/);
 
     // The network-failure branch must not be a dead end that only shows
     // serverError -- it must route through the offline hook first.
     const catchBlock = source.slice(source.indexOf('} catch (err)'));
     expect(catchBlock.indexOf('isNetworkFailure')).toBeGreaterThan(-1);
-    expect(catchBlock.indexOf('offlineStockActions.dispenseStock')).toBeGreaterThan(
+    expect(catchBlock.indexOf('offlineStockActions.dispenseOffline')).toBeGreaterThan(
       catchBlock.indexOf('isNetworkFailure'),
     );
   });
 
-  it('StockReceiptScreen.tsx falls through to useOfflineStockActions.receiveStock on a network failure instead of only setting serverError', async () => {
+  it('StockReceiptScreen.tsx falls through to useOfflineStockActions.receiveOffline (single-attempt, no second online call) on a network failure instead of only setting serverError', async () => {
     const source = await readSource('../screens/StockReceiptScreen.tsx');
 
     expect(source).toMatch(/useOfflineStockActions/);
     expect(source).toMatch(/isNetworkFailure/);
-    expect(source).toMatch(/offlineStockActions\.receiveStock\(/);
+    expect(source).toMatch(/offlineStockActions\.receiveOffline\(/);
     expect(source).toMatch(/getStockReceiptQueuedToast/);
+    expect(source).not.toMatch(/offlineStockActions\.receiveStock\(/);
 
     const catchBlock = source.slice(source.indexOf('} catch (err)'));
     expect(catchBlock.indexOf('isNetworkFailure')).toBeGreaterThan(-1);
-    expect(catchBlock.indexOf('offlineStockActions.receiveStock')).toBeGreaterThan(
+    expect(catchBlock.indexOf('offlineStockActions.receiveOffline')).toBeGreaterThan(
       catchBlock.indexOf('isNetworkFailure'),
     );
   });
 
-  it('StockAdjustmentSheet.tsx falls through to useOfflineStockActions.adjustStock on a network failure instead of only setting serverError', async () => {
+  it('StockAdjustmentSheet.tsx falls through to useOfflineStockActions.adjustOffline (single-attempt, no second online call) on a network failure instead of only setting serverError', async () => {
     const source = await readSource('../screens/StockAdjustmentSheet.tsx');
 
     expect(source).toMatch(/useOfflineStockActions/);
     expect(source).toMatch(/isNetworkFailure/);
-    expect(source).toMatch(/offlineStockActions\.adjustStock\(/);
+    expect(source).toMatch(/offlineStockActions\.adjustOffline\(/);
     expect(source).toMatch(/getAdjustmentQueuedToast/);
+    expect(source).not.toMatch(/offlineStockActions\.adjustStock\(/);
 
     const catchBlock = source.slice(source.indexOf('} catch (err)'));
     expect(catchBlock.indexOf('isNetworkFailure')).toBeGreaterThan(-1);
-    expect(catchBlock.indexOf('offlineStockActions.adjustStock')).toBeGreaterThan(
+    expect(catchBlock.indexOf('offlineStockActions.adjustOffline')).toBeGreaterThan(
       catchBlock.indexOf('isNetworkFailure'),
     );
 

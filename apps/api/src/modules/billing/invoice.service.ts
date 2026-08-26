@@ -629,6 +629,7 @@ export class InvoiceService {
     invoiceId: string,
     actor: BillingActor,
     input: VoidInvoiceInput,
+    expectedVersion?: number,
   ) {
     const parsed = voidInvoiceSchema.parse(input);
 
@@ -652,6 +653,7 @@ export class InvoiceService {
       parsed.reason,
       parsed.restoreStock,
       actor,
+      expectedVersion,
     );
 
     // D-35, second half. The repository marked the local rows cancelled and

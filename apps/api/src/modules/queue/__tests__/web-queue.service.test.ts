@@ -157,41 +157,46 @@ describe('WebQueueService.updateEntryStatus (D-43)', () => {
   });
 });
 
-describe('WebQueueService.updateEntryStatus optimistic-concurrency enforcement (Plan 10-05, D-05)', () => {
+describe('WebQueueService.updateEntryStatus optimistic-concurrency pass-through (Plan 10-05, D-05)', () => {
+  // F1: the version check used to run here, as a separate `db.queueEntry.updateMany`
+  // claim BEFORE `QueueService.updateStatus`, which could commit a fresh
+  // `updatedAt` even when the downstream transition then turned out to be
+  // invalid -- a false conflict for a later, genuinely current caller.
+  // `expectedVersion` is now threaded straight through to
+  // `QueueService.updateStatus`, which folds the version check into the SAME
+  // conditional `updateMany` that applies the real field changes (see
+  // `queue.service.test.ts` for the actual staleness/atomicity coverage).
   it('applies the write normally when expectedVersion is omitted (no breaking change for existing callers)', async () => {
     const queueService = makeQueueService({});
-    const db = makeDb([], { updatedAt: new Date('2026-08-20T09:00:00.000Z') });
-    const { service } = buildService({ db, queueService });
+    const { service } = buildService({ queueService });
 
     const result = await service.updateEntryStatus(CLINIC_ID, USER_ID, 'entry_1', 'IN_CONSULT' as never);
 
-    expect(queueService.updateStatus).toHaveBeenCalled();
+    expect(queueService.updateStatus).toHaveBeenCalledWith(
+      expect.objectContaining({ entryId: 'entry_1', expectedVersion: undefined }),
+    );
     expect(result.changeMetadata.staleVersion).toBe(new Date('2026-08-20T09:05:00.000Z').getTime());
   });
 
-  it('applies the write when expectedVersion is current (matches the row\'s live updatedAt)', async () => {
+  it('passes expectedVersion through to QueueService.updateStatus unchanged', async () => {
     const queueService = makeQueueService({});
-    const liveUpdatedAt = new Date('2026-08-20T09:00:00.000Z');
-    const db = makeDb([], { updatedAt: liveUpdatedAt });
-    const { service } = buildService({ db, queueService });
+    const { service } = buildService({ queueService });
 
-    await service.updateEntryStatus(CLINIC_ID, USER_ID, 'entry_1', 'IN_CONSULT' as never, liveUpdatedAt.getTime());
+    await service.updateEntryStatus(CLINIC_ID, USER_ID, 'entry_1', 'IN_CONSULT' as never, 123456);
 
-    expect(queueService.updateStatus).toHaveBeenCalled();
+    expect(queueService.updateStatus).toHaveBeenCalledWith(
+      expect.objectContaining({ entryId: 'entry_1', expectedVersion: 123456 }),
+    );
   });
 
-  it('rejects the write with a 409 STALE_WRITE_CONFLICT when expectedVersion is behind the row\'s live updatedAt, instead of silently applying it', async () => {
+  it('propagates a 409 STALE_WRITE_CONFLICT thrown by QueueService.updateStatus unchanged', async () => {
     const queueService = makeQueueService({});
-    const liveUpdatedAt = new Date('2026-08-20T09:30:00.000Z');
-    const db = makeDb([], { updatedAt: liveUpdatedAt });
-    const { service } = buildService({ db, queueService });
-
-    const staleExpectedVersion = liveUpdatedAt.getTime() - 60_000;
+    const staleError = Object.assign(new Error('stale'), { statusCode: 409, code: 'STALE_WRITE_CONFLICT' });
+    vi.mocked(queueService.updateStatus).mockRejectedValue(staleError);
+    const { service } = buildService({ queueService });
 
     await expect(
-      service.updateEntryStatus(CLINIC_ID, USER_ID, 'entry_1', 'IN_CONSULT' as never, staleExpectedVersion),
+      service.updateEntryStatus(CLINIC_ID, USER_ID, 'entry_1', 'IN_CONSULT' as never, 123456),
     ).rejects.toMatchObject({ statusCode: 409, code: 'STALE_WRITE_CONFLICT' });
-
-    expect(queueService.updateStatus).not.toHaveBeenCalled();
   });
 });

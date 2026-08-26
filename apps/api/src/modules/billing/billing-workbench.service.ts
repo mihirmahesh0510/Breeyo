@@ -2,7 +2,7 @@ import type { RefundInput, VoidInvoiceInput } from '@breeyo/validators';
 import type { InvoiceListItem } from '@breeyo/types';
 import type { TenantPrismaClient } from '../../lib/prisma-rls.js';
 import type { AccessPolicyService } from '../web-dashboard/access-policy.service.js';
-import { BrowserSyncService, staleWriteConflictError } from '../../realtime/browser-sync.service.js';
+import { BrowserSyncService } from '../../realtime/browser-sync.service.js';
 import type { BrowserSyncChangeMetadata } from '../../realtime/socket.events.js';
 import type { InvoiceService } from './invoice.service.js';
 import type { PaymentService } from './payment.service.js';
@@ -136,51 +136,6 @@ export class BillingWorkbenchService {
     };
   }
 
-  /**
-   * Plan 10-05, D-05: rejects with a 409 `STALE_WRITE_CONFLICT` when the
-   * caller's `expectedVersion` is behind the invoice's LIVE `updatedAt`,
-   * instead of letting `collectPayment`/`refundInvoice`/`voidInvoice` apply
-   * a write against a view the caller has not refreshed since another
-   * session changed this invoice. A no-op whenever `expectedVersion` is
-   * omitted -- every caller before this plan is unaffected.
-   *
-   * Verify-fix 10.10: this used to be a separate `findUnique` read, with
-   * the real mutation (`PaymentService`/`RefundService`/`InvoiceService`)
-   * running several awaits later -- two genuinely concurrent callers
-   * sharing a stale `expectedVersion` could both read the row before
-   * either had written and both proceed. Replaced with a single atomic
-   * conditional UPDATE via `updateMany` (`WHERE id = ? AND updated_at =
-   * ?`, `updatedAt` as the optimistic-lock version stamp): Postgres
-   * serializes concurrent UPDATEs to the same row, so only one of any
-   * number of concurrent callers sharing a stale `expectedVersion` can
-   * ever see `count === 1`. See `WebQueueService.updateEntryStatus` for
-   * the identical pattern and full row-locking rationale.
-   */
-  private async assertInvoiceVersionCurrent(invoiceId: string, expectedVersion?: number): Promise<void> {
-    if (expectedVersion === undefined) return;
-
-    const claim = await this.db.invoice.updateMany({
-      where: { id: invoiceId, updatedAt: new Date(expectedVersion) },
-      data: { updatedAt: new Date() },
-    });
-    if (claim.count === 1) return;
-
-    const current = (await this.db.invoice.findUnique({
-      where: { id: invoiceId },
-      select: { updatedAt: true },
-    })) as { updatedAt: Date } | null;
-    // No row at all -- let the delegated service's own not-found handling fire.
-    if (!current) return;
-
-    throw staleWriteConflictError({
-      domain: 'billing',
-      entityType: 'INVOICE',
-      entityId: invoiceId,
-      currentVersion: current.updatedAt.getTime(),
-      expectedVersion,
-    });
-  }
-
   /** D-05: cash quick-collection, open to Front Desk and Admin alike -- delegates to the existing cash-payment path unchanged. */
   async collectPayment(
     clinicId: string,
@@ -189,8 +144,7 @@ export class BillingWorkbenchService {
     amountPaise?: number,
     expectedVersion?: number,
   ) {
-    await this.assertInvoiceVersionCurrent(invoiceId, expectedVersion);
-    return this.paymentService.recordCashPayment(clinicId, invoiceId, actor, amountPaise);
+    return this.paymentService.recordCashPayment(clinicId, invoiceId, actor, amountPaise, expectedVersion);
   }
 
   /** D-22: Admin-only. Throws 403 FORBIDDEN before touching `RefundService` for any other role. */
@@ -205,8 +159,7 @@ export class BillingWorkbenchService {
     if (!(await this.isAdmin(clinicId, userId))) {
       throw forbiddenError('Refunds are Admin-only in the browser, even with routine billing access (D-22)');
     }
-    await this.assertInvoiceVersionCurrent(invoiceId, expectedVersion);
-    return this.refundService.createRefund(clinicId, invoiceId, actor, input);
+    return this.refundService.createRefund(clinicId, invoiceId, actor, input, expectedVersion);
   }
 
   /** D-22: Admin-only. Throws 403 FORBIDDEN before touching `InvoiceService.voidInvoice` for any other role. */
@@ -221,8 +174,7 @@ export class BillingWorkbenchService {
     if (!(await this.isAdmin(clinicId, userId))) {
       throw forbiddenError('Voiding an invoice is Admin-only in the browser, even with routine billing access (D-22)');
     }
-    await this.assertInvoiceVersionCurrent(invoiceId, expectedVersion);
-    return this.invoiceService.voidInvoice(clinicId, invoiceId, actor, input);
+    return this.invoiceService.voidInvoice(clinicId, invoiceId, actor, input, expectedVersion);
   }
 
   /**

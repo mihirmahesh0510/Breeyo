@@ -62,6 +62,10 @@ function structuredError(code: string, message: string, statusCode: number, extr
   return error;
 }
 
+function createAllowAllPermissions() {
+  return { getUserPermissions: vi.fn().mockResolvedValue(['MANAGE_INVENTORY_STOCK', 'DISPENSE_INVENTORY']) };
+}
+
 const context = { clinicId: CLINIC_ID, userId: USER_ID, deviceId: DEVICE_A };
 
 describe('InventoryOfflineReplayService', () => {
@@ -69,6 +73,7 @@ describe('InventoryOfflineReplayService', () => {
   let receipts: ReturnType<typeof createMockReceipts>;
   let reviewTasks: ReturnType<typeof createMockReviewTasks>;
   let reviewService: InventoryConflictReviewService;
+  let permissions: ReturnType<typeof createAllowAllPermissions>;
   let service: InventoryOfflineReplayService;
 
   beforeEach(() => {
@@ -76,7 +81,43 @@ describe('InventoryOfflineReplayService', () => {
     receipts = createMockReceipts();
     reviewTasks = createMockReviewTasks();
     reviewService = new InventoryConflictReviewService(reviewTasks);
-    service = new InventoryOfflineReplayService(gateway, receipts, reviewService, () => FIXED_NOW);
+    permissions = createAllowAllPermissions();
+    service = new InventoryOfflineReplayService(gateway, receipts, reviewService, permissions, () => FIXED_NOW);
+  });
+
+  describe('permission enforcement (D-41 to D-44)', () => {
+    it('rejects a dispense replay when the caller lacks DISPENSE_INVENTORY', async () => {
+      permissions.getUserPermissions.mockResolvedValue(['MANAGE_INVENTORY_STOCK']);
+
+      await expect(service.replayInventoryOperation(context, baseEnvelope())).rejects.toMatchObject({
+        statusCode: 403,
+        code: 'FORBIDDEN',
+      });
+      expect(gateway.dispense).not.toHaveBeenCalled();
+    });
+
+    it('rejects an adjust replay when the caller lacks MANAGE_INVENTORY_STOCK', async () => {
+      permissions.getUserPermissions.mockResolvedValue(['DISPENSE_INVENTORY']);
+
+      await expect(
+        service.replayInventoryOperation(context, baseEnvelope({ entityType: STOCK_ADJUST_ENTITY_TYPE, payload: { type: 'add', quantity: 1, reason: 'found_stock' } })),
+      ).rejects.toMatchObject({ statusCode: 403, code: 'FORBIDDEN' });
+      expect(gateway.adjust).not.toHaveBeenCalled();
+    });
+
+    it('allows a dispense replay when the caller holds DISPENSE_INVENTORY', async () => {
+      permissions.getUserPermissions.mockResolvedValue(['DISPENSE_INVENTORY']);
+      vi.mocked(gateway.dispense).mockResolvedValue({
+        deductions: [{ batchId: 'batch-1', lotNumber: null, quantity: 3 }],
+        newTotal: 7,
+        movementIds: ['movement-1'],
+      } as any);
+
+      const result = await service.replayInventoryOperation(context, baseEnvelope());
+
+      expect(result.status).toBe('APPLIED');
+      expect(gateway.dispense).toHaveBeenCalled();
+    });
   });
 
   describe('idempotency (T-10-07, T-10-03 pattern reused for inventory)', () => {
@@ -293,7 +334,14 @@ describe('InventoryOfflineReplayService replay-broadcast wiring (verify-fix 10.3
       emitReplayConflictOpened: vi.fn(),
       emitReplayFailureEscalated: vi.fn(),
     };
-    service = new InventoryOfflineReplayService(gateway, receipts, reviewService, () => FIXED_NOW, broadcast as unknown as ReplayBroadcastService);
+    service = new InventoryOfflineReplayService(
+      gateway,
+      receipts,
+      reviewService,
+      createAllowAllPermissions(),
+      () => FIXED_NOW,
+      broadcast as unknown as ReplayBroadcastService,
+    );
   });
 
   it('emits a clinic-scoped REPLAY_APPLIED broadcast after a successful dispense', async () => {

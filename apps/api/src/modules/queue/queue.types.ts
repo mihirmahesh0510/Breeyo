@@ -35,6 +35,8 @@ export interface UpdateStatusParams {
   entryId: string;
   status: QueueStatus;
   userId: string;
+  /** D-05: when supplied, the write only applies if the row's live `updatedAt` still matches this value -- see `QueueService.updateStatus`. */
+  expectedVersion?: number;
 }
 
 export interface CallNextParams {

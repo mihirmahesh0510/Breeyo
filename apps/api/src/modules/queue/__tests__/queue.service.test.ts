@@ -300,6 +300,61 @@ describe('QueueService', () => {
       expect(repo.updateEntry).toHaveBeenCalled();
     });
 
+    it('passes expectedVersion through to repository.updateEntry so the version check and the real write are one atomic conditional update (F1, D-05)', async () => {
+      vi.mocked(repo.findEntryById).mockResolvedValue(mockEntry as any);
+      vi.mocked(repo.updateEntry).mockResolvedValue({
+        ...mockEntry,
+        status: 'IN_CONSULT',
+      } as any);
+
+      await service.updateStatus({
+        clinicId: CLINIC_ID,
+        entryId: ENTRY_ID,
+        status: 'IN_CONSULT' as any,
+        userId: USER_ID,
+        expectedVersion: 123456,
+      });
+
+      expect(repo.updateEntry).toHaveBeenCalledWith(ENTRY_ID, expect.anything(), 123456);
+    });
+
+    it('rejects with a 409 STALE_WRITE_CONFLICT when repository.updateEntry reports no matching row (version moved on), without ever having bumped the version itself', async () => {
+      vi.mocked(repo.findEntryById)
+        .mockResolvedValueOnce(mockEntry as any)
+        // The re-read after a failed conditional update reports the CURRENT
+        // (newer) version -- there is no separate claim step to have bumped
+        // it in the first place, closing the false-409 gap the atomic
+        // `updateMany`-only claim (verify-fix 10.10) reopened.
+        .mockResolvedValueOnce({ ...mockEntry, updatedAt: new Date('2026-08-20T09:30:00.000Z') } as any);
+      vi.mocked(repo.updateEntry).mockResolvedValue(null);
+
+      await expect(
+        service.updateStatus({
+          clinicId: CLINIC_ID,
+          entryId: ENTRY_ID,
+          status: 'IN_CONSULT' as any,
+          userId: USER_ID,
+          expectedVersion: new Date('2026-08-20T09:00:00.000Z').getTime(),
+        }),
+      ).rejects.toMatchObject({ statusCode: 409, code: 'STALE_WRITE_CONFLICT' });
+    });
+
+    it('never calls repository.updateEntry at all when the transition is invalid, even with an expectedVersion supplied -- an invalid transition can never bump the version', async () => {
+      vi.mocked(repo.findEntryById).mockResolvedValue(mockEntry as any);
+
+      await expect(
+        service.updateStatus({
+          clinicId: CLINIC_ID,
+          entryId: ENTRY_ID,
+          status: 'DONE' as any,
+          userId: USER_ID,
+          expectedVersion: 123456,
+        }),
+      ).rejects.toThrow('Cannot transition from WAITING to DONE');
+
+      expect(repo.updateEntry).not.toHaveBeenCalled();
+    });
+
     it('rejects invalid transition WAITING -> DONE', async () => {
       vi.mocked(repo.findEntryById).mockResolvedValue(mockEntry as any);
 

@@ -138,7 +138,7 @@ describe('InvoiceService state guards — void (D-21, D-26, D-34)', () => {
 
     await service.voidInvoice(CLINIC, INVOICE, ACTOR, { reason: 'wrong pet', restoreStock: true });
 
-    expect(repository.voidInvoice).toHaveBeenCalledWith(CLINIC, INVOICE, 'wrong pet', true, ACTOR);
+    expect(repository.voidInvoice).toHaveBeenCalledWith(CLINIC, INVOICE, 'wrong pet', true, ACTOR, undefined);
   });
 
   it('rejects voiding an already-VOIDED invoice — VOIDED is terminal', async () => {
@@ -174,7 +174,7 @@ describe('InvoiceService state guards — void (D-21, D-26, D-34)', () => {
 
     await service.voidInvoice(CLINIC, INVOICE, ACTOR, { reason: 'recall', restoreStock: true });
 
-    expect(repository.voidInvoice).toHaveBeenCalledWith(CLINIC, INVOICE, 'recall', true, ACTOR);
+    expect(repository.voidInvoice).toHaveBeenCalledWith(CLINIC, INVOICE, 'recall', true, ACTOR, undefined);
   });
 });
 

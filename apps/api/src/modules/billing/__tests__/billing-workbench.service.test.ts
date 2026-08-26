@@ -163,6 +163,7 @@ describe('BillingWorkbenchService.collectPayment (D-05: Front Desk and Admin bot
       'inv_1',
       { userId: FRONT_DESK_USER_ID, userName: 'Priya Sharma' },
       50000,
+      undefined,
     );
   });
 });
@@ -201,119 +202,72 @@ describe('BillingWorkbenchService.refundInvoice Admin-only enforcement (D-22)', 
   });
 });
 
-describe('BillingWorkbenchService optimistic-concurrency enforcement (Plan 10-05, D-05)', () => {
-  const LIVE_UPDATED_AT = new Date('2026-08-20T09:00:00.000Z');
-
-  it('collectPayment applies normally when expectedVersion is omitted (no breaking change for existing callers)', async () => {
+describe('BillingWorkbenchService optimistic-concurrency pass-through (Plan 10-05, D-05)', () => {
+  // Verify-fix 10.10 (F1): the version check used to run here, as a separate
+  // `db.invoice.updateMany` claim BEFORE the delegate service, which could
+  // commit a fresh `updatedAt` even when the delegate then rejected the
+  // mutation for an unrelated reason -- a false conflict for a later,
+  // genuinely current caller. `expectedVersion` is now threaded straight
+  // through to `PaymentService.recordCashPayment`/`RefundService.createRefund`/
+  // `InvoiceService.voidInvoice`, which check it under their own `FOR UPDATE`
+  // lock, in the SAME transaction as the real mutation (see those services'
+  // own test files for the actual staleness/atomicity coverage).
+  it('collectPayment passes expectedVersion through to PaymentService.recordCashPayment unchanged', async () => {
     const paymentService = makePaymentService();
-    const db = makeDb();
-    const { service } = buildService({ paymentService, db });
-
-    await service.collectPayment(CLINIC_ID, { userId: FRONT_DESK_USER_ID, userName: 'Priya Sharma' }, 'inv_1', 50000);
-
-    expect(paymentService.recordCashPayment).toHaveBeenCalled();
-  });
-
-  it('collectPayment rejects with a 409 STALE_WRITE_CONFLICT when expectedVersion is behind the invoice\'s live updatedAt', async () => {
-    const paymentService = makePaymentService();
-    const db = makeDb();
-    (db.invoice as unknown as { findUnique: ReturnType<typeof vi.fn> }).findUnique = vi
-      .fn()
-      .mockResolvedValue({ updatedAt: LIVE_UPDATED_AT });
-    // Verify-fix 10.10: the atomic claim's WHERE (id + live updatedAt)
-    // does not match a stale `expectedVersion` -- zero rows affected,
-    // mirroring what a real conditional UPDATE would report.
-    (db.invoice as unknown as { updateMany: ReturnType<typeof vi.fn> }).updateMany = vi
-      .fn()
-      .mockResolvedValue({ count: 0 });
-    const { service } = buildService({ paymentService, db });
-
-    const staleExpectedVersion = LIVE_UPDATED_AT.getTime() - 60_000;
-
-    await expect(
-      service.collectPayment(
-        CLINIC_ID,
-        { userId: FRONT_DESK_USER_ID, userName: 'Priya Sharma' },
-        'inv_1',
-        50000,
-        staleExpectedVersion,
-      ),
-    ).rejects.toMatchObject({ statusCode: 409, code: 'STALE_WRITE_CONFLICT' });
-
-    expect(paymentService.recordCashPayment).not.toHaveBeenCalled();
-  });
-
-  it('collectPayment applies when expectedVersion matches the invoice\'s live updatedAt', async () => {
-    const paymentService = makePaymentService();
-    const db = makeDb();
-    (db.invoice as unknown as { findUnique: ReturnType<typeof vi.fn> }).findUnique = vi
-      .fn()
-      .mockResolvedValue({ updatedAt: LIVE_UPDATED_AT });
-    // Verify-fix 10.10: matching expectedVersion claims the row -- one row affected.
-    (db.invoice as unknown as { updateMany: ReturnType<typeof vi.fn> }).updateMany = vi
-      .fn()
-      .mockResolvedValue({ count: 1 });
-    const { service } = buildService({ paymentService, db });
+    const { service } = buildService({ paymentService });
 
     await service.collectPayment(
       CLINIC_ID,
       { userId: FRONT_DESK_USER_ID, userName: 'Priya Sharma' },
       'inv_1',
       50000,
-      LIVE_UPDATED_AT.getTime(),
+      123456,
     );
 
-    expect(paymentService.recordCashPayment).toHaveBeenCalled();
+    expect(paymentService.recordCashPayment).toHaveBeenCalledWith(CLINIC_ID, 'inv_1', expect.anything(), 50000, 123456);
   });
 
-  it('refundInvoice rejects a stale expectedVersion before ever calling RefundService, even for Admin', async () => {
+  it('collectPayment applies normally when expectedVersion is omitted (no breaking change for existing callers)', async () => {
+    const paymentService = makePaymentService();
+    const { service } = buildService({ paymentService });
+
+    await service.collectPayment(CLINIC_ID, { userId: FRONT_DESK_USER_ID, userName: 'Priya Sharma' }, 'inv_1', 50000);
+
+    expect(paymentService.recordCashPayment).toHaveBeenCalledWith(CLINIC_ID, 'inv_1', expect.anything(), 50000, undefined);
+  });
+
+  it('refundInvoice passes expectedVersion through to RefundService.createRefund unchanged', async () => {
     const refundService = makeRefundService();
-    const db = makeDb();
-    (db.invoice as unknown as { findUnique: ReturnType<typeof vi.fn> }).findUnique = vi
-      .fn()
-      .mockResolvedValue({ updatedAt: LIVE_UPDATED_AT });
-    (db.invoice as unknown as { updateMany: ReturnType<typeof vi.fn> }).updateMany = vi
-      .fn()
-      .mockResolvedValue({ count: 0 });
-    const { service } = buildService({ roleCode: 'ADMIN', refundService, db });
+    const { service } = buildService({ roleCode: 'ADMIN', refundService });
+    const input = { amountPaise: 10000, reason: 'owner request' } as never;
 
-    await expect(
-      service.refundInvoice(
-        CLINIC_ID,
-        ADMIN_USER_ID,
-        { userId: ADMIN_USER_ID, userName: 'Admin User' },
-        'inv_1',
-        { amountPaise: 10000, reason: 'owner request' } as never,
-        LIVE_UPDATED_AT.getTime() - 60_000,
-      ),
-    ).rejects.toMatchObject({ statusCode: 409, code: 'STALE_WRITE_CONFLICT' });
+    await service.refundInvoice(
+      CLINIC_ID,
+      ADMIN_USER_ID,
+      { userId: ADMIN_USER_ID, userName: 'Admin User' },
+      'inv_1',
+      input,
+      123456,
+    );
 
-    expect(refundService.createRefund).not.toHaveBeenCalled();
+    expect(refundService.createRefund).toHaveBeenCalledWith(CLINIC_ID, 'inv_1', expect.anything(), input, 123456);
   });
 
-  it('voidInvoice rejects a stale expectedVersion before ever calling InvoiceService.voidInvoice, even for Admin', async () => {
+  it('voidInvoice passes expectedVersion through to InvoiceService.voidInvoice unchanged', async () => {
     const invoiceService = makeInvoiceService();
-    const db = makeDb();
-    (db.invoice as unknown as { findUnique: ReturnType<typeof vi.fn> }).findUnique = vi
-      .fn()
-      .mockResolvedValue({ updatedAt: LIVE_UPDATED_AT });
-    (db.invoice as unknown as { updateMany: ReturnType<typeof vi.fn> }).updateMany = vi
-      .fn()
-      .mockResolvedValue({ count: 0 });
-    const { service } = buildService({ roleCode: 'ADMIN', invoiceService, db });
+    const { service } = buildService({ roleCode: 'ADMIN', invoiceService });
+    const input = { reason: 'duplicate', restoreStock: true } as never;
 
-    await expect(
-      service.voidInvoice(
-        CLINIC_ID,
-        ADMIN_USER_ID,
-        { userId: ADMIN_USER_ID, userName: 'Admin User' },
-        'inv_1',
-        { reason: 'duplicate', restoreStock: true } as never,
-        LIVE_UPDATED_AT.getTime() - 60_000,
-      ),
-    ).rejects.toMatchObject({ statusCode: 409, code: 'STALE_WRITE_CONFLICT' });
+    await service.voidInvoice(
+      CLINIC_ID,
+      ADMIN_USER_ID,
+      { userId: ADMIN_USER_ID, userName: 'Admin User' },
+      'inv_1',
+      input,
+      123456,
+    );
 
-    expect(invoiceService.voidInvoice).not.toHaveBeenCalled();
+    expect(invoiceService.voidInvoice).toHaveBeenCalledWith(CLINIC_ID, 'inv_1', expect.anything(), input, 123456);
   });
 });
 

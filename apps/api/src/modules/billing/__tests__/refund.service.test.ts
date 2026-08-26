@@ -56,6 +56,8 @@ const ACTOR = { userId: 'user-1', userName: 'Front Desk' };
 
 type Row = Record<string, unknown>;
 
+const LIVE_UPDATED_AT = new Date('2026-08-20T09:00:00.000Z');
+
 function lockedRow(overrides: Row = {}) {
   return {
     id: INVOICE,
@@ -64,6 +66,7 @@ function lockedRow(overrides: Row = {}) {
     balance_paise: 0,
     exception_flag: null,
     invoice_number: 'INV-202608-0001',
+    updated_at: LIVE_UPDATED_AT,
     ...overrides,
   };
 }
@@ -359,6 +362,34 @@ describe('RefundService.createRefund — the bound (T-06-66, T-06-67)', () => {
 
     expect(tx.refund.create).toHaveBeenCalledTimes(1);
     expect(tx.refund.create.mock.calls[0][0].data.amountPaise).toBe(70000);
+  });
+});
+
+describe('RefundService.createRefund — optimistic-concurrency enforcement (Plan 10-05, D-05, F1)', () => {
+  it('applies normally when expectedVersion matches the invoice\'s live updatedAt', async () => {
+    const { service, tx } = build({ payments: [cashLeg(50000)] });
+
+    await service.createRefund(
+      CLINIC,
+      INVOICE,
+      ACTOR,
+      { type: 'full', amountPaise: 50000 },
+      LIVE_UPDATED_AT.getTime(),
+    );
+
+    expect(tx.refund.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects with a 409 STALE_WRITE_CONFLICT when expectedVersion is behind the invoice\'s live updatedAt, and reserves nothing (F1: checked under the SAME FOR UPDATE lock as the reservation, so a rejected claim can never bump the version)', async () => {
+    const { service, tx } = build({ payments: [cashLeg(50000)] });
+
+    const staleExpectedVersion = LIVE_UPDATED_AT.getTime() - 60_000;
+
+    await expect(
+      service.createRefund(CLINIC, INVOICE, ACTOR, { type: 'full', amountPaise: 50000 }, staleExpectedVersion),
+    ).rejects.toMatchObject({ statusCode: 409, code: 'STALE_WRITE_CONFLICT' });
+
+    expect(tx.refund.create).not.toHaveBeenCalled();
   });
 });
 

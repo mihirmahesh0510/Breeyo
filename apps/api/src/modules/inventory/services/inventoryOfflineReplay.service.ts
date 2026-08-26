@@ -148,6 +148,37 @@ const ENTITY_TYPE_TO_OPERATION: Record<string, InventoryMismatchOperationType> =
 };
 
 /**
+ * D-41-D-44: same permission code each entityType's equivalent ONLINE route
+ * already enforces at registration (`inventory.routes.ts`'s `/receive`,
+ * `dispense.routes.ts`'s `/dispense`|`/adjust`|`/movements/:id/return`) --
+ * mirrors `sync-operation.service.ts`'s `SYNC_OPERATION_PERMISSIONS` map,
+ * since Fastify's route-level preHandler can't vary by envelope entityType.
+ */
+const ENTITY_TYPE_TO_PERMISSION: Record<string, string> = {
+  [STOCK_RECEIVE_ENTITY_TYPE]: 'MANAGE_INVENTORY_STOCK',
+  [STOCK_DISPENSE_ENTITY_TYPE]: 'DISPENSE_INVENTORY',
+  [STOCK_ADJUST_ENTITY_TYPE]: 'MANAGE_INVENTORY_STOCK',
+  [STOCK_RETURN_ENTITY_TYPE]: 'DISPENSE_INVENTORY',
+};
+
+/** Minimal shape this service needs from PermissionService -- kept as a
+ *  local interface instead of importing the concrete class, matching
+ *  `sync-operation.service.ts`'s own `PermissionsProvider`. */
+export interface PermissionsProvider {
+  getUserPermissions(userId: string, clinicId: string): Promise<string[]>;
+}
+
+function forbiddenError(entityType: string, requiredPermission: string): Error & { statusCode: number; code: string } {
+  const error = new Error(`Permission denied: ${entityType} requires ${requiredPermission}`) as Error & {
+    statusCode: number;
+    code: string;
+  };
+  error.statusCode = 403;
+  error.code = 'FORBIDDEN';
+  return error;
+}
+
+/**
  * Server-side reconciliation for offline inventory mutations (PLT-03, D-04,
  * D-10, T-10-07, T-10-08). Sits one layer below `inventorySync.controller.ts`:
  * idempotency is enforced against the shared `SyncReplayReceipt` ledger
@@ -169,6 +200,7 @@ export class InventoryOfflineReplayService {
     private readonly gateway: InventoryOfflineReplayGateway,
     private readonly replayReceipts: InventoryReplayReceiptStore,
     private readonly conflictReview: InventoryConflictReviewService,
+    private readonly permissionsProvider: PermissionsProvider,
     private readonly now: () => Date = () => new Date(),
     // Verify-fix 10.3: defaults to a no-op broadcast, matching the other
     // three domain replay services' convention; `inventorySync.controller.ts`
@@ -187,6 +219,24 @@ export class InventoryOfflineReplayService {
     }
 
     const envelope = parsedEnvelope.data;
+
+    const requiredPermission = ENTITY_TYPE_TO_PERMISSION[envelope.entityType];
+    if (requiredPermission === undefined) {
+      return {
+        operationId: envelope.operationId,
+        status: 'REJECTED',
+        message: `Unsupported inventory replay entityType: ${envelope.entityType}`,
+      };
+    }
+
+    // D-41-D-44: enforced here rather than as a route-level preHandler --
+    // the required permission varies per replayed operation's entityType,
+    // which Fastify's route-level preHandler can't inspect (same reasoning
+    // as `sync-operation.service.ts`'s `SyncOperationService.execute()`).
+    const userPermissions = await this.permissionsProvider.getUserPermissions(context.userId, context.clinicId);
+    if (!userPermissions.includes(requiredPermission)) {
+      throw forbiddenError(envelope.entityType, requiredPermission);
+    }
 
     const existingReceipt = await this.replayReceipts.findUnique({
       where: {

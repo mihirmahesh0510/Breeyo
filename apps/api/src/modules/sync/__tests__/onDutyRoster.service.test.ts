@@ -13,13 +13,17 @@ import type { AvailabilityRepository } from '../../scheduling/availability.repos
 
 const CLINIC_ID = 'clinic_1';
 
-function fakeAvailabilityRepository(vets: Array<{ id: string; name: string }>) {
+function fakeAvailabilityRepository(vets: Array<{ id: string; name: string }>, adminIds: string[] = []) {
   return {
     listClinicVets: vi.fn(async (clinicId: string) => {
       // The real repository's own tenancy boundary (no DB-level RLS on this
       // table): only ever returns rows for the clinic actually asked for.
       if (clinicId !== CLINIC_ID) return [];
       return vets;
+    }),
+    listAdminUserIds: vi.fn(async (clinicId: string) => {
+      if (clinicId !== CLINIC_ID) return [];
+      return adminIds;
     }),
   } as unknown as AvailabilityRepository;
 }
@@ -77,6 +81,38 @@ describe('ClinicVetRosterProvider.listOtherOnDutyClinicianIds (verify-fix 10.6, 
     const result = await provider.listOtherOnDutyClinicianIds('clinic_other', 'someone_else');
 
     expect(repo.listClinicVets).toHaveBeenCalledWith('clinic_other');
+    expect(result).toEqual([]);
+  });
+
+  it('excludes every Admin-role member from the roster, even one who also holds the Clinician role (D-36)', async () => {
+    const repo = fakeAvailabilityRepository(
+      [
+        { id: 'vet_a', name: 'Dr A' },
+        { id: 'admin_who_is_also_clinician', name: 'Dr Admin' },
+        { id: 'vet_c', name: 'Dr C' },
+      ],
+      ['admin_who_is_also_clinician'],
+    );
+    const provider = new ClinicVetRosterProvider(repo);
+
+    const result = await provider.listOtherOnDutyClinicianIds(CLINIC_ID, 'vet_a');
+
+    expect(repo.listAdminUserIds).toHaveBeenCalledWith(CLINIC_ID);
+    expect(result).toEqual(['vet_c']);
+  });
+
+  it('returns an empty list (never falls back to Admin) when the only other on-duty vet is an Admin', async () => {
+    const repo = fakeAvailabilityRepository(
+      [
+        { id: 'vet_a', name: 'Dr A' },
+        { id: 'admin_only', name: 'Dr Admin' },
+      ],
+      ['admin_only'],
+    );
+    const provider = new ClinicVetRosterProvider(repo);
+
+    const result = await provider.listOtherOnDutyClinicianIds(CLINIC_ID, 'vet_a');
+
     expect(result).toEqual([]);
   });
 });

@@ -11,6 +11,7 @@ import {
   type InventoryOfflineReplayContext,
   type InventoryOfflineReplayGateway,
   type InventoryReplayReceiptStore,
+  type PermissionsProvider,
 } from '../services/inventoryOfflineReplay.service.js';
 import { InventoryConflictReviewService, type InventoryReviewTaskStore } from '../services/inventoryConflictReview.service.js';
 import { ReplayBroadcastService } from '../../sync/services/replayBroadcast.service.js';
@@ -83,12 +84,14 @@ export function buildInventoryOfflineReplayGateway(db: TenantPrismaClient): Inve
 
 export function buildInventoryOfflineReplayService(
   db: TenantPrismaClient,
+  permissionsProvider: PermissionsProvider,
   broadcast: ReplayBroadcastService = new ReplayBroadcastService(null),
 ): InventoryOfflineReplayService {
   return new InventoryOfflineReplayService(
     buildInventoryOfflineReplayGateway(db),
     db.syncReplayReceipt as unknown as InventoryReplayReceiptStore,
     new InventoryConflictReviewService(db.syncConflictRecord as unknown as InventoryReviewTaskStore),
+    permissionsProvider,
     () => new Date(),
     broadcast,
   );

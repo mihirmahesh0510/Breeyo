@@ -157,7 +157,7 @@ export function DispenseScreen() {
         // capture path instead of leaving the user at a dead-end error
         // (10-04-SUMMARY.md Deviation 2 / verify-fix 10.2).
         try {
-          await offlineStockActions.dispenseStock(
+          await offlineStockActions.dispenseOffline(
             itemId,
             { itemId, name: itemName, category: item?.category ?? '', unit, currentStock: available },
             result.payload,

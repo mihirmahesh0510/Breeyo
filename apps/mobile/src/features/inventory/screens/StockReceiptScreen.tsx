@@ -83,7 +83,7 @@ export function StockReceiptScreen() {
         // capture path instead of leaving the user at a dead-end error
         // (10-04-SUMMARY.md Deviation 2 / verify-fix 10.2).
         try {
-          await offlineStockActions.receiveStock(
+          await offlineStockActions.receiveOffline(
             itemId,
             { itemId, name: itemName, category, unit, currentStock: item?.currentStock ?? 0 },
             result.payload,

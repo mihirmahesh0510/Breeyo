@@ -87,6 +87,22 @@ export interface UseOfflineStockActionsResult {
   dispenseStock: (itemId: string, knownItem: StockActionKnownItem, payload: StockDispensePayload) => Promise<unknown>;
   adjustStock: (itemId: string, knownItem: StockActionKnownItem, payload: StockAdjustPayload) => Promise<unknown>;
   returnToStock: (itemId: string, knownItem: StockActionKnownItem, payload: StockReturnPayload) => Promise<unknown>;
+  /**
+   * D-04, D-10: captures the action straight into the offline-sync ledger
+   * with NO online attempt of its own -- for a caller (e.g. `DispenseScreen`)
+   * that already made its own primary online attempt and got a network
+   * failure. Unlike `dispenseStock` above (which tries `apiClient` itself
+   * before falling back), calling `dispenseStock` from that catch block
+   * would be a second, independent, non-idempotent POST to the same
+   * mutating endpoint. Matches `useOfflineQueueActions.checkIn`'s
+   * single-attempt convention: exactly one network attempt per user action,
+   * made by whichever layer owns it.
+   */
+  dispenseOffline: (itemId: string, knownItem: StockActionKnownItem, payload: StockDispensePayload) => Promise<unknown>;
+  /** Same single-attempt reasoning as `dispenseOffline`, for `StockReceiptScreen`. */
+  receiveOffline: (itemId: string, knownItem: StockActionKnownItem, payload: StockReceivePayload) => Promise<unknown>;
+  /** Same single-attempt reasoning as `dispenseOffline`, for `StockAdjustmentSheet`. */
+  adjustOffline: (itemId: string, knownItem: StockActionKnownItem, payload: StockAdjustPayload) => Promise<unknown>;
   /** D-18: PENDING while any INVENTORY_MEDIUM action this session is still
    *  awaiting replay, CAUGHT_UP otherwise -- the shared sync UX vocabulary,
    *  not a bespoke inventory-only status. */
@@ -213,6 +229,24 @@ export function useOfflineStockActions(): UseOfflineStockActionsResult {
     [accessToken, captureOffline],
   );
 
+  const dispenseOffline = useCallback(
+    (itemId: string, knownItem: StockActionKnownItem, payload: StockDispensePayload) =>
+      captureOffline(itemId, knownItem, payload, recordOfflineStockDispense),
+    [captureOffline],
+  );
+
+  const receiveOffline = useCallback(
+    (itemId: string, knownItem: StockActionKnownItem, payload: StockReceivePayload) =>
+      captureOffline(itemId, knownItem, payload, recordOfflineStockReceive),
+    [captureOffline],
+  );
+
+  const adjustOffline = useCallback(
+    (itemId: string, knownItem: StockActionKnownItem, payload: StockAdjustPayload) =>
+      captureOffline(itemId, knownItem, payload, recordOfflineStockAdjust),
+    [captureOffline],
+  );
+
   return {
     getCachedItem,
     cacheScannedItem,
@@ -220,6 +254,9 @@ export function useOfflineStockActions(): UseOfflineStockActionsResult {
     dispenseStock,
     adjustStock,
     returnToStock,
+    dispenseOffline,
+    receiveOffline,
+    adjustOffline,
     pendingCount,
     visibilityState: pendingCount > 0 ? SyncVisibilityState.PENDING : SyncVisibilityState.CAUGHT_UP,
   };

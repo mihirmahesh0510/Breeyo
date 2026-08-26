@@ -10,6 +10,7 @@ import { useRequireAuth } from '../../src/lib/useRequireAuth';
 import { useAuth } from '../../src/lib/AuthProvider';
 import { ApiClientError } from '../../src/lib/api';
 import { useDashboardCockpit } from '../../src/features/dashboard/hooks/useDashboardCockpit';
+import { StaleStateBanner } from '../../src/features/dashboard/components/StaleStateBanner';
 import { DashboardShell } from '../../src/components/app-shell/DashboardShell';
 import {
   useInventoryWorkbench,
@@ -63,6 +64,17 @@ export default function InventoryPage() {
     }
   };
 
+  // F6 (finding 10.3 residual gap): a mobile inventory replay conflict was
+  // silently dropped in the browser -- the server already broadcasts it
+  // (`useInventoryReplayRealtime`, now wired into `useInventoryWorkbench`),
+  // but nothing rendered it. Inventory's replay broadcast carries no
+  // per-entity `reviewPath` the way queue's `changeMetadata` does, so both
+  // banner actions resolve to the same acknowledge-and-refetch, matching
+  // `StaleStateBanner`'s "Refresh" behavior on the other two workbenches.
+  const handleReplayBannerAction = () => {
+    workbench.acknowledgeAndRefetch();
+  };
+
   const confirmRemoval = async (reason: string, notes: string) => {
     if (!pendingRemoval) return;
     setIsSubmitting(true);
@@ -96,6 +108,14 @@ export default function InventoryPage() {
           <p className={styles.errorText}>Could not refresh live clinic data. Retry this panel or reopen the module.</p>
         ) : null}
         {workbench.isLoading ? <p>Loading…</p> : null}
+
+        {workbench.replayStatus !== 'fresh' ? (
+          <StaleStateBanner
+            status={workbench.replayStatus}
+            onRefresh={handleReplayBannerAction}
+            onReviewChanges={handleReplayBannerAction}
+          />
+        ) : null}
 
         {workbench.data?.stockAndBatches ? (
           <InventoryActionTable
