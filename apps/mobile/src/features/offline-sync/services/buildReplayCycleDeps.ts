@@ -21,6 +21,7 @@ import {
 } from '../db/offlineDb';
 import { useQueueOfflineStore } from '../../queue/store/queueOfflineStore';
 import { QUEUE_SYNC_DOMAIN } from '../../queue/lib/queue-offline-utils';
+import { useInventoryOfflineSyncStore } from '../../inventory/store/inventoryOfflineSyncStore';
 import { INVENTORY_SYNC_DOMAIN } from '../../inventory/services/offlineStockActionStore';
 import { EMR_SYNC_DOMAIN } from '../../consultation/services/offlineConsultationDraftStore';
 import type { ReplayableOperation, ReplayCycleDeps, ReplayOperationOutcome } from './syncCoordinator';
@@ -110,6 +111,14 @@ async function sendOperation(
     // check-in stayed PENDING forever even after the server had it).
     useQueueOfflineStore.getState().markReplaySucceeded(operation.envelope.entityId);
     useQueueOfflineStore.getState().clearLocalEntry(operation.envelope.entityId);
+  }
+
+  if (operation.envelope.domain === INVENTORY_SYNC_DOMAIN) {
+    // F8: `useOfflineStockActions.ts` increments this counter the moment a
+    // stock action is captured offline (`BarcodeScannerScreen.tsx`'s
+    // "N stock update(s) pending sync" banner reads it) but nothing ever
+    // decremented it -- a confirmed replay is exactly the event that should.
+    useInventoryOfflineSyncStore.getState().decrementPending();
   }
 
   return { operationId: operation.operationId, succeeded: true };

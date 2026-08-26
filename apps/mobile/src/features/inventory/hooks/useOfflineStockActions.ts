@@ -1,10 +1,10 @@
 import { useCallback } from 'react';
-import { create } from 'zustand';
 import * as SecureStore from 'expo-secure-store';
 import { SyncVisibilityState } from '@breeyo/types';
 import { apiClient } from '../../../lib/api';
 import { useAuth } from '../../../providers/AuthProvider';
 import { getOfflineSyncDb } from '../../offline-sync/db/offlineDb';
+import { useInventoryOfflineSyncStore } from '../store/inventoryOfflineSyncStore';
 import {
   recordOfflineStockReceive,
   recordOfflineStockDispense,
@@ -54,26 +54,6 @@ function generateLocalId(): string {
     return value.toString(16);
   });
 }
-
-/**
- * D-18 to D-21: a calm, per-domain pending-sync counter using the SAME
- * shared `SyncVisibilityState` vocabulary Plan 10-02's `queueOfflineStore.ts`
- * uses for its own pending marker -- not a bespoke inventory-only state enum.
- * A dedicated inventory store (like queue's own `queueOfflineStore.ts`) is
- * appropriate here; it is the STATE ENUM that must stay shared, not
- * necessarily a single cross-domain store instance.
- */
-interface InventoryOfflineSyncState {
-  pendingCount: number;
-  incrementPending: () => void;
-  reset: () => void;
-}
-
-export const useInventoryOfflineSyncStore = create<InventoryOfflineSyncState>((set) => ({
-  pendingCount: 0,
-  incrementPending: () => set((state) => ({ pendingCount: state.pendingCount + 1 })),
-  reset: () => set({ pendingCount: 0 }),
-}));
 
 export interface UseOfflineStockActionsResult {
   /** Reads the local same-day working-set cache for an item -- what the
