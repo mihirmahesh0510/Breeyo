@@ -119,6 +119,50 @@ export function escalationOwnerLabel(
   return resolveName(conflict.recommendedOwnerUserId);
 }
 
+/**
+ * verify-fix 10.4 (D-08): builds a best-effort `ClinicalConflictSummary`
+ * from the fields `SyncFailureCenterScreen.tsx` has on-device for a
+ * `SyncConflictEnvelope`-derived `FailureCenterItem`. The on-device
+ * `sync_conflicts` table (`offlineDb.ts`) only stores `localPayload` /
+ * `serverPayload`, not the pre-offline-edit baseline the server-side
+ * `classifyClinicalConflict` three-way diff uses -- so this performs a
+ * conservative two-way diff instead: any top-level `SaveDraftInput` field
+ * that differs between local and server is treated as conflicting (shown
+ * for explicit review, matching D-05/D-06's "never silently resolve").
+ * `safeMergeFields` is always empty here, since distinguishing "only the
+ * local device changed this field" from "both changed it to a value that
+ * happens to match" requires the baseline this device does not have --
+ * `isMergeSafeFieldsAvailable` correctly omits MERGE_SAFE_FIELDS as a
+ * result, never offering a false affordance.
+ */
+export function buildClinicalConflictSummaryFromEnvelope(input: {
+  conflictId: string;
+  entityId: string;
+  severity: ConflictSeverity;
+  localPayload: SaveDraftInput;
+  serverPayload: SaveDraftInput;
+  recommendedOwnerUserId?: string;
+  resolutionState: ResolutionState;
+}): ClinicalConflictSummary {
+  const conflictingFields = Object.keys(CLINICAL_FIELD_LABELS).filter((field) => {
+    const localValue = (input.localPayload as Record<string, unknown>)[field];
+    const serverValue = (input.serverPayload as Record<string, unknown>)[field];
+    return JSON.stringify(localValue) !== JSON.stringify(serverValue);
+  });
+
+  return {
+    conflictId: input.conflictId,
+    entityId: input.entityId,
+    severity: input.severity,
+    conflictingFields,
+    safeMergeFields: [],
+    localPayload: input.localPayload,
+    serverPayload: input.serverPayload,
+    recommendedOwnerUserId: input.recommendedOwnerUserId,
+    resolutionState: input.resolutionState,
+  };
+}
+
 /** Which actions the sheet should render as enabled for a given conflict --
  *  MERGE_SAFE_FIELDS is omitted entirely (not just disabled) when there is
  *  nothing safe to merge, so the sheet never offers an action that would be

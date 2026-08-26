@@ -23,6 +23,8 @@ import {
   shouldShowRecoveryCue,
   RECOVERY_CUE_COPY,
   isUnresolved,
+  isClinicalConflictItem,
+  resolveItemPressAction,
   toFailureCenterItemFromTask,
   toFailureCenterItemFromConflict,
   groupFailureCenterItems,
@@ -187,6 +189,45 @@ describe('toFailureCenterItemFromTask / toFailureCenterItemFromConflict', () => 
       severity: ConflictSeverity.SAFETY_CRITICAL,
     });
   });
+
+  it('carries local/server payloads through so the failure center can build the structured comparison sheet (verify-fix 10.4)', () => {
+    const item = toFailureCenterItemFromConflict(
+      conflict({ localPayload: { assessment: 'local' }, serverPayload: { assessment: 'server' } }),
+    );
+    expect(item.localPayload).toEqual({ assessment: 'local' });
+    expect(item.serverPayload).toEqual({ assessment: 'server' });
+  });
+});
+
+describe('isClinicalConflictItem / resolveItemPressAction (verify-fix 10.4, D-08/D-09: EMR SAFETY_CRITICAL conflicts open the structured resolution sheet on tap; every other domain keeps its lighter-weight row untouched)', () => {
+  it('routes an EMR SAFETY_CRITICAL conflict item (with local/server payloads) to OPEN_CLINICAL_CONFLICT_SHEET', () => {
+    const item = toFailureCenterItemFromConflict(conflict());
+    expect(isClinicalConflictItem(item)).toBe(true);
+    expect(resolveItemPressAction(item)).toEqual({ kind: 'OPEN_CLINICAL_CONFLICT_SHEET', item });
+  });
+
+  it('does NOT route a non-EMR (e.g. inventory) domain conflict to the clinical sheet, even if SAFETY_CRITICAL', () => {
+    const item = toFailureCenterItemFromConflict(conflict({ domain: 'inventory' }));
+    expect(isClinicalConflictItem(item)).toBe(false);
+    expect(resolveItemPressAction(item)).toEqual({ kind: 'NONE' });
+  });
+
+  it('does NOT route an EMR conflict that is only OPERATIONAL severity to the clinical sheet (D-10: lighter review)', () => {
+    const item = toFailureCenterItemFromConflict(conflict({ severity: ConflictSeverity.OPERATIONAL }));
+    expect(isClinicalConflictItem(item)).toBe(false);
+    expect(resolveItemPressAction(item)).toEqual({ kind: 'NONE' });
+  });
+
+  it('does NOT route a raw SyncFailureTaskRecord (no severity/payload, an envelope-validation failure) to the clinical sheet even when its domain is emr', () => {
+    const item = toFailureCenterItemFromTask(failureTask({ domain: 'emr' }));
+    expect(isClinicalConflictItem(item)).toBe(false);
+    expect(resolveItemPressAction(item)).toEqual({ kind: 'NONE' });
+  });
+
+  it('does NOT route an operational (queue/inventory-style) failure task to the clinical sheet', () => {
+    const item = toFailureCenterItemFromTask(failureTask({ domain: 'queue' }));
+    expect(resolveItemPressAction(item)).toEqual({ kind: 'NONE' });
+  });
 });
 
 describe('groupFailureCenterItems (D-20, D-22 to D-24)', () => {
@@ -338,6 +379,21 @@ describe('SyncFailureCenterScreen.tsx component contract (D-20, D-22 to D-24, D-
 
   it('offers a guided retry action', () => {
     expect(source).toMatch(/onRetry|onGuidedRetry/);
+  });
+
+  it('mounts the structured ClinicalConflictResolutionSheet rather than only the generic row (verify-fix 10.4, D-08)', () => {
+    expect(source).toMatch(/import\s*\{\s*ClinicalConflictResolutionSheet\s*\}\s*from\s*'\.\.\/\.\.\/consultation\/components\/ClinicalConflictResolutionSheet'/);
+    expect(source).toMatch(/<ClinicalConflictResolutionSheet/);
+  });
+
+  it('gates opening the sheet on resolveItemPressAction/isClinicalConflictItem, not an unconditional mount (verify-fix 10.4)', () => {
+    expect(source).toMatch(/resolveItemPressAction/);
+    expect(source).toMatch(/isClinicalConflictItem/);
+  });
+
+  it('only wraps a clinical-conflict row in a pressable tap target, leaving non-clinical (operational) rows\' markup untouched', () => {
+    expect(source).toMatch(/isClinicalConflictItem\(item\)/);
+    expect(source).toMatch(/sync-failure-clinical-trigger-/);
   });
 });
 

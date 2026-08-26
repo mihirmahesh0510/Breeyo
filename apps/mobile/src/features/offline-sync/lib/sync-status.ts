@@ -105,6 +105,13 @@ export interface FailureCenterItem {
   guidedRetryCount: number;
   nextSuggestedAction: string | null;
   lastAttemptedAt: string;
+  /** verify-fix 10.4: only populated for `kind: 'CONFLICT'` items -- the
+   *  raw local/server payloads a `SyncConflictEnvelope` carries, needed to
+   *  build the structured `ClinicalConflictResolutionSheet` comparison
+   *  (D-08). `undefined` for a `FAILURE_TASK` (an envelope-validation
+   *  failure has no domain payload to compare). */
+  localPayload?: unknown;
+  serverPayload?: unknown;
 }
 
 export function toFailureCenterItemFromTask(task: SyncFailureTaskRecord): FailureCenterItem {
@@ -144,7 +151,49 @@ export function toFailureCenterItemFromConflict(conflict: SyncConflictEnvelope):
     guidedRetryCount: 0,
     nextSuggestedAction: null,
     lastAttemptedAt: conflict.createdAt,
+    localPayload: conflict.localPayload,
+    serverPayload: conflict.serverPayload,
   };
+}
+
+/**
+ * verify-fix 10.4 (D-08/D-09): true exactly when a failure-center item is
+ * an EMR clinical conflict serious enough (SAFETY_CRITICAL) that tapping it
+ * in the failure center must open the structured
+ * `ClinicalConflictResolutionSheet` instead of the generic retry/escalate
+ * row -- D-08 requires the explicit local-vs-server comparison sheet for
+ * exactly this case, never a silent auto-resolve or a bare retry toast.
+ * Every other domain (queue/inventory operational review, D-10) keeps its
+ * existing lighter-weight row untouched. The `localPayload`/`serverPayload`
+ * check is what naturally excludes `FAILURE_TASK`-kind items (they never
+ * carry a domain payload to compare) without needing a separate `kind`
+ * check.
+ */
+export function isClinicalConflictItem(item: FailureCenterItem): boolean {
+  return (
+    item.domain === 'emr' &&
+    item.severity === ConflictSeverity.SAFETY_CRITICAL &&
+    item.localPayload !== undefined &&
+    item.serverPayload !== undefined
+  );
+}
+
+export type FailureCenterItemPressAction =
+  | { kind: 'OPEN_CLINICAL_CONFLICT_SHEET'; item: FailureCenterItem }
+  | { kind: 'NONE' };
+
+/**
+ * verify-fix 10.4: the routing decision `SyncFailureCenterScreen.tsx`
+ * renders off of when a row is tapped -- kept here, RN-free, so the actual
+ * decision is a real, directly-testable function rather than something only
+ * provable by reading JSX off disk (matches this file's existing pattern of
+ * keeping every visibility/grouping decision out of the `.tsx` layer).
+ */
+export function resolveItemPressAction(item: FailureCenterItem): FailureCenterItemPressAction {
+  if (isClinicalConflictItem(item)) {
+    return { kind: 'OPEN_CLINICAL_CONFLICT_SHEET', item };
+  }
+  return { kind: 'NONE' };
 }
 
 export interface FailureCenterGroups {

@@ -20,6 +20,7 @@ import {
   CLINICAL_CONFLICT_RESOLUTION_ACTIONS,
   CLINICAL_FIELD_LABELS,
   buildFieldComparisonRows,
+  buildClinicalConflictSummaryFromEnvelope,
   isMergeSafeFieldsAvailable,
   isUnresolved,
   escalationOwnerLabel,
@@ -127,6 +128,67 @@ describe('clinical-conflict-resolution (Plan 10-03 Task 2, D-05, D-08, D-09, D-1
     it('returns null when no owner has been assigned', () => {
       const c = conflict({ recommendedOwnerUserId: undefined });
       expect(escalationOwnerLabel(c, () => 'Dr. Mehta')).toBeNull();
+    });
+  });
+
+  describe('buildClinicalConflictSummaryFromEnvelope (verify-fix 10.4: on-device two-way diff for SyncFailureCenterScreen.tsx, no baseline available on-device)', () => {
+    it('marks a field that differs between local and server payloads as conflicting', () => {
+      const summary = buildClinicalConflictSummaryFromEnvelope({
+        conflictId: 'conflict-1',
+        entityId: 'consultation-1',
+        severity: ConflictSeverity.SAFETY_CRITICAL,
+        localPayload: draft({ assessment: 'Local diagnosis.' }),
+        serverPayload: draft({ assessment: 'Server diagnosis.' }),
+        recommendedOwnerUserId: CLINICIAN_ID,
+        resolutionState: ResolutionState.OPEN,
+      });
+      expect(summary.conflictingFields).toContain('assessment');
+    });
+
+    it('leaves identical fields out of conflictingFields', () => {
+      const local = draft({ assessment: 'Same', careInstructions: 'Local only' });
+      const server = draft({ assessment: 'Same', careInstructions: 'Server default' });
+      const summary = buildClinicalConflictSummaryFromEnvelope({
+        conflictId: 'conflict-1',
+        entityId: 'consultation-1',
+        severity: ConflictSeverity.SAFETY_CRITICAL,
+        localPayload: local,
+        serverPayload: server,
+        recommendedOwnerUserId: CLINICIAN_ID,
+        resolutionState: ResolutionState.OPEN,
+      });
+      expect(summary.conflictingFields).not.toContain('assessment');
+      expect(summary.conflictingFields).toContain('careInstructions');
+    });
+
+    it('never reports a safe-merge field on-device -- the pre-offline-edit baseline classifyClinicalConflict.ts uses server-side is not persisted locally, so this never offers a false MERGE_SAFE_FIELDS affordance', () => {
+      const summary = buildClinicalConflictSummaryFromEnvelope({
+        conflictId: 'conflict-1',
+        entityId: 'consultation-1',
+        severity: ConflictSeverity.SAFETY_CRITICAL,
+        localPayload: draft({ careInstructions: 'Local only' }),
+        serverPayload: draft(),
+        recommendedOwnerUserId: CLINICIAN_ID,
+        resolutionState: ResolutionState.OPEN,
+      });
+      expect(summary.safeMergeFields).toEqual([]);
+      expect(isMergeSafeFieldsAvailable(summary)).toBe(false);
+    });
+
+    it('passes through the identifying fields unchanged', () => {
+      const summary = buildClinicalConflictSummaryFromEnvelope({
+        conflictId: 'conflict-9',
+        entityId: 'consultation-9',
+        severity: ConflictSeverity.SAFETY_CRITICAL,
+        localPayload: draft(),
+        serverPayload: draft(),
+        recommendedOwnerUserId: CLINICIAN_ID,
+        resolutionState: ResolutionState.GUIDED_RETRY,
+      });
+      expect(summary.conflictId).toBe('conflict-9');
+      expect(summary.entityId).toBe('consultation-9');
+      expect(summary.recommendedOwnerUserId).toBe(CLINICIAN_ID);
+      expect(summary.resolutionState).toBe(ResolutionState.GUIDED_RETRY);
     });
   });
 

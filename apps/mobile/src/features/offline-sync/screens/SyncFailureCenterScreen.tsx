@@ -1,7 +1,15 @@
-import React from 'react';
-import { ScrollView, View, StyleSheet } from 'react-native';
+import React, { useCallback, useState } from 'react';
+import { ScrollView, View, Pressable, StyleSheet } from 'react-native';
 import { Text, Button, Divider } from 'react-native-paper';
-import { groupFailureCenterItems, type FailureCenterItem } from '../lib/sync-status';
+import { ConflictSeverity } from '@breeyo/types';
+import type { SaveDraftInput } from '@breeyo/types';
+import { groupFailureCenterItems, isClinicalConflictItem, resolveItemPressAction, type FailureCenterItem } from '../lib/sync-status';
+import { ClinicalConflictResolutionSheet } from '../../consultation/components/ClinicalConflictResolutionSheet';
+import {
+  buildClinicalConflictSummaryFromEnvelope,
+  type ClinicalConflictResolutionActionType,
+  type ClinicalConflictSummary,
+} from '../../consultation/lib/clinical-conflict-resolution';
 
 export interface SyncFailureCenterScreenProps {
   items: FailureCenterItem[];
@@ -12,6 +20,15 @@ export interface SyncFailureCenterScreenProps {
   onRetry: (item: FailureCenterItem) => void;
   /** D-23/D-24/D-36: explicit hand-off to the next owner. */
   onEscalate: (item: FailureCenterItem) => void;
+  /**
+   * verify-fix 10.4 (D-08): fires for the structured sheet's
+   * KEEP_LOCAL/KEEP_SERVER/MERGE_SAFE_FIELDS actions on a clinical
+   * conflict. Optional and decoupled from any specific endpoint shape --
+   * finding 10.5 (not part of this fix) is what wires this to a real
+   * `POST .../conflicts/:conflictId/resolve` call; this screen's job is
+   * only to open the sheet and surface the chosen action.
+   */
+  onResolveClinicalConflict?: (conflict: ClinicalConflictSummary, action: ClinicalConflictResolutionActionType) => void;
 }
 
 function ItemRow({
@@ -21,6 +38,7 @@ function ItemRow({
   onEscalate,
   showRetry,
   showEscalate,
+  onOpenClinicalConflict,
 }: {
   item: FailureCenterItem;
   resolveUserName: (userId: string) => string;
@@ -28,9 +46,10 @@ function ItemRow({
   onEscalate: (item: FailureCenterItem) => void;
   showRetry: boolean;
   showEscalate: boolean;
+  onOpenClinicalConflict: (item: FailureCenterItem) => void;
 }) {
-  return (
-    <View style={styles.row}>
+  const rowContent = (
+    <>
       <Text style={styles.domain}>{item.domain}</Text>
       <Text style={styles.owner}>
         Originating: {resolveUserName(item.originatingUserId)} · Current owner: {resolveUserName(item.currentOwnerUserId)}
@@ -49,8 +68,26 @@ function ItemRow({
         ) : null}
       </View>
       <Divider />
-    </View>
+    </>
   );
+
+  // verify-fix 10.4 (D-08): an EMR SAFETY_CRITICAL conflict gets a tap
+  // target that opens the structured resolution sheet -- every other
+  // domain (queue/inventory operational review) keeps this exact row,
+  // unwrapped, with only its existing Retry/Escalate buttons.
+  if (isClinicalConflictItem(item)) {
+    return (
+      <Pressable
+        style={styles.row}
+        onPress={() => onOpenClinicalConflict(item)}
+        testID={`sync-failure-clinical-trigger-${item.id}`}
+      >
+        {rowContent}
+      </Pressable>
+    );
+  }
+
+  return <View style={styles.row}>{rowContent}</View>;
 }
 
 /**
@@ -69,8 +106,43 @@ export function SyncFailureCenterScreen({
   resolveUserName,
   onRetry,
   onEscalate,
+  onResolveClinicalConflict,
 }: SyncFailureCenterScreenProps) {
   const groups = groupFailureCenterItems(items, viewerUserId);
+  const [selectedConflictItem, setSelectedConflictItem] = useState<FailureCenterItem | null>(null);
+
+  // verify-fix 10.4 (D-08): the shared, RN-free routing decision -- only an
+  // EMR SAFETY_CRITICAL item ever opens the structured sheet; every other
+  // domain's tap resolves to NONE and the row's existing Retry/Escalate
+  // buttons remain the only affordance (D-10's lighter operational review).
+  const handleItemPress = useCallback((item: FailureCenterItem) => {
+    const action = resolveItemPressAction(item);
+    if (action.kind === 'OPEN_CLINICAL_CONFLICT_SHEET') {
+      setSelectedConflictItem(action.item);
+    }
+  }, []);
+
+  const selectedConflictSummary: ClinicalConflictSummary | null = selectedConflictItem
+    ? buildClinicalConflictSummaryFromEnvelope({
+        conflictId: selectedConflictItem.id,
+        entityId: selectedConflictItem.entityId ?? selectedConflictItem.id,
+        severity: selectedConflictItem.severity ?? ConflictSeverity.SAFETY_CRITICAL,
+        localPayload: selectedConflictItem.localPayload as SaveDraftInput,
+        serverPayload: selectedConflictItem.serverPayload as SaveDraftInput,
+        recommendedOwnerUserId: selectedConflictItem.currentOwnerUserId,
+        resolutionState: selectedConflictItem.resolutionState,
+      })
+    : null;
+
+  const handleResolveAction = useCallback(
+    (action: ClinicalConflictResolutionActionType) => {
+      if (selectedConflictSummary) {
+        onResolveClinicalConflict?.(selectedConflictSummary, action);
+      }
+      setSelectedConflictItem(null);
+    },
+    [selectedConflictSummary, onResolveClinicalConflict],
+  );
 
   return (
     <ScrollView style={styles.container}>
@@ -86,6 +158,7 @@ export function SyncFailureCenterScreen({
               onEscalate={onEscalate}
               showRetry
               showEscalate={false}
+              onOpenClinicalConflict={handleItemPress}
             />
           ))}
         </View>
@@ -103,6 +176,7 @@ export function SyncFailureCenterScreen({
               onEscalate={onEscalate}
               showRetry={item.currentOwnerUserId === viewerUserId}
               showEscalate={false}
+              onOpenClinicalConflict={handleItemPress}
             />
           ))}
         </View>
@@ -120,12 +194,33 @@ export function SyncFailureCenterScreen({
               onEscalate={onEscalate}
               showRetry={false}
               showEscalate
+              onOpenClinicalConflict={handleItemPress}
             />
           ))}
         </View>
       ) : null}
 
       {items.length === 0 ? <Text style={styles.emptyState}>No sync issues need attention.</Text> : null}
+
+      {selectedConflictSummary ? (
+        <ClinicalConflictResolutionSheet
+          visible
+          conflict={selectedConflictSummary}
+          resolveUserName={resolveUserName}
+          onDismiss={() => setSelectedConflictItem(null)}
+          onKeepLocal={() => handleResolveAction('KEEP_LOCAL')}
+          onKeepServer={() => handleResolveAction('KEEP_SERVER')}
+          onMergeSafeFields={() => handleResolveAction('MERGE_SAFE_FIELDS')}
+          onRetry={() => {
+            if (selectedConflictItem) onRetry(selectedConflictItem);
+            setSelectedConflictItem(null);
+          }}
+          onEscalate={() => {
+            if (selectedConflictItem) onEscalate(selectedConflictItem);
+            setSelectedConflictItem(null);
+          }}
+        />
+      ) : null}
     </ScrollView>
   );
 }
