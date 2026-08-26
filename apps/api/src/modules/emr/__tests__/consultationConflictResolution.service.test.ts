@@ -9,11 +9,13 @@ import {
 } from '../services/consultationConflictResolution.service.js';
 import { EMR_SYNC_DOMAIN, CONSULTATION_DRAFT_ENTITY_TYPE } from '../services/consultationOfflineReplay.service.js';
 import type { ReplayBroadcastService } from '../../sync/services/replayBroadcast.service.js';
+import type { OnDutyRosterProvider } from '../../sync/services/retryEscalation.service.js';
 
 const CLINIC_ID = '00000000-0000-0000-0000-000000000001';
 const OTHER_CLINIC_ID = '00000000-0000-0000-0000-000000000002';
 const USER_ID = '00000000-0000-0000-0000-000000000010';
 const VET_ID = '00000000-0000-0000-0000-000000000099';
+const OTHER_VET_ID = '00000000-0000-0000-0000-000000000098';
 const CONSULTATION_ID = '00000000-0000-0000-0000-000000000200';
 const OTHER_CONSULTATION_ID = '00000000-0000-0000-0000-000000000201';
 const CONFLICT_ID = '00000000-0000-0000-0000-000000000300';
@@ -81,6 +83,14 @@ function createMockBroadcast(): ReplayBroadcastService {
     emitReplayConflictOpened: vi.fn(),
     emitReplayFailureEscalated: vi.fn(),
   } as unknown as ReplayBroadcastService;
+}
+
+function makeRosterProvider(clinicianIds: string[]): OnDutyRosterProvider {
+  return {
+    listOtherOnDutyClinicianIds: vi.fn(async (_clinicId: string, excludeUserId: string) =>
+      clinicianIds.filter((id) => id !== excludeUserId),
+    ),
+  };
 }
 
 const context = { clinicId: CLINIC_ID, userId: USER_ID, userName: 'Dr Test' };
@@ -172,7 +182,10 @@ describe('ConsultationConflictResolutionService (verify-fix 10.5)', () => {
     expect(outcome.resolutionState).toBe('RESOLVED');
   });
 
-  it('ESCALATE: transitions to ESCALATED, applies no field-level change, and leaves ownership untouched for finding 10.6', async () => {
+  it('ESCALATE (verify-fix 10.6): transitions to ESCALATED, applies no field-level change, and reassigns ownership to a DIFFERENT on-duty clinician via the roster provider (D-24)', async () => {
+    const roster = makeRosterProvider([VET_ID, OTHER_VET_ID]);
+    service = new ConsultationConflictResolutionService(gateway, store, broadcast, roster);
+
     const outcome = await service.resolveConflict(context, CONSULTATION_ID, CONFLICT_ID, 'ESCALATE');
 
     expect(gateway.saveDraft).not.toHaveBeenCalled();
@@ -183,12 +196,36 @@ describe('ConsultationConflictResolutionService (verify-fix 10.5)', () => {
 
     const updated = await store.findFirst({ where: { id: CONFLICT_ID, clinicId: CLINIC_ID } });
     expect(updated?.resolutionState).toBe(ResolutionState.ESCALATED);
-    expect(updated?.currentOwnerUserId).toBe(VET_ID);
+    // The clinician whose own record this was (VET_ID) is never the target
+    // -- D-24 always hands off to a DIFFERENT on-duty clinician.
+    expect(updated?.currentOwnerUserId).toBe(OTHER_VET_ID);
+    expect(roster.listOtherOnDutyClinicianIds).toHaveBeenCalledWith(CLINIC_ID, VET_ID);
     expect(broadcast.emitReplayFailureEscalated).toHaveBeenCalledWith({
       clinicId: CLINIC_ID,
       domain: EMR_SYNC_DOMAIN,
       entityIds: [CONSULTATION_ID],
     });
+  });
+
+  it('ESCALATE: throws (statusCode 500, ROSTER_PROVIDER_REQUIRED) rather than silently transitioning ownership when no roster provider is wired in', async () => {
+    // `service` from `beforeEach` has no roster provider.
+    const outcome = service.resolveConflict(context, CONSULTATION_ID, CONFLICT_ID, 'ESCALATE');
+
+    await expect(outcome).rejects.toMatchObject({ statusCode: 500, code: 'ROSTER_PROVIDER_REQUIRED' });
+    expect(store.update).not.toHaveBeenCalled();
+  });
+
+  it('ESCALATE (D-36): throws rather than falling back to Admin or stalling when the roster has no other on-duty clinician', async () => {
+    const roster = makeRosterProvider([VET_ID]); // only the current owner -- nobody else on duty
+    service = new ConsultationConflictResolutionService(gateway, store, broadcast, roster);
+
+    const outcome = service.resolveConflict(context, CONSULTATION_ID, CONFLICT_ID, 'ESCALATE');
+
+    await expect(outcome).rejects.toMatchObject({ statusCode: 409, code: 'NO_ON_DUTY_CLINICIAN_AVAILABLE' });
+    // Never applied a partial escalation -- the record stays exactly as it was.
+    const updated = await store.findFirst({ where: { id: CONFLICT_ID, clinicId: CLINIC_ID } });
+    expect(updated?.resolutionState).toBe(ResolutionState.OPEN);
+    expect(updated?.currentOwnerUserId).toBe(VET_ID);
   });
 
   it('routes a resolution against an already-finalized consultation through EmrRepository.addAddendum instead of saveDraft', async () => {

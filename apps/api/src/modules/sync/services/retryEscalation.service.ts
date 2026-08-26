@@ -50,10 +50,54 @@ export interface OnDutyRosterProvider {
   listOtherOnDutyClinicianIds(clinicId: string, excludeUserId: string): Promise<string[]>;
 }
 
-function retryEscalationError(message: string, code = 'RETRY_ESCALATION_INVALID_STATE'): Error & { code: string } {
-  const error = new Error(message) as Error & { code: string };
+/**
+ * verify-fix 10.6: `statusCode` defaults to 409 (an invalid-state-transition
+ * attempt is a conflict, matching `resolutionError`'s convention in
+ * `consultationConflictResolution.service.ts`) so the centralized
+ * `error-handler.ts` can surface a real 4xx instead of every one of these
+ * collapsing into a generic 500 "unexpected error" once a live route calls
+ * this service directly.
+ */
+function retryEscalationError(
+  message: string,
+  code = 'RETRY_ESCALATION_INVALID_STATE',
+  statusCode = 409,
+): Error & { code: string; statusCode: number } {
+  const error = new Error(message) as Error & { code: string; statusCode: number };
   error.code = code;
+  error.statusCode = statusCode;
   return error;
+}
+
+/**
+ * verify-fix 10.6: the D-24/D-36 "who else is on duty" resolution, factored
+ * out of the class so `ConsultationConflictResolutionService`'s own ESCALATE
+ * action (verify-fix 10.5) can reuse the EXACT SAME roster-exhaustion/never-
+ * Admin behavior instead of hand-rolling a second copy of it. Kept as a
+ * plain exported function (not a class method) so it carries no dependency
+ * on `RetryEscalationPrismaClient` or either row shape.
+ */
+export async function resolveNextOnDutyClinicianId(
+  onDutyRosterProvider: OnDutyRosterProvider | undefined,
+  clinicId: string,
+  excludeUserId: string,
+): Promise<string> {
+  if (!onDutyRosterProvider) {
+    throw retryEscalationError(
+      'An on-duty roster provider is required to escalate a SAFETY_CRITICAL item to a clinician (D-24, D-36)',
+      'ROSTER_PROVIDER_REQUIRED',
+      500,
+    );
+  }
+  const candidates = await onDutyRosterProvider.listOtherOnDutyClinicianIds(clinicId, excludeUserId);
+  if (candidates.length === 0) {
+    throw retryEscalationError(
+      'No other on-duty clinician is available to escalate to -- per D-36 this never falls back to Admin and never stalls silently',
+      'NO_ON_DUTY_CLINICIAN_AVAILABLE',
+      409,
+    );
+  }
+  return candidates[0];
 }
 
 /**
@@ -96,7 +140,7 @@ export class RetryEscalationService {
         ? await this.db.syncConflictRecord.findUnique({ where: { id } })
         : await this.db.syncFailureTask.findUnique({ where: { id } });
     if (!row) {
-      throw retryEscalationError(`No ${kind === 'CONFLICT' ? 'conflict' : 'failure task'} found for id "${id}"`, 'NOT_FOUND');
+      throw retryEscalationError(`No ${kind === 'CONFLICT' ? 'conflict' : 'failure task'} found for id "${id}"`, 'NOT_FOUND', 404);
     }
     return row;
   }
@@ -195,19 +239,28 @@ export class RetryEscalationService {
   }
 
   private async resolveNextOnDutyClinician(clinicId: string, excludeUserId: string): Promise<string> {
-    if (!this.onDutyRosterProvider) {
-      throw retryEscalationError(
-        'An on-duty roster provider is required to escalate a SAFETY_CRITICAL item to a clinician (D-24, D-36)',
-        'ROSTER_PROVIDER_REQUIRED',
-      );
+    return resolveNextOnDutyClinicianId(this.onDutyRosterProvider, clinicId, excludeUserId);
+  }
+
+  /**
+   * verify-fix 10.6: single entry point a live route calls without needing
+   * to know in advance which of the two ESCALATED-bound transitions applies
+   * -- a first escalation out of a failed guided retry
+   * (`recordGuidedRetryFailure`, starts from `GUIDED_RETRY`) or an
+   * already-`ESCALATED` item's further hand-off to yet another clinician
+   * because the first one is ALSO unreachable (D-36,
+   * `reassignUnreachableEscalatedOwner`, starts from `ESCALATED`). Peeks the
+   * row's current state to dispatch to the correct one; any other starting
+   * state still rejects exactly as the underlying method already does.
+   */
+  async escalate(
+    kind: RetryEscalationRecordKind,
+    id: string,
+  ): Promise<RetryEscalationConflictRow | RetryEscalationTaskRow> {
+    const row = await this.getRow(kind, id);
+    if (row.resolutionState === ResolutionState.ESCALATED) {
+      return this.reassignUnreachableEscalatedOwner(kind, id);
     }
-    const candidates = await this.onDutyRosterProvider.listOtherOnDutyClinicianIds(clinicId, excludeUserId);
-    if (candidates.length === 0) {
-      throw retryEscalationError(
-        'No other on-duty clinician is available to escalate to -- per D-36 this never falls back to Admin and never stalls silently',
-        'NO_ON_DUTY_CLINICIAN_AVAILABLE',
-      );
-    }
-    return candidates[0];
+    return this.recordGuidedRetryFailure(kind, id);
   }
 }

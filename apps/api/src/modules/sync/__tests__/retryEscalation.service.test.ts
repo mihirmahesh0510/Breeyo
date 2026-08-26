@@ -194,6 +194,59 @@ describe('RetryEscalationService.reassignUnreachableEscalatedOwner (D-36: furthe
   });
 });
 
+describe('RetryEscalationService.escalate (verify-fix 10.6: single dispatcher for both ESCALATED-bound transitions)', () => {
+  it('dispatches a GUIDED_RETRY item to recordGuidedRetryFailure (first escalation), reassigning ownership to another on-duty clinician', async () => {
+    const db = makeDb({
+      conflict: conflictRow({ resolutionState: ResolutionState.GUIDED_RETRY, currentOwnerUserId: CLINICIAN_A }),
+    });
+    const roster = makeRosterProvider([CLINICIAN_A, CLINICIAN_B]);
+    const service = new RetryEscalationService(db as never, roster);
+
+    const updated = await service.escalate('CONFLICT', 'conflict_1');
+
+    expect(updated.resolutionState).toBe(ResolutionState.ESCALATED);
+    expect(updated.currentOwnerUserId).toBe(CLINICIAN_B);
+    expect(db.syncConflictRecord.update).toHaveBeenCalledTimes(1);
+  });
+
+  it('dispatches an already-ESCALATED item to reassignUnreachableEscalatedOwner (further escalation), moving it off the unreachable owner', async () => {
+    const db = makeDb({
+      conflict: conflictRow({ resolutionState: ResolutionState.ESCALATED, currentOwnerUserId: CLINICIAN_B, guidedRetryCount: 1 }),
+    });
+    const roster = makeRosterProvider([CLINICIAN_A, CLINICIAN_B, 'vet_c']);
+    const service = new RetryEscalationService(db as never, roster);
+
+    const updated = await service.escalate('CONFLICT', 'conflict_1');
+
+    expect(updated.currentOwnerUserId).not.toBe(CLINICIAN_B);
+    expect(['vet_a', 'vet_c']).toContain(updated.currentOwnerUserId);
+  });
+
+  it('dispatches a GUIDED_RETRY plain failure task to recordGuidedRetryFailure, leaving ownership untouched (D-10: no clinician concept)', async () => {
+    const db = makeDb({ task: taskRow({ resolutionState: ResolutionState.GUIDED_RETRY, currentOwnerUserId: ORIGINATING_USER }) });
+    const service = new RetryEscalationService(db as never);
+
+    const updated = await service.escalate('FAILURE_TASK', 'task_1');
+
+    expect(updated.resolutionState).toBe(ResolutionState.ESCALATED);
+    expect(updated.currentOwnerUserId).toBe(ORIGINATING_USER);
+  });
+
+  it('still rejects escalating from OPEN -- escalate only dispatches GUIDED_RETRY/ESCALATED, it does not skip the ladder', async () => {
+    const db = makeDb({ task: taskRow({ resolutionState: ResolutionState.OPEN }) });
+    const service = new RetryEscalationService(db as never);
+
+    await expect(service.escalate('FAILURE_TASK', 'task_1')).rejects.toThrow();
+  });
+
+  it('throws a real NOT_FOUND (statusCode 404) for an unknown id rather than a generic error', async () => {
+    const db = makeDb({ task: null });
+    const service = new RetryEscalationService(db as never);
+
+    await expect(service.escalate('FAILURE_TASK', 'missing')).rejects.toMatchObject({ code: 'NOT_FOUND', statusCode: 404 });
+  });
+});
+
 describe('D-37: escalation/ownership changes never alter replay priority or grant preemption over QUEUE_HIGH', () => {
   it('QUEUE_HIGH always precedes CLINICAL_MEDIUM in the locked replay ladder, independent of any conflict severity or resolution state', () => {
     expect(REPLAY_PRIORITIES.indexOf(ReplayPriority.QUEUE_HIGH)).toBeLessThan(

@@ -3,6 +3,10 @@ import type { SaveDraftInput, AddendumEntry } from '@breeyo/types';
 import { classifyClinicalConflict, CLINICAL_DRAFT_FIELDS } from './clinicalConflict.service.js';
 import { EMR_SYNC_DOMAIN, CONSULTATION_DRAFT_ENTITY_TYPE } from './consultationOfflineReplay.service.js';
 import { ReplayBroadcastService } from '../../sync/services/replayBroadcast.service.js';
+import {
+  resolveNextOnDutyClinicianId,
+  type OnDutyRosterProvider,
+} from '../../sync/services/retryEscalation.service.js';
 
 /** The exact `Consultation.status` string value once a consultation has been
  *  finalized -- same constant `consultationOfflineReplay.service.ts` uses
@@ -141,6 +145,13 @@ export class ConsultationConflictResolutionService {
     // Verify-fix 10.3's convention: defaults to a no-op broadcast; the
     // controller wires a real `ReplayBroadcastService(fastify.io)` in.
     private readonly broadcast: ReplayBroadcastService = new ReplayBroadcastService(null),
+    // Verify-fix 10.6: optional so every existing caller/test that never
+    // exercises the ESCALATE action keeps working unchanged; the controller
+    // wires a real `ClinicVetRosterProvider` in (same instance
+    // `retryEscalation.service.ts`'s live routes use) so ESCALATE actually
+    // hands the conflict to a different on-duty clinician (D-24, D-36)
+    // instead of only flipping `resolutionState`.
+    private readonly onDutyRosterProvider?: OnDutyRosterProvider,
   ) {}
 
   async resolveConflict(
@@ -188,14 +199,27 @@ export class ConsultationConflictResolutionService {
     }
 
     if (action === 'ESCALATE') {
-      // Verify-fix 10.5 scope boundary: only the state transition. Finding
-      // 10.6's `retryEscalation.service.ts`/on-duty roster owns actually
-      // reassigning `currentOwnerUserId` to a different clinician (D-24,
-      // D-36) -- this deliberately leaves ownership untouched so 10.6 has a
-      // real `ESCALATED` row to build that hand-off on top of.
+      // Verify-fix 10.6: closes the gap verify-fix 10.5 deliberately left
+      // open -- ESCALATE now actually reassigns `currentOwnerUserId` to a
+      // DIFFERENT on-duty clinician (D-24), using the exact same
+      // roster-exhaustion/never-Admin behavior
+      // `retryEscalation.service.ts`'s own escalation paths use
+      // (`resolveNextOnDutyClinicianId`, shared rather than reimplemented).
+      // Every EMR `SyncConflictRecord` this endpoint ever sees is
+      // SAFETY_CRITICAL (`clinicalConflict.service.ts` only ever sets
+      // `severity` to `SAFETY_CRITICAL` or `null`-meaning-no-conflict), so
+      // there is always a real clinician hand-off to make here -- unlike
+      // `recordGuidedRetryFailure`'s OPERATIONAL branch, which deliberately
+      // leaves ownership untouched (D-10).
+      const nextOwnerUserId = await resolveNextOnDutyClinicianId(
+        this.onDutyRosterProvider,
+        context.clinicId,
+        record.currentOwnerUserId,
+      );
+
       await this.conflictRecords.update({
         where: { id: conflictId },
-        data: { resolutionState: ResolutionState.ESCALATED },
+        data: { resolutionState: ResolutionState.ESCALATED, currentOwnerUserId: nextOwnerUserId },
       });
 
       this.broadcast.emitReplayFailureEscalated({
@@ -210,7 +234,7 @@ export class ConsultationConflictResolutionService {
         action,
         resolutionState: 'ESCALATED',
         appliedFields: [],
-        message: 'Conflict escalated for clinician review; no field-level change was applied.',
+        message: 'Conflict escalated to another on-duty clinician for review; no field-level change was applied.',
       };
     }
 

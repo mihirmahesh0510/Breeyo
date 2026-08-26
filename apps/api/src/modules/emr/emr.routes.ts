@@ -11,6 +11,8 @@ import {
 } from './controllers/consultationSync.controller.js';
 import { createNotificationBus } from '../notifications/notification-bus.js';
 import { ReplayBroadcastService } from '../sync/services/replayBroadcast.service.js';
+import { ClinicVetRosterProvider } from '../sync/services/onDutyRoster.service.js';
+import { AvailabilityRepository } from '../scheduling/availability.repository.js';
 // D-03: the EMR module depends on billing so that ending a consultation can
 // seed a draft invoice. This is a deliberate ONE-DIRECTIONAL dependency — EMR
 // imports billing, never the reverse. Billing reads consultations through its
@@ -77,9 +79,17 @@ export default async function emrRoutes(fastify: FastifyInstance) {
   // scoped `replay:applied`/`replay:conflict-opened` event instead of
   // `ReplayBroadcastService` sitting unreached.
   const replayBroadcast = new ReplayBroadcastService(fastify.io ?? null);
+
+  // Verify-fix 10.6 (D-24, D-36): same `ClinicVetRosterProvider` shape
+  // `sync/routes.ts`'s live retry/escalate routes use, built from
+  // `fastify.prisma` per `AvailabilityRepository`'s own no-DB-RLS
+  // tenancy-boundary convention (see `scheduling.routes.ts`). Stateless, so
+  // it stays a plugin-scope singleton alongside `replayBroadcast`.
+  const onDutyRosterProvider = new ClinicVetRosterProvider(new AvailabilityRepository(fastify.prisma));
+
   const consultationSyncController = createConsultationSyncController(
     (db) => buildConsultationOfflineReplayService(db, replayBroadcast),
-    (db) => buildConsultationConflictResolutionService(db, replayBroadcast),
+    (db) => buildConsultationConflictResolutionService(db, replayBroadcast, onDutyRosterProvider),
   );
 
   const preHandler = [authenticate, tenantContext];

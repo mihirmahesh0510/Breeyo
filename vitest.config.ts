@@ -86,6 +86,12 @@ export default defineConfig({
       // conflict-resolve endpoint -- lives outside tests/integration/ since
       // it's domain-specific (EMR) rather than a cross-module e2e proof.
       'apps/api/tests/emr/*.test.ts',
+      // Verify-fix 10.6: real HTTP + real Postgres integration test for the
+      // new `/sync/failures/:failureTaskId/retry` and
+      // `/sync/failures/:failureTaskId/escalate` routes -- same reasoning as
+      // the `apps/api/tests/emr/*.test.ts` line just above (module-specific,
+      // not a cross-module e2e proof, so it lives outside tests/integration/).
+      'apps/api/tests/sync/*.test.ts',
       // Plan 10-07 (PLT-07): API p95 and queue real-time latency
       // performance benchmarks -- `.bench.ts` rather than `.test.ts` because
       // these assert measured timings, not just pass/fail behavior, but they

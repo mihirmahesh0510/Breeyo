@@ -16,6 +16,7 @@ import {
   type ConflictResolutionRecordStore,
 } from '../services/consultationConflictResolution.service.js';
 import { ReplayBroadcastService } from '../../sync/services/replayBroadcast.service.js';
+import type { OnDutyRosterProvider } from '../../sync/services/retryEscalation.service.js';
 
 /**
  * Top-level shape check only, matching `queueSync.controller.ts`'s
@@ -90,11 +91,17 @@ export function buildConsultationOfflineReplayService(
 export function buildConsultationConflictResolutionService(
   db: TenantPrismaClient,
   broadcast: ReplayBroadcastService = new ReplayBroadcastService(null),
+  // Verify-fix 10.6: optional, defaulting to `undefined` -- ESCALATE only
+  // ever reaches `resolveNextOnDutyClinicianId` when a real provider is
+  // wired in from `emr.routes.ts`. Every other action (KEEP_LOCAL/
+  // KEEP_SERVER/MERGE_SAFE_FIELDS) never touches this.
+  onDutyRosterProvider?: OnDutyRosterProvider,
 ): ConsultationConflictResolutionService {
   return new ConsultationConflictResolutionService(
     new EmrRepository(db) as unknown as ConsultationConflictResolutionGateway,
     db.syncConflictRecord as unknown as ConflictResolutionRecordStore,
     broadcast,
+    onDutyRosterProvider,
   );
 }
 

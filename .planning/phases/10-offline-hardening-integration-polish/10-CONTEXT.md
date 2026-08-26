@@ -53,6 +53,7 @@ Harden Breeyo's mobile-first system so the core clinic workflows remain trustwor
 - **D-23:** Escalation happens after a guided retry fails, not immediately and not only by manual handoff.
 - **D-24:** For safety-critical conflicts, the next escalation owner should be the assigned clinician.
 - **D-36:** If a guided retry fails and the assigned clinician is also unreachable or their shift ends before acting, the stuck safety-critical item escalates further to any other on-duty clinician (not to Admin, and not left waiting indefinitely on the original clinician).
+- **D-39 (verify-fix 10.6, 2026-08-26):** `OnDutyRosterProvider` (the interface `retryEscalation.service.ts` was built against but never had a live implementation for) resolves "who else is on duty" from Phase 8's existing `AvailabilityRepository.listClinicVets(clinicId)`, minus the unreachable clinician — no new shift/on-duty tracking concept. `ClinicVetRosterProvider` (`apps/api/src/modules/sync/services/onDutyRoster.service.ts`) is a thin adapter over that call, reused by both the generic `POST /sync/failures/:failureTaskId/{retry,escalate}` routes and the EMR conflict-resolve endpoint's `ESCALATE` action (`apps/api/src/modules/emr/services/consultationConflictResolution.service.ts`, closing the gap verify-fix 10.5 deliberately left open) via a shared `resolveNextOnDutyClinicianId` helper — one roster-exhaustion/never-Admin behavior, not two independent copies of it.
 
 ### Integration Proof
 - **D-25:** Phase 10 completion requires proof broader than a single happy-path demo.

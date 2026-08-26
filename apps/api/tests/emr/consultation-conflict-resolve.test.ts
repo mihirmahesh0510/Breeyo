@@ -198,13 +198,20 @@ describe('POST /consultations/:consultationId/conflicts/:conflictId/resolve (ver
     expect(draftAfter.body.data.assessment).toBe('Assessed in clinic: mild dehydration');
   });
 
-  it('ESCALATE: transitions the conflict to ESCALATED with no field-level change, leaving ownership for finding 10.6', async () => {
+  it('ESCALATE (verify-fix 10.6): transitions the conflict to ESCALATED with no field-level change, and reassigns ownership to a DIFFERENT real on-duty clinician via ClinicVetRosterProvider (D-24)', async () => {
+    // A second real clinician in the same clinic -- the on-duty roster
+    // provider resolves against `AvailabilityRepository.listClinicVets`, so
+    // there must be a genuine second EDIT_EMR-holding member to hand off to.
+    const otherVet = await createTestUser({ fullName: 'Dr Other On-Duty' });
+    await createTestClinicMember(otherVet.id, clinicId, 'Clinician');
+
     const { consultationId, conflictId } = await createRealConflict({
       onlineAssessment: 'Assessed in clinic: mild dehydration',
       offlineAssessment: 'Offline note: suspected ear infection',
     });
 
     const beforeRow = await prisma.syncConflictRecord.findUnique({ where: { id: conflictId } });
+    expect(beforeRow?.currentOwnerUserId).toBe(vetUserId);
 
     const res = await resolve(consultationId, conflictId, 'ESCALATE');
     expect(res.status).toBe(200);
@@ -213,14 +220,35 @@ describe('POST /consultations/:consultationId/conflicts/:conflictId/resolve (ver
 
     const row = await prisma.syncConflictRecord.findUnique({ where: { id: conflictId } });
     expect(row?.resolutionState).toBe(ResolutionState.ESCALATED);
-    expect(row?.currentOwnerUserId).toBe(beforeRow?.currentOwnerUserId);
+    // D-24: hands off to a DIFFERENT on-duty clinician, never the same one.
+    expect(row?.currentOwnerUserId).toBe(otherVet.id);
+    expect(row?.currentOwnerUserId).not.toBe(beforeRow?.currentOwnerUserId);
 
-    // Untouched -- resolving via ESCALATE must never itself overwrite the
-    // draft (finding 10.6 owns any further action).
+    // Untouched -- resolving via ESCALATE must never itself overwrite the draft.
     const draftAfter = await request(app.server)
       .get(`/api/v1/consultations/${consultationId}/draft`)
       .set(auth());
     expect(draftAfter.body.data.assessment).toBe('Assessed in clinic: mild dehydration');
+  });
+
+  it('ESCALATE (D-36): throws a real 409 rather than falling back to Admin or silently stalling when no other on-duty clinician exists', async () => {
+    // This clinic (per `beforeEach`) has exactly ONE EDIT_EMR-holding
+    // member: `vetUserId`, seeded as Admin. Escalating must not silently
+    // "succeed" by leaving the conflict pinned to the same Admin/clinician,
+    // and must not fabricate a fallback owner.
+    const { consultationId, conflictId } = await createRealConflict({
+      onlineAssessment: 'Assessed in clinic: mild dehydration',
+      offlineAssessment: 'Offline note: suspected ear infection',
+    });
+
+    const res = await resolve(consultationId, conflictId, 'ESCALATE');
+    expect(res.status).toBe(409);
+    expect(res.body.error.code).toBe('NO_ON_DUTY_CLINICIAN_AVAILABLE');
+
+    // Nothing was partially applied -- the conflict stays exactly where it was.
+    const row = await prisma.syncConflictRecord.findUnique({ where: { id: conflictId } });
+    expect(row?.resolutionState).toBe(ResolutionState.OPEN);
+    expect(row?.currentOwnerUserId).toBe(vetUserId);
   });
 
   it('routes a late resolution against an already-finalized consultation through the addendum path, not the draft', async () => {

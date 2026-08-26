@@ -5,6 +5,12 @@ import { tenantContext } from '../../middleware/tenant-context.js';
 import type { TenantPrismaClient } from '../../lib/prisma-rls.js';
 import { ReplayIngestService, type ReplayIngestPrismaClient } from './services/replayIngest.service.js';
 import { ReplayBroadcastService } from './services/replayBroadcast.service.js';
+import { ClinicVetRosterProvider } from './services/onDutyRoster.service.js';
+import { AvailabilityRepository } from '../scheduling/availability.repository.js';
+import {
+  createRetryEscalationController,
+  buildRetryEscalationService,
+} from './controllers/retryEscalation.controller.js';
 
 /**
  * Top-level shape check only -- each individual operation/conflict envelope
@@ -52,6 +58,19 @@ export default async function syncRoutes(fastify: FastifyInstance) {
   // once per plugin registration, not per request.
   const replayBroadcast = new ReplayBroadcastService(fastify.io ?? null);
 
+  // Verify-fix 10.6 (D-36 roster resolution): `AvailabilityRepository` is
+  // built from `fastify.prisma` (the plain admin client), matching
+  // `scheduling.routes.ts`'s own construction -- that table has no DB-level
+  // RLS (see the repository's own doc comment), so its explicit `clinicId`
+  // parameter is the only tenancy boundary, always supplied by
+  // `RetryEscalationService`/`resolveNextOnDutyClinicianId` from the
+  // authenticated session's `activeClinicId`, never from client input.
+  // Stateless, so it is a plugin-scope singleton like `replayBroadcast`.
+  const onDutyRosterProvider = new ClinicVetRosterProvider(new AvailabilityRepository(fastify.prisma));
+  const retryEscalationController = createRetryEscalationController((db) =>
+    buildRetryEscalationService(db, onDutyRosterProvider),
+  );
+
   fastify.post('/sync/replay', {
     preHandler,
     async handler(request: FastifyRequest, reply: FastifyReply) {
@@ -81,5 +100,18 @@ export default async function syncRoutes(fastify: FastifyInstance) {
 
       return reply.status(200).send({ data: result });
     },
+  });
+
+  // Verify-fix 10.6 (D-22, D-23/D-24/D-36): the guided-retry/escalation
+  // routes `retryEscalation.service.ts` had no live caller for -- wires
+  // `SyncFailureCenterScreen.tsx`'s (mobile) Retry/Escalate actions to a
+  // real ownership state transition instead of a dead callback.
+  fastify.post('/sync/failures/:failureTaskId/retry', {
+    preHandler,
+    handler: retryEscalationController.retryHandler,
+  });
+  fastify.post('/sync/failures/:failureTaskId/escalate', {
+    preHandler,
+    handler: retryEscalationController.escalateHandler,
   });
 }
