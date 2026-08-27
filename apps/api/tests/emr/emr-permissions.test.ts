@@ -21,9 +21,11 @@ import {
  * `requirePermission(...)` calls, despite `seed.ts` already defining
  * VIEW_EMR/EDIT_EMR per role.
  *
- * `FrontDesk` has neither VIEW_EMR nor EDIT_EMR (see seed.ts
- * DEFAULT_ROLE_PERMISSIONS) -- exactly the fixture needed to prove each
- * route is actually gated. `Clinician` has both.
+ * AC-7: `FrontDesk` now holds VIEW_EMR (read-only) per PRD-04's Rekha
+ * persona -- "Read-only access to finalized consultation records and
+ * medical history" -- but not EDIT_EMR, so it remains the fixture that
+ * proves the EDIT_EMR-gated routes are still locked down while the
+ * VIEW_EMR-gated routes are correctly open to it. `Clinician` has both.
  */
 
 let app: FastifyInstance;
@@ -98,13 +100,13 @@ describe('EMR/attachment/vaccination route permission gating (AC-3)', () => {
       expectNotForbidden(allowed);
     });
 
-    it('GET /consultations/:consultationId (VIEW_EMR) is forbidden for FrontDesk, allowed for Clinician', async () => {
+    it('GET /consultations/:consultationId (VIEW_EMR) is allowed for FrontDesk (AC-7) and Clinician', async () => {
       const consultation = await createTestConsultation(clinicId, petId, clinicianUserId);
 
-      const denied = await request(app.server)
+      const frontDeskRes = await request(app.server)
         .get(`/api/v1/consultations/${consultation.id}`)
         .set('Authorization', `Bearer ${frontDeskToken}`);
-      expectForbidden(denied);
+      expectNotForbidden(frontDeskRes);
 
       const allowed = await request(app.server)
         .get(`/api/v1/consultations/${consultation.id}`)
@@ -152,11 +154,11 @@ describe('EMR/attachment/vaccination route permission gating (AC-3)', () => {
       expectNotForbidden(allowed);
     });
 
-    it('GET /pets/:petId/history (VIEW_EMR) is forbidden for FrontDesk, allowed for Clinician', async () => {
-      const denied = await request(app.server)
+    it('GET /pets/:petId/history (VIEW_EMR) is allowed for FrontDesk (AC-7) and Clinician', async () => {
+      const frontDeskRes = await request(app.server)
         .get(`/api/v1/pets/${petId}/history`)
         .set('Authorization', `Bearer ${frontDeskToken}`);
-      expectForbidden(denied);
+      expectNotForbidden(frontDeskRes);
 
       const allowed = await request(app.server)
         .get(`/api/v1/pets/${petId}/history`)
@@ -174,13 +176,13 @@ describe('EMR/attachment/vaccination route permission gating (AC-3)', () => {
       expectForbidden(denied);
     });
 
-    it('GET /consultations/:consultationId/lock (VIEW_EMR) is forbidden for FrontDesk, allowed for Clinician', async () => {
+    it('GET /consultations/:consultationId/lock (VIEW_EMR) is allowed for FrontDesk (AC-7) and Clinician', async () => {
       const consultation = await createTestConsultation(clinicId, petId, clinicianUserId);
 
-      const denied = await request(app.server)
+      const frontDeskRes = await request(app.server)
         .get(`/api/v1/consultations/${consultation.id}/lock`)
         .set('Authorization', `Bearer ${frontDeskToken}`);
-      expectForbidden(denied);
+      expectNotForbidden(frontDeskRes);
 
       const allowed = await request(app.server)
         .get(`/api/v1/consultations/${consultation.id}/lock`)
@@ -214,13 +216,13 @@ describe('EMR/attachment/vaccination route permission gating (AC-3)', () => {
       expectNotForbidden(allowed);
     });
 
-    it('GET /consultations/:consultationId/attachments (VIEW_EMR) is forbidden for FrontDesk, allowed for Clinician', async () => {
+    it('GET /consultations/:consultationId/attachments (VIEW_EMR) is allowed for FrontDesk (AC-7) and Clinician', async () => {
       const consultation = await createTestConsultation(clinicId, petId, clinicianUserId);
 
-      const denied = await request(app.server)
+      const frontDeskRes = await request(app.server)
         .get(`/api/v1/consultations/${consultation.id}/attachments`)
         .set('Authorization', `Bearer ${frontDeskToken}`);
-      expectForbidden(denied);
+      expectNotForbidden(frontDeskRes);
 
       const allowed = await request(app.server)
         .get(`/api/v1/consultations/${consultation.id}/attachments`)
@@ -253,11 +255,11 @@ describe('EMR/attachment/vaccination route permission gating (AC-3)', () => {
       expectNotForbidden(allowed);
     });
 
-    it('GET /pets/:petId/vaccinations (VIEW_EMR) is forbidden for FrontDesk, allowed for Clinician', async () => {
-      const denied = await request(app.server)
+    it('GET /pets/:petId/vaccinations (VIEW_EMR) is allowed for FrontDesk (AC-7) and Clinician', async () => {
+      const frontDeskRes = await request(app.server)
         .get(`/api/v1/pets/${petId}/vaccinations`)
         .set('Authorization', `Bearer ${frontDeskToken}`);
-      expectForbidden(denied);
+      expectNotForbidden(frontDeskRes);
 
       const allowed = await request(app.server)
         .get(`/api/v1/pets/${petId}/vaccinations`)
@@ -265,11 +267,11 @@ describe('EMR/attachment/vaccination route permission gating (AC-3)', () => {
       expectNotForbidden(allowed);
     });
 
-    it('GET /pets/:petId/preventive-care (VIEW_EMR) is forbidden for FrontDesk, allowed for Clinician', async () => {
-      const denied = await request(app.server)
+    it('GET /pets/:petId/preventive-care (VIEW_EMR) is allowed for FrontDesk (AC-7) and Clinician', async () => {
+      const frontDeskRes = await request(app.server)
         .get(`/api/v1/pets/${petId}/preventive-care`)
         .set('Authorization', `Bearer ${frontDeskToken}`);
-      expectForbidden(denied);
+      expectNotForbidden(frontDeskRes);
 
       const allowed = await request(app.server)
         .get(`/api/v1/pets/${petId}/preventive-care`)

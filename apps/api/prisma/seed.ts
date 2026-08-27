@@ -73,6 +73,13 @@ const DEFAULT_ROLE_PERMISSIONS: Record<string, string[]> = {
     'VIEW_INVOICES', 'CREATE_INVOICES', 'MANAGE_PAYMENTS',
     'SEND_WHATSAPP',
     'VIEW_SCHEDULE', 'MANAGE_SCHEDULE',
+    // AC-7 (access-control audit): PRD-04's Front Desk persona (Rekha) needs
+    // "read-only access to finalized consultation records and medical
+    // history" plus the ability to generate/share PDFs -- FrontDesk never
+    // actually held VIEW_EMR here, a gap masked until AC-3 added real
+    // permission checks to the EMR/attachment/vaccination routes. NOT
+    // EDIT_EMR -- front desk still cannot create/edit clinical records.
+    'VIEW_EMR',
   ],
   InventoryManager: [
     // D-41: full inventory access — add items, stock, barcodes, dispense,
