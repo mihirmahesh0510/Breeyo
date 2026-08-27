@@ -337,7 +337,7 @@ describe('QueueHandoffService (mocked, pure branching logic)', () => {
       vi.mocked(queue.updateEntry)
         .mockRejectedValueOnce(new Error('simulated per-appointment failure'))
         .mockImplementationOnce((id: string, data: Record<string, unknown>) =>
-          Promise.resolve({ id, ...data }),
+          Promise.resolve({ id, ...data } as any),
         );
 
       const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
