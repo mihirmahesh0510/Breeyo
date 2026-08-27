@@ -16,6 +16,7 @@
 - **Root cause:** Each does `findUnique` on `SyncReplayReceipt` → if absent, runs the real mutation → only afterward `create`s the receipt, with no try/catch around that `create`. Two concurrent replays of the same `operationId` can both pass the `findUnique` check before either commits, so both execute the mutation (e.g. both dispense stock, both check in the same queue entry). The unique constraint on `SyncReplayReceipt(clinicId, deviceId, operationId)` (schema.prisma) rejects the second `create` with P2002, but uncaught — it surfaces as an unhandled 500 *after* the duplicate side effect already ran.
 - **Already fixed once, not propagated:** `apps/api/src/modules/sync/services/replayIngest.service.ts` (~290-317, "Verify-fix 10.9") already has the correct pattern: wrap the `create` in try/catch, treat P2002 as "lost the race," return the winner's ack. That fix never propagated to the three domain-specific services above.
 - **Fix:** Apply the same try/catch-P2002-and-return-ack pattern to `recordReceipt` in all three services. TDD: failing test simulating two concurrent replays of the same operationId, asserting exactly one mutation applied and both requests return the same successful ack (not one 500).
+- **Revised during no-mistakes review:** the initial try/catch-P2002-*after*-mutation port (`a3c4e43`) still let two concurrent replays both pass the `findUnique` check and both run the mutation before either `create`d its receipt. Reworked to reserve the receipt (`create`) *before* the mutation in all three services — only the request that wins the receipt-create race proceeds; the loser acks as a duplicate without touching the mutation at all. If the mutation then throws, `releaseReceipt` deletes the reservation so a legitimate retry isn't permanently told "already handled" — but only while the write is not yet durable; once a conflict/entry/movement record has actually committed, a later broadcast-only failure must not release the receipt (that would let a retry create a duplicate durable record). See `recordReceipt`/`releaseReceipt` in `consultationOfflineReplay.service.ts`, `inventoryOfflineReplay.service.ts`, and `queueOfflineReplay.service.ts`.
 
 ### WR-2. Stock-movement ledger race — derived running-total corrupted under concurrent writes
 
@@ -90,7 +91,7 @@ Full regression suite (root aggregate + `apps/api` + `apps/mobile` + `apps/web`)
 
 | Finding | Status | Commit |
 |---|---|---|
-| WR-1 | Fixed, TDD, independently re-verified | `a3c4e43` |
+| WR-1 | Fixed, TDD, independently re-verified; reworked twice more under no-mistakes review after landing (reserve-before-mutate instead of try/catch-after, then narrowed `releaseReceipt` to fire only before the durable write commits) | `a3c4e43`, `f7b5be3`, `4ef55aa`, `77776ca`, `18ab187` |
 | WR-2 | Fixed, TDD, independently re-verified (bonus: same race found and fixed in `stock-receipt.service.ts`) | `756b4fd` |
 | WR-3 | Fixed, TDD, independently re-verified | `487a758` |
 | WR-4 | Fixed, TDD, independently re-verified | `bb38d13` |
