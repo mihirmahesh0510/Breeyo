@@ -34,6 +34,20 @@ function validationError(reply: FastifyReply, issues: { message: string }[]) {
 }
 
 /**
+ * WR-6: matches `requirePermission`'s 403 shape (`middleware/authorize.ts`)
+ * and the `forbiddenError` convention already used across the codebase
+ * (e.g. `billing-workbench.service.ts`, `consultationOfflineReplay.service.ts`)
+ * -- a plain `Error` with `statusCode`/`code` set, thrown and left for the
+ * centralized `error-handler.ts` to format as `{ error: { code, message } }`.
+ */
+function forbiddenError(message: string): Error & { statusCode: number; code: string } {
+  const error = new Error(message) as Error & { statusCode: number; code: string };
+  error.statusCode = 403;
+  error.code = 'FORBIDDEN';
+  return error;
+}
+
+/**
  * T-10-01/tenant isolation convention (matches `buildService` in
  * `../routes.ts` and `buildConsultationOfflineReplayService` in
  * `emr/controllers/consultationSync.controller.ts`): `db` is always the
@@ -56,6 +70,11 @@ export function createRetryEscalationController(
     /**
      * POST /sync/failures/:failureTaskId/retry (D-22): the current owner's
      * own guided retry -- OPEN -> GUIDED_RETRY, ownership unchanged.
+     *
+     * WR-6: only the row's CURRENT OWNER may trigger this -- any other
+     * authenticated staff member in the same clinic gets a 403, even though
+     * RLS would otherwise let them read/act on the row (RLS scopes by
+     * `clinicId` only, not by owner).
      */
     async retryHandler(request: FastifyRequest, reply: FastifyReply) {
       const params = paramsSchema.safeParse(request.params);
@@ -65,6 +84,14 @@ export function createRetryEscalationController(
       if (!body.success) return validationError(reply, body.error.errors);
 
       const service = buildService(request.db);
+      const currentOwnerUserId = await service.getCurrentOwnerUserId(
+        body.data.kind as RetryEscalationRecordKind,
+        params.data.failureTaskId,
+      );
+      if (currentOwnerUserId !== request.user.id) {
+        throw forbiddenError('Only the current owner of this item may retry it');
+      }
+
       const updated = await service.assignOriginatingUserRetry(
         body.data.kind as RetryEscalationRecordKind,
         params.data.failureTaskId,
@@ -77,6 +104,10 @@ export function createRetryEscalationController(
      * failed guided retry (or an already-escalated owner who is ALSO
      * unreachable) hands off to the next owner. `RetryEscalationService.escalate`
      * dispatches to the right transition based on the row's current state.
+     *
+     * WR-6: same owner-only gate as `retryHandler` -- escalation is
+     * triggered by the CURRENT owner reporting their own attempt failed, not
+     * by an arbitrary staff member on the row's behalf.
      */
     async escalateHandler(request: FastifyRequest, reply: FastifyReply) {
       const params = paramsSchema.safeParse(request.params);
@@ -86,6 +117,14 @@ export function createRetryEscalationController(
       if (!body.success) return validationError(reply, body.error.errors);
 
       const service = buildService(request.db);
+      const currentOwnerUserId = await service.getCurrentOwnerUserId(
+        body.data.kind as RetryEscalationRecordKind,
+        params.data.failureTaskId,
+      );
+      if (currentOwnerUserId !== request.user.id) {
+        throw forbiddenError('Only the current owner of this item may escalate it');
+      }
+
       const updated = await service.escalate(
         body.data.kind as RetryEscalationRecordKind,
         params.data.failureTaskId,

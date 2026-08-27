@@ -287,9 +287,11 @@ describe('POST /sync/failures/:failureTaskId/escalate (verify-fix 10.6, D-23/D-2
     const secondVet = await createTestUser({ fullName: 'Dr Second On-Duty' });
     await createTestClinicMember(secondVet.id, clinicId, 'Clinician');
     await makeAlwaysOnDuty(secondVet.id, clinicId);
+    const secondVetToken = (await createTestTokens(app, secondVet.id, clinicId)).accessToken;
     const thirdVet = await createTestUser({ fullName: 'Dr Third On-Duty' });
     await createTestClinicMember(thirdVet.id, clinicId, 'Clinician');
     await makeAlwaysOnDuty(thirdVet.id, clinicId);
+    const thirdVetToken = (await createTestTokens(app, thirdVet.id, clinicId)).accessToken;
 
     const conflictId = await createRealConflict({ resolutionOwnerUserId: vetUserId });
     expect((await retry(conflictId, 'CONFLICT')).status).toBe(200);
@@ -297,8 +299,11 @@ describe('POST /sync/failures/:failureTaskId/escalate (verify-fix 10.6, D-23/D-2
     expect(firstEscalate.status).toBe(200);
     const firstOwner = firstEscalate.body.data.currentOwnerUserId as string;
 
-    // The clinician it was just handed to is ALSO unreachable -- escalate again.
-    const secondEscalate = await escalate(conflictId, 'CONFLICT');
+    // WR-6: the clinician it was just handed to is ALSO unreachable -- THEY
+    // (the new current owner, not the original vet) are the one reporting
+    // that and escalating again.
+    const firstOwnerToken = firstOwner === secondVet.id ? secondVetToken : thirdVetToken;
+    const secondEscalate = await escalate(conflictId, 'CONFLICT', firstOwnerToken);
     expect(secondEscalate.status).toBe(200);
     expect(secondEscalate.body.data.resolutionState).toBe(ResolutionState.ESCALATED);
     expect(secondEscalate.body.data.currentOwnerUserId).not.toBe(firstOwner);
@@ -342,5 +347,95 @@ describe('POST /sync/failures/:failureTaskId/escalate (verify-fix 10.6, D-23/D-2
     const row = await prisma.syncConflictRecord.findUnique({ where: { id: conflictId } });
     expect(row?.resolutionState).toBe(ResolutionState.GUIDED_RETRY);
     expect(row?.clinicId).toBe(clinicId);
+  });
+});
+
+describe('WR-6: owner-only authorization on retry/escalate', () => {
+  /**
+   * A staff member who IS a member of the SAME clinic as the owner (so RLS
+   * alone would let them read/act on the row) but is NOT the row's
+   * `currentOwnerUserId`. Before WR-6, any such staff member could retry or
+   * escalate a task/conflict currently owned by a different clinician.
+   */
+  async function createSameClinicNonOwner(): Promise<{ userId: string; token: string }> {
+    const otherStaff = await createTestUser({ fullName: 'Dr Not The Owner' });
+    await createTestClinicMember(otherStaff.id, clinicId, 'Clinician');
+    const otherToken = (await createTestTokens(app, otherStaff.id, clinicId)).accessToken;
+    return { userId: otherStaff.id, token: otherToken };
+  }
+
+  it('FAILURE_TASK retry: a non-owner staff member in the same clinic gets 403, the owner still succeeds', async () => {
+    const taskId = await createRealFailureTask(); // owner = vetUserId
+    const nonOwner = await createSameClinicNonOwner();
+
+    const forbidden = await retry(taskId, undefined, nonOwner.token);
+    expect(forbidden.status).toBe(403);
+    expect(forbidden.body.error.code).toBe('FORBIDDEN');
+
+    const untouched = await prisma.syncFailureTask.findUnique({ where: { id: taskId } });
+    expect(untouched?.resolutionState).toBe(ResolutionState.OPEN);
+    expect(untouched?.currentOwnerUserId).toBe(vetUserId);
+
+    const owned = await retry(taskId);
+    expect(owned.status).toBe(200);
+    expect(owned.body.data.resolutionState).toBe(ResolutionState.GUIDED_RETRY);
+  });
+
+  it('CONFLICT retry: a non-owner staff member in the same clinic gets 403, the owner still succeeds', async () => {
+    const conflictId = await createRealConflict({ resolutionOwnerUserId: vetUserId });
+    const nonOwner = await createSameClinicNonOwner();
+
+    const forbidden = await retry(conflictId, 'CONFLICT', nonOwner.token);
+    expect(forbidden.status).toBe(403);
+    expect(forbidden.body.error.code).toBe('FORBIDDEN');
+
+    const untouched = await prisma.syncConflictRecord.findUnique({ where: { id: conflictId } });
+    expect(untouched?.resolutionState).toBe(ResolutionState.OPEN);
+    expect(untouched?.currentOwnerUserId).toBe(vetUserId);
+
+    const owned = await retry(conflictId, 'CONFLICT');
+    expect(owned.status).toBe(200);
+    expect(owned.body.data.resolutionState).toBe(ResolutionState.GUIDED_RETRY);
+  });
+
+  it('FAILURE_TASK escalate: a non-owner staff member in the same clinic gets 403, the owner still succeeds', async () => {
+    const taskId = await createRealFailureTask(); // owner = vetUserId
+    expect((await retry(taskId)).status).toBe(200); // -> GUIDED_RETRY, so escalate is a valid transition
+    const nonOwner = await createSameClinicNonOwner();
+
+    const forbidden = await escalate(taskId, undefined, nonOwner.token);
+    expect(forbidden.status).toBe(403);
+    expect(forbidden.body.error.code).toBe('FORBIDDEN');
+
+    const untouched = await prisma.syncFailureTask.findUnique({ where: { id: taskId } });
+    expect(untouched?.resolutionState).toBe(ResolutionState.GUIDED_RETRY);
+    expect(untouched?.currentOwnerUserId).toBe(vetUserId);
+
+    const owned = await escalate(taskId);
+    expect(owned.status).toBe(200);
+    expect(owned.body.data.resolutionState).toBe(ResolutionState.ESCALATED);
+  });
+
+  it('CONFLICT escalate: a non-owner staff member in the same clinic gets 403, the owner still succeeds', async () => {
+    const otherVet = await createTestUser({ fullName: 'Dr Other On-Duty For WR-6' });
+    await createTestClinicMember(otherVet.id, clinicId, 'Clinician');
+    await makeAlwaysOnDuty(otherVet.id, clinicId);
+
+    const conflictId = await createRealConflict({ resolutionOwnerUserId: vetUserId });
+    expect((await retry(conflictId, 'CONFLICT')).status).toBe(200); // -> GUIDED_RETRY
+    const nonOwner = await createSameClinicNonOwner();
+
+    const forbidden = await escalate(conflictId, 'CONFLICT', nonOwner.token);
+    expect(forbidden.status).toBe(403);
+    expect(forbidden.body.error.code).toBe('FORBIDDEN');
+
+    const untouched = await prisma.syncConflictRecord.findUnique({ where: { id: conflictId } });
+    expect(untouched?.resolutionState).toBe(ResolutionState.GUIDED_RETRY);
+    expect(untouched?.currentOwnerUserId).toBe(vetUserId);
+
+    const owned = await escalate(conflictId, 'CONFLICT');
+    expect(owned.status).toBe(200);
+    expect(owned.body.data.resolutionState).toBe(ResolutionState.ESCALATED);
+    expect(owned.body.data.currentOwnerUserId).toBe(otherVet.id);
   });
 });

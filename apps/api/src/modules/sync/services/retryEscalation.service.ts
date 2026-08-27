@@ -145,6 +145,23 @@ export class RetryEscalationService {
     return row;
   }
 
+  /**
+   * WR-6: exposes just enough of `getRow` for the controller to run the
+   * owner-only authorization check (`request.user.id ===
+   * currentOwnerUserId`) BEFORE calling `assignOriginatingUserRetry` or
+   * `escalate` -- both of those are mutating state transitions with no
+   * caller-identity parameter of their own, so any authenticated staff
+   * member in the clinic (RLS only scopes by `clinicId`, not by owner)
+   * could otherwise retry/escalate a row currently assigned to a different
+   * clinician, including a `SAFETY_CRITICAL` conflict. Still resolves
+   * through the same `getRow` (so tenant isolation / NOT_FOUND behavior for
+   * a cross-clinic id is unchanged) rather than a second hand-rolled query.
+   */
+  async getCurrentOwnerUserId(kind: RetryEscalationRecordKind, id: string): Promise<string> {
+    const row = await this.getRow(kind, id);
+    return row.currentOwnerUserId;
+  }
+
   private async updateRow(
     kind: RetryEscalationRecordKind,
     id: string,
