@@ -12,7 +12,7 @@
  * own "no RN import needed" convention.
  */
 import type * as SQLite from 'expo-sqlite';
-import type { ReplayPriority } from '@breeyo/types';
+import { ReplayPriority } from '@breeyo/types';
 import { apiClient, ApiClientError } from '../../../lib/api';
 import {
   clearWorkingSetAnchor,
@@ -73,12 +73,31 @@ async function sendOperation(
     return failOperation(operation, 'UNKNOWN_DOMAIN');
   }
 
+  // WR-10: the server-side domain-specific replay endpoints enforce D-12 to
+  // D-14 (queue always replays first) but -- unlike the generic `/sync/replay`
+  // ingress -- never see a mixed-domain batch to pre-scan for outstanding
+  // QUEUE_HIGH work, since this coordinator always sends exactly one
+  // envelope per call to that envelope's own domain path. For any non-queue
+  // domain, report this device's own still-pending QUEUE_HIGH operationIds
+  // (already tracked locally for `runReplayCycle`'s own tier-ordering) so the
+  // server can verify them against its receipt ledger and genuinely defer
+  // this operation if queue work is still outstanding, instead of the
+  // enforcement only ever running against the unused generic endpoint.
+  const pendingQueueHighOperationIds =
+    operation.envelope.domain === QUEUE_SYNC_DOMAIN
+      ? []
+      : (await listPendingSyncOperationsByPriority(input.db, ReplayPriority.QUEUE_HIGH)).map((op) => op.operationId);
+
   let response: DomainReplayResponse;
   try {
     response = await apiClient<DomainReplayResponse>(path, {
       method: 'POST',
       token: input.accessToken,
-      body: JSON.stringify({ deviceId: input.deviceId, operations: [operation.envelope] }),
+      body: JSON.stringify({
+        deviceId: input.deviceId,
+        operations: [operation.envelope],
+        pendingQueueHighOperationIds,
+      }),
     });
   } catch (error) {
     // A non-2xx response (including the EMR replay route's 409 for a newly

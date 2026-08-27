@@ -139,3 +139,91 @@ describe('buildReplayCycleDeps sendOperation -- inventory pendingCount reconcili
     expect(useInventoryOfflineSyncStore.getState().pendingCount).toBe(1);
   });
 });
+
+/**
+ * WR-10: the server-side domain-specific replay endpoints
+ * (`/inventory/sync/replay`, `/consultations/sync/replay`) enforce D-12 to
+ * D-14 (queue always replays first) by verifying a client-reported list of
+ * still-pending QUEUE_HIGH operationIds against their own receipt ledger --
+ * they cannot pre-scan a mixed batch the way the generic `/sync/replay`
+ * ingress does, since this coordinator always sends exactly one envelope
+ * per call to that envelope's own domain path. This suite proves the real
+ * production wiring (`sendOperation`, not a reimplementation) actually
+ * reports that list for non-queue domains, using the SAME on-device
+ * `listPendingSyncOperationsByPriority` this coordinator already relies on
+ * for its own local tier-ordering (`syncCoordinator.ts`).
+ */
+describe('buildReplayCycleDeps sendOperation -- pendingQueueHighOperationIds reporting (WR-10)', () => {
+  let buildReplayCycleDeps: typeof import('../services/buildReplayCycleDeps').buildReplayCycleDeps;
+  let INVENTORY_SYNC_DOMAIN: typeof import('../../inventory/services/offlineStockActionStore').INVENTORY_SYNC_DOMAIN;
+  let QUEUE_SYNC_DOMAIN: typeof import('../../queue/lib/queue-offline-utils').QUEUE_SYNC_DOMAIN;
+
+  beforeAll(async () => {
+    ({ buildReplayCycleDeps } = await import('../services/buildReplayCycleDeps'));
+    ({ INVENTORY_SYNC_DOMAIN } = await import('../../inventory/services/offlineStockActionStore'));
+    ({ QUEUE_SYNC_DOMAIN } = await import('../../queue/lib/queue-offline-utils'));
+  });
+
+  function operationFor(domain: string, operationId: string, priority: ReplayPriority) {
+    const envelope: OfflineOperationEnvelope = {
+      deviceId: DEVICE_ID,
+      operationId,
+      clinicId: CLINIC_ID,
+      userId: 'user-1',
+      domain,
+      entityType: domain === QUEUE_SYNC_DOMAIN ? 'QUEUE_CHECK_IN' : 'STOCK_DISPENSE',
+      entityId: 'entity-1',
+      priority,
+      createdAt: new Date().toISOString(),
+      payload: {},
+    };
+    return { operationId, priority, envelope };
+  }
+
+  function fakeDb(): Parameters<typeof buildReplayCycleDeps>[0]['db'] {
+    return {} as never;
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    apiClient.mockResolvedValue({ data: { acknowledgedOperationIds: ['op-1'], rejectedOperations: [] } });
+  });
+
+  it('reports this device\'s locally-pending QUEUE_HIGH operationIds when sending a non-queue (inventory) operation', async () => {
+    listPendingSyncOperationsByPriority.mockResolvedValue([
+      { operationId: 'queue-op-a', priority: ReplayPriority.QUEUE_HIGH, envelope: {} },
+      { operationId: 'queue-op-b', priority: ReplayPriority.QUEUE_HIGH, envelope: {} },
+    ]);
+
+    const deps = buildReplayCycleDeps({ db: fakeDb(), deviceId: DEVICE_ID, accessToken: 'token' });
+    await deps.sendOperation(operationFor(INVENTORY_SYNC_DOMAIN, 'op-1', ReplayPriority.INVENTORY_MEDIUM));
+
+    expect(listPendingSyncOperationsByPriority).toHaveBeenCalledWith(expect.anything(), ReplayPriority.QUEUE_HIGH);
+
+    const [, options] = apiClient.mock.calls[0];
+    const sentBody = JSON.parse(options.body as string);
+    expect(sentBody.pendingQueueHighOperationIds).toEqual(['queue-op-a', 'queue-op-b']);
+  });
+
+  it('reports an empty list when this device has no locally-pending QUEUE_HIGH operations', async () => {
+    listPendingSyncOperationsByPriority.mockResolvedValue([]);
+
+    const deps = buildReplayCycleDeps({ db: fakeDb(), deviceId: DEVICE_ID, accessToken: 'token' });
+    await deps.sendOperation(operationFor(INVENTORY_SYNC_DOMAIN, 'op-1', ReplayPriority.INVENTORY_MEDIUM));
+
+    const [, options] = apiClient.mock.calls[0];
+    const sentBody = JSON.parse(options.body as string);
+    expect(sentBody.pendingQueueHighOperationIds).toEqual([]);
+  });
+
+  it('never reports (or looks up) pending QUEUE_HIGH operationIds when sending a queue-domain operation itself', async () => {
+    const deps = buildReplayCycleDeps({ db: fakeDb(), deviceId: DEVICE_ID, accessToken: 'token' });
+    await deps.sendOperation(operationFor(QUEUE_SYNC_DOMAIN, 'op-1', ReplayPriority.QUEUE_HIGH));
+
+    expect(listPendingSyncOperationsByPriority).not.toHaveBeenCalled();
+
+    const [, options] = apiClient.mock.calls[0];
+    const sentBody = JSON.parse(options.body as string);
+    expect(sentBody.pendingQueueHighOperationIds).toEqual([]);
+  });
+});
