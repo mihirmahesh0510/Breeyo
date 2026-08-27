@@ -258,6 +258,33 @@ describe('InventoryOfflineReplayService', () => {
         overrideBatchId: 'batch-9',
       });
     });
+
+    it('releases the reserved receipt when creating the mismatch review task itself fails, so a legitimate retry is not permanently blocked with no review trace', async () => {
+      vi.mocked(gateway.dispense).mockRejectedValue(
+        structuredError('INSUFFICIENT_STOCK', 'Insufficient stock', 409, { itemId: ITEM_ID, requested: 3, available: 1 }),
+      );
+      vi.mocked(reviewTasks.create).mockRejectedValue(new Error('transient db error creating review task'));
+
+      await expect(service.replayInventoryOperation(context, baseEnvelope({ payload: { quantity: 3 } }))).rejects.toThrow(
+        'transient db error creating review task',
+      );
+
+      // Neither the mutation nor the review task was ever durably created --
+      // a retry of this exact operationId must be able to proceed, not be
+      // told "already handled" with no review-queue trace to show for it.
+      expect(receipts.delete).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps the reserved receipt when the mismatch review task is created successfully (happy path unchanged)', async () => {
+      vi.mocked(gateway.dispense).mockRejectedValue(
+        structuredError('INSUFFICIENT_STOCK', 'Insufficient stock', 409, { itemId: ITEM_ID, requested: 3, available: 1 }),
+      );
+
+      const result = await service.replayInventoryOperation(context, baseEnvelope({ payload: { quantity: 3 } }));
+
+      expect(result.status).toBe('REVIEW_CREATED');
+      expect(receipts.delete).not.toHaveBeenCalled();
+    });
   });
 
   describe('receive replay', () => {

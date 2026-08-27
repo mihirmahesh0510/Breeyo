@@ -390,22 +390,32 @@ export class InventoryOfflineReplayService {
         throw error;
       }
 
-      const reviewTaskId = await this.conflictReview.createInventoryReviewTask(context, {
-        operationId,
-        itemId,
-        mismatch: {
-          operationType: ENTITY_TYPE_TO_OPERATION[entityType] ?? 'ADJUST',
+      try {
+        const reviewTaskId = await this.conflictReview.createInventoryReviewTask(context, {
+          operationId,
           itemId,
-          errorCode: error.code,
-          errorMessage: error.message,
-          requestedQuantity: error.requested,
-          availableQuantity: error.available,
-        },
-      });
-      // Verify-fix 10.3: D-05/D-10 -- a known mismatch produced a new
-      // unresolved review task, not a silent overwrite.
-      this.broadcast.emitReplayConflictOpened({ clinicId: context.clinicId, domain: 'inventory', entityIds: [itemId] });
-      return { operationId, status: 'REVIEW_CREATED', itemId, reviewTaskId };
+          mismatch: {
+            operationType: ENTITY_TYPE_TO_OPERATION[entityType] ?? 'ADJUST',
+            itemId,
+            errorCode: error.code,
+            errorMessage: error.message,
+            requestedQuantity: error.requested,
+            availableQuantity: error.available,
+          },
+        });
+        // Verify-fix 10.3: D-05/D-10 -- a known mismatch produced a new
+        // unresolved review task, not a silent overwrite.
+        this.broadcast.emitReplayConflictOpened({ clinicId: context.clinicId, domain: 'inventory', entityIds: [itemId] });
+        return { operationId, status: 'REVIEW_CREATED', itemId, reviewTaskId };
+      } catch (reviewError) {
+        // WR-1: the mismatch mutation never applied and the review task
+        // never got created either, so the receipt reserved above does not
+        // yet reflect anything real -- release it so a legitimate retry of
+        // this operationId is not permanently told "already handled" with no
+        // review-queue trace to show for it.
+        await this.releaseReceipt(context, operationId);
+        throw reviewError;
+      }
     }
   }
 
