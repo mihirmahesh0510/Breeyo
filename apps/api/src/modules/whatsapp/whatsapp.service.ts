@@ -83,6 +83,16 @@ function messageNotFoundError() {
   return error;
 }
 
+function ownerNotFoundError() {
+  const error = new Error('Owner not found') as Error & {
+    statusCode: number;
+    code: string;
+  };
+  error.statusCode = 404;
+  error.code = 'OWNER_NOT_FOUND';
+  return error;
+}
+
 /**
  * Validates variables against the template's Zod schema, attaching a
  * `statusCode: 400` to the thrown error on mismatch. Duck-typed on
@@ -128,6 +138,20 @@ export class WhatsAppService {
    * Queued bubble.
    */
   async sendTemplate(input: SendTemplateInput, actor: WaActor): Promise<{ messageId: string }> {
+    // Security (AC-6): verify the owner belongs to the caller's clinic
+    // before anything else -- `authorize()`'s checks are keyed purely on
+    // `ownerId` (`getOwnerPreference`/`getCurrentWhatsAppConsent`), and
+    // `upsertThread` would happily create a WhatsAppThread linking a
+    // cross-clinic owner to this clinic. Same 404-on-cross-tenant-owner
+    // convention `updateOwnerPreferenceHandler`/`getOwnerPreferenceHandler`
+    // already use in `whatsapp.controller.ts`.
+    const owner = await this.prisma.petOwner.findFirst({
+      where: { id: input.ownerId, clinicId: actor.clinicId },
+    });
+    if (!owner) {
+      throw ownerNotFoundError();
+    }
+
     const def = getTemplate(input.templateKey);
 
     // Fail fast: a variable mismatch is a 400 HERE, before any write, rather

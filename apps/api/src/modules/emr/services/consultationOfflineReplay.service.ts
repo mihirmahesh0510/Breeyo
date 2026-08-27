@@ -74,6 +74,35 @@ export interface ClinicalConflictRecordStore {
   create(args: { data: Record<string, unknown> }): Promise<{ id: string }>;
 }
 
+/**
+ * AC-3 (access-control audit): this replay path had NO permission check at
+ * all, unlike `inventoryOfflineReplay.service.ts`'s per-entity
+ * `INVENTORY_PERMISSIONS` check (`dispense.routes.ts`) -- a device replaying
+ * through `/consultations/sync/replay` could write/overwrite clinical drafts
+ * regardless of whether the authenticated user actually holds `EDIT_EMR`.
+ * Kept as a local interface (not the concrete `PermissionService` import)
+ * matching `InventoryOfflineReplayService`'s own `PermissionsProvider`
+ * convention. */
+export interface PermissionsProvider {
+  getUserPermissions(userId: string, clinicId: string): Promise<string[]>;
+}
+
+/** Every consultation replay envelope is a `CONSULTATION_DRAFT_SAVE`
+ *  mutation -- the same permission the live PATCH
+ *  `/consultations/:consultationId/draft` route requires via `editHandler`
+ *  in `emr.routes.ts`. */
+const REQUIRED_REPLAY_PERMISSION = 'EDIT_EMR';
+
+function forbiddenError(entityType: string, requiredPermission: string): Error & { statusCode: number; code: string } {
+  const error = new Error(`Permission denied: ${entityType} requires ${requiredPermission}`) as Error & {
+    statusCode: number;
+    code: string;
+  };
+  error.statusCode = 403;
+  error.code = 'FORBIDDEN';
+  return error;
+}
+
 export interface ConsultationOfflineReplayContext {
   clinicId: string;
   userId: string;
@@ -159,6 +188,9 @@ export class ConsultationOfflineReplayService {
     private readonly gateway: ConsultationOfflineReplayGateway,
     private readonly replayReceipts: ConsultationReplayReceiptStore,
     private readonly conflictRecords: ClinicalConflictRecordStore,
+    // AC-3: no default -- every real call site must supply a real
+    // `PermissionService`. Only test doubles construct this without one.
+    private readonly permissionsProvider: PermissionsProvider,
     // Verify-fix 10.3: defaults to a no-op broadcast, matching
     // `ReplayIngestService`'s/`QueueOfflineReplayService`'s own convention;
     // `consultationSync.controller.ts` wires a real
@@ -187,6 +219,17 @@ export class ConsultationOfflineReplayService {
         status: 'REJECTED',
         message: `Unsupported consultation replay entityType: ${envelope.entityType}`,
       };
+    }
+
+    // AC-3: enforced here, not only as a route-level preHandler -- this
+    // service is the one place every consultation draft replay actually
+    // flows through regardless of which route dispatches into it, matching
+    // `InventoryOfflineReplayService`'s own enforce-in-the-service
+    // convention (D-41-D-44) for a payload a route-level preHandler cannot
+    // otherwise inspect.
+    const userPermissions = await this.permissionsProvider.getUserPermissions(context.userId, context.clinicId);
+    if (!userPermissions.includes(REQUIRED_REPLAY_PERMISSION)) {
+      throw forbiddenError(envelope.entityType, REQUIRED_REPLAY_PERMISSION);
     }
 
     const existingReceipt = await this.replayReceipts.findUnique({

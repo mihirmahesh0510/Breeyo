@@ -19,6 +19,26 @@ export class AttachmentService {
   ) {
     const parsed = attachmentMetaSchema.parse(meta);
 
+    // Security (AC-5): verify the consultation belongs to the caller's
+    // clinic before creating anything -- confirmUpload/deleteAttachment
+    // both check `attachment.consultation.clinicId` once an attachment row
+    // already exists, but this is the entry point that actually creates
+    // the row and returns an S3 upload URL, and it had no such check. RLS
+    // can't catch this: consultation_attachments carries no clinicId
+    // column of its own to protect, only a foreign-key target
+    // (Consultation.clinicId) in another table. Mirrors
+    // `EmrService.saveDraft`'s consultationId ownership check.
+    const consultation = await this.prisma.consultation.findFirst({
+      where: { id: consultationId, clinicId },
+      select: { id: true },
+    });
+    if (!consultation) {
+      const error = new Error('Consultation not found') as Error & { statusCode: number; code: string };
+      error.statusCode = 404;
+      error.code = 'CONSULTATION_NOT_FOUND';
+      throw error;
+    }
+
     // Check file count limit
     const count = await this.prisma.consultationAttachment.count({
       where: { consultationId },

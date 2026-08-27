@@ -42,6 +42,7 @@ function createMockAuthz() {
 function createMockPrisma() {
   return {
     $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn({})),
+    petOwner: { findFirst: vi.fn() },
   };
 }
 
@@ -71,9 +72,34 @@ describe('WhatsAppService.sendTemplate (WHA-02/WHA-05, Pattern 2)', () => {
     );
 
     authz.authorize.mockResolvedValue({ consentWarning: null, numberWarning: null });
+    prisma.petOwner.findFirst.mockResolvedValue({ id: OWNER_ID });
     repo.upsertThread.mockResolvedValue({ id: THREAD_ID });
     repo.createOutboundMessage.mockResolvedValue({ id: MESSAGE_ID, body: 'rendered body' });
     repo.touchThread.mockResolvedValue({ count: 1 });
+  });
+
+  it('rejects and creates no WhatsAppMessage row when ownerId belongs to another clinic (AC-6)', async () => {
+    prisma.petOwner.findFirst.mockResolvedValue(null);
+
+    await expect(
+      service.sendTemplate(
+        {
+          ownerId: OWNER_ID,
+          waPhone: '+919876543210',
+          templateKey: 'follow_up_reminder',
+          variables: { owner_name: 'Asha', pet_name: 'Bruno', follow_up_date: '2026-09-01' },
+          contextType: 'REMINDER',
+        },
+        { clinicId: CLINIC_ID, userId: 'staff-1' },
+      ),
+    ).rejects.toMatchObject({ code: 'OWNER_NOT_FOUND', statusCode: 404 });
+
+    expect(prisma.petOwner.findFirst).toHaveBeenCalledWith({
+      where: { id: OWNER_ID, clinicId: CLINIC_ID },
+    });
+    expect(authz.authorize).not.toHaveBeenCalled();
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(repo.createOutboundMessage).not.toHaveBeenCalled();
   });
 
   it('validates variables against the registry BEFORE any write; a missing variable yields a 400 and creates no WhatsAppMessage row', async () => {

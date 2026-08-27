@@ -139,7 +139,7 @@ Admin calls POST /auth/staff/invite { phone, roles }
 |------|-------------|----------------|
 | **Admin** | Clinic owner/manager | `MANAGE_CLINIC_SETTINGS`, `MANAGE_USERS`, `MANAGE_ROLES`, all module access |
 | **Clinician** | Veterinarian | Patient management, queue management, EMR access |
-| **FrontDesk** | Receptionist | Patient registration, queue check-in, billing |
+| **FrontDesk** | Receptionist | Patient registration, queue check-in, billing, read-only EMR access |
 | **InventoryManager** | Stock manager | Inventory CRUD, purchase orders |
 
 Overrides: Admin can grant `MANAGE_CLINIC_SETTINGS` to a specific FrontDesk user, or deny `MANAGE_USERS` from a specific Admin — per-user, per-clinic.

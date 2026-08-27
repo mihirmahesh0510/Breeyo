@@ -3,6 +3,9 @@ import { AttachmentService } from '../attachment.service.js';
 
 function createMockPrisma() {
   return {
+    consultation: {
+      findFirst: vi.fn(),
+    },
     consultationAttachment: {
       count: vi.fn(),
       create: vi.fn(),
@@ -29,6 +32,44 @@ describe('AttachmentService', () => {
   beforeEach(() => {
     prisma = createMockPrisma();
     service = new AttachmentService(prisma);
+  });
+
+  describe('generateUploadUrl', () => {
+    it('rejects and creates no attachment row when the consultation belongs to another clinic (AC-5)', async () => {
+      prisma.consultation.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.generateUploadUrl(CONSULTATION_ID, CLINIC_ID, USER_ID, {
+          fileType: 'xray',
+          fileName: 'x.jpg',
+          mimeType: 'image/jpeg',
+          fileSizeBytes: 1024,
+        }),
+      ).rejects.toMatchObject({ code: 'CONSULTATION_NOT_FOUND', statusCode: 404 });
+
+      expect(prisma.consultation.findFirst).toHaveBeenCalledWith({
+        where: { id: CONSULTATION_ID, clinicId: CLINIC_ID },
+        select: { id: true },
+      });
+      expect(prisma.consultationAttachment.count).not.toHaveBeenCalled();
+      expect(prisma.consultationAttachment.create).not.toHaveBeenCalled();
+    });
+
+    it('creates the attachment when the consultation belongs to the caller clinic', async () => {
+      prisma.consultation.findFirst.mockResolvedValue({ id: CONSULTATION_ID });
+      prisma.consultationAttachment.count.mockResolvedValue(0);
+      prisma.consultationAttachment.create.mockResolvedValue({ id: ATTACHMENT_ID });
+
+      const result = await service.generateUploadUrl(CONSULTATION_ID, CLINIC_ID, USER_ID, {
+        fileType: 'xray',
+        fileName: 'x.jpg',
+        mimeType: 'image/jpeg',
+        fileSizeBytes: 1024,
+      });
+
+      expect(result.attachmentId).toBe(ATTACHMENT_ID);
+      expect(prisma.consultationAttachment.create).toHaveBeenCalled();
+    });
   });
 
   describe('confirmUpload', () => {

@@ -259,5 +259,69 @@ describe('Patient/queue route permission gating (E2E-BUG-FIX-PLAN.md §3.6)', ()
         .send({});
       expectNotForbidden(allowed);
     });
+
+    it('POST /queue/sync/replay is forbidden for InventoryManager, allowed for FrontDesk (AC-1: this endpoint mutates the same queue state check-in/status/call-next do, and must be gated the same way)', async () => {
+      const denied = await request(app.server)
+        .post('/api/v1/queue/sync/replay')
+        .set('Authorization', `Bearer ${inventoryManagerToken}`)
+        .send({ deviceId: 'device-1', operations: [] });
+      expectForbidden(denied);
+
+      const allowed = await request(app.server)
+        .post('/api/v1/queue/sync/replay')
+        .set('Authorization', `Bearer ${frontDeskToken}`)
+        .send({ deviceId: 'device-1', operations: [] });
+      expectNotForbidden(allowed);
+    });
+  });
+
+  describe('Queue web routes — browser-module-access is a separate axis from MANAGE_QUEUE (AC-2)', () => {
+    it('POST /queue/web/entries/:queueEntryId/status is forbidden for a user with QUEUE browser access enabled but MANAGE_QUEUE revoked; GET /queue/web/board still succeeds for that same user', async () => {
+      // Grant FRONT_DESK browser access to the QUEUE module (default is
+      // browserEnabled: false for FRONT_DESK — an Admin must opt in).
+      await prisma.clinicBrowserAccessPolicy.upsert({
+        where: { clinicId_roleCode: { clinicId, roleCode: 'FRONT_DESK' } },
+        create: { clinicId, roleCode: 'FRONT_DESK', browserEnabled: true, queueEnabled: true },
+        update: { browserEnabled: true, queueEnabled: true },
+      });
+
+      // Use a FrontDesk member but explicitly revoke MANAGE_QUEUE via a
+      // permission override, isolating "has browser access" from "can
+      // mutate queue state" on the same user.
+      const revokedUser = await createTestUser();
+      const revokedMember = await createTestClinicMember(revokedUser.id, clinicId, 'FrontDesk');
+      const manageQueuePermission = await prisma.permission.findUniqueOrThrow({ where: { code: 'MANAGE_QUEUE' } });
+      await prisma.userPermissionOverride.create({
+        data: { clinicMemberId: revokedMember.id, permissionId: manageQueuePermission.id, granted: false },
+      });
+      const { accessToken: revokedToken } = await createTestTokens(app, revokedUser.id, clinicId);
+
+      const entry = await prisma.queueEntry.create({
+        data: {
+          clinicId,
+          petId,
+          checkedInBy: (await prisma.clinicMember.findFirstOrThrow({ where: { clinicId } })).userId,
+          position: 1,
+          queuePriorityAt: new Date(0),
+        },
+      });
+
+      const deniedStatusUpdate = await request(app.server)
+        .post(`/api/v1/queue/web/entries/${entry.id}/status`)
+        .set('Authorization', `Bearer ${revokedToken}`)
+        .send({ status: 'IN_CONSULTATION' });
+      expectForbidden(deniedStatusUpdate);
+
+      const allowedBoardRead = await request(app.server)
+        .get('/api/v1/queue/web/board')
+        .set('Authorization', `Bearer ${revokedToken}`);
+      expectNotForbidden(allowedBoardRead);
+
+      const allowedStatusUpdate = await request(app.server)
+        .post(`/api/v1/queue/web/entries/${entry.id}/status`)
+        .set('Authorization', `Bearer ${frontDeskToken}`)
+        .send({ status: 'IN_CONSULTATION' });
+      expectNotForbidden(allowedStatusUpdate);
+    });
   });
 });

@@ -20,6 +20,7 @@ function createMockRepository(): {
 } {
   return {
     createConsultation: vi.fn(),
+    findPetInClinic: vi.fn(),
     findActiveConsultation: vi.fn(),
     saveDraft: vi.fn(),
     loadDraft: vi.fn(),
@@ -77,6 +78,12 @@ describe('EmrService', () => {
     dosageService = createMockDosageService();
     prisma = createMockPrisma();
     service = new EmrService(repository as any, lockService as any, dosageService as any, prisma);
+    // AC-4: createConsultation now verifies the pet resolves within the
+    // caller's clinic before doing anything else. Every pre-existing
+    // createConsultation test below exercises behaviour PAST that check, so
+    // it defaults to "found" here; the dedicated cross-clinic test below
+    // overrides it back to null.
+    repository.findPetInClinic.mockResolvedValue({ id: mockPet.id });
   });
 
   describe('createConsultation', () => {
@@ -129,6 +136,27 @@ describe('EmrService', () => {
           { petId: mockPet.id, visitType: 'general' },
         ),
       ).rejects.toThrow(/already has an active consultation/);
+    });
+
+    it('rejects with PET_NOT_FOUND when the pet does not resolve within the caller clinic (AC-4)', async () => {
+      repository.findPetInClinic.mockResolvedValue(null);
+
+      await expect(
+        service.createConsultation(
+          mockClinic.id,
+          mockPet.id,
+          mockVet.id,
+          mockVet.fullName,
+          { petId: mockPet.id, visitType: 'general' },
+        ),
+      ).rejects.toMatchObject({ statusCode: 404, code: 'PET_NOT_FOUND' });
+
+      expect(repository.findPetInClinic).toHaveBeenCalledWith(mockClinic.id, mockPet.id);
+      // Nothing past the ownership check runs -- no active-consultation
+      // lookup, no Consultation row created, no lock acquired.
+      expect(repository.findActiveConsultation).not.toHaveBeenCalled();
+      expect(repository.createConsultation).not.toHaveBeenCalled();
+      expect(lockService.acquireLock).not.toHaveBeenCalled();
     });
 
     it('rejects invalid visit type', async () => {
