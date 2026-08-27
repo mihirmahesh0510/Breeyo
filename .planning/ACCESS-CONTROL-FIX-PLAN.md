@@ -63,3 +63,21 @@ AC-1/AC-2 (queue routes) are small and independent — do first. AC-3/AC-4 (EMR 
 ## Verification
 
 Full regression suite (root aggregate + `apps/api` + `apps/mobile` + `apps/web`) after all fixes land, then push through the `no-mistakes` gate per this project's standard workflow.
+
+## Execution status
+
+| Finding | Status | Commit |
+|---|---|---|
+| AC-1 | Fixed, TDD, independently re-verified | `ac1b915` |
+| AC-2 | Fixed, TDD, independently re-verified | `ac1b915` |
+| AC-3 | Fixed, TDD, independently re-verified (140/140 targeted tests) | `aca3154` |
+| AC-4 | Fixed, TDD, independently re-verified | `aca3154` |
+| AC-5 | Fixed, TDD (RED confirmed before implementation) | `5ef6397` |
+| AC-6 | Fixed, TDD (RED confirmed before implementation) | `5ef6397` |
+
+Full regression (root `pnpm test` via turbo, all 8 packages) run against a clean DB: **8/8 tasks passed, zero failures.**
+- `@breeyo/api`: 177 files passed | 9 skipped, 2211 tests passed | 80 todo (2291 total). The 9 skipped files are pre-existing (`tests/inventory/*.test.ts`), unrelated to this batch.
+- `@breeyo/mobile`: 58 files passed, 905 tests passed.
+- `@breeyo/web`: 14 files passed, 110 tests passed.
+
+**Correction to an earlier finding from this fix pass:** `tests/sync/retry-escalation-routes.test.ts` was earlier flagged as having 2 pre-existing failing tests (cross-tenant retry/escalate requests expecting 404, getting 200/409), confirmed via `git stash`/`git stash pop` isolation at the time. Re-running the full suite against a properly truncated test database now shows all 12 tests in that file passing cleanly. The earlier failure was traced to accumulated stale fixture rows left behind by interrupted test runs during this session (`cleanupTestData()`'s transaction rolls back entirely on any FK-violation mid-transaction, so a single interrupted run compounds garbage across every subsequent run until the DB is manually truncated) — not a genuine tenant-isolation code bug. No code change was made or needed for this file; the stash/pop isolation check that "confirmed" it as pre-existing was a valid test of "not caused by my diff," but the underlying premise that it was a *real, deterministic* bug was wrong. Recorded here so this false alarm isn't carried into a future audit.
