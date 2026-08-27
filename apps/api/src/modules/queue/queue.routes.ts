@@ -124,8 +124,12 @@ export default async function queueRoutes(fastify: FastifyInstance) {
   // (D-12): this is the ONE endpoint every offline queue mutation (check-in,
   // status transition, no-show, call-next) replays through, never shared
   // with lower-tier (clinical/inventory/ancillary) replay traffic.
+  // Security audit AC-1: this replays the exact same mutations
+  // check-in/status/call-next make on their live-request routes, so it
+  // needs the same MANAGE_QUEUE gate those routes have -- not the bare
+  // authenticate+tenantContext it shipped with.
   fastify.post('/queue/sync/replay', {
-    preHandler,
+    preHandler: manageHandler,
     handler: queueSyncController.replayHandler,
   });
 
@@ -138,8 +142,14 @@ export default async function queueRoutes(fastify: FastifyInstance) {
     preHandler: webQueuePreHandler,
     handler: webQueueController.getBoardHandler,
   });
+  // Security audit AC-2: `requireBrowserModuleAccess` only gates whether the
+  // QUEUE browser surface is enabled for this role -- a separate axis from
+  // whether the role can actually mutate queue state. The read-only board
+  // above is correctly gated by browser-access alone; this mutating route
+  // additionally needs MANAGE_QUEUE, the same as every other queue-mutating
+  // route in this file.
   fastify.post('/queue/web/entries/:queueEntryId/status', {
-    preHandler: webQueuePreHandler,
+    preHandler: [...webQueuePreHandler, requirePermission('MANAGE_QUEUE')],
     handler: webQueueController.updateEntryStatusHandler,
   });
 }
