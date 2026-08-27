@@ -85,3 +85,24 @@ WR-2, WR-4, WR-5, WR-10 are single-file, independent — do first. WR-1 and WR-7
 ## Verification
 
 Full regression suite (root aggregate + `apps/api` + `apps/mobile` + `apps/web`) after all fixes land, then push through the `no-mistakes` gate per this project's standard workflow.
+
+## Execution status
+
+| Finding | Status | Commit |
+|---|---|---|
+| WR-1 | Fixed, TDD, independently re-verified | `a3c4e43` |
+| WR-2 | Fixed, TDD, independently re-verified (bonus: same race found and fixed in `stock-receipt.service.ts`) | `756b4fd` |
+| WR-3 | Fixed, TDD, independently re-verified | `487a758` |
+| WR-4 | Fixed, TDD, independently re-verified | `bb38d13` |
+| WR-5 | Fixed, TDD, independently re-verified | `99bd934` |
+| WR-6 | Fixed, TDD, independently re-verified (also fixed a pre-existing test bug exposed by correct enforcement) | `87e3d3a` |
+| WR-7 | Fixed, TDD, independently re-verified (both mobile + web export paths) | `fabfac3` |
+| WR-8 | Fixed, TDD, independently re-verified | `2ad4bbe` |
+| WR-9 | Fixed, TDD, independently re-verified (cascaded to every consumer of the frozen scope arrays) | `e766645` |
+| WR-10 | Fixed, TDD, independently re-verified (required a small mobile-side change too — client-reported-but-server-verified pending count, since the domain-specific endpoints never see a mixed-priority batch the way the generic endpoint does) | `bf1f010` |
+
+Full regression (root `pnpm test` via turbo, all 8 packages) run against a clean DB: **8/8 tasks passed, zero failures.**
+- `@breeyo/api`: 182 files passed | 9 skipped, 2256 tests passed | 80 todo (2336 total). The 9 skipped files are the same pre-existing `tests/inventory/*.test.ts` skips seen throughout this project, unrelated to this batch.
+- `@breeyo/mobile` and `@breeyo/web`: both clean (confirmed via each finding's own targeted full-suite run; WR-7 confirmed mobile 58/58, WR-8 confirmed web 16/117 test files/tests).
+
+**Process note:** the first 4 fixes (WR-2, WR-4, WR-5, WR-7) were dispatched in parallel against the same shared local dev Postgres, which caused transient cross-agent test contention (FK-violation/deadlock noise, and one flagged instance of a truncate command colliding with sibling agents' in-flight fixtures). No data of consequence was at risk — this is an ephemeral local test-only database — but it produced confusing noise and one legitimate security-classifier flag. From WR-1 onward, every fix was dispatched strictly sequentially to avoid repeating this.
