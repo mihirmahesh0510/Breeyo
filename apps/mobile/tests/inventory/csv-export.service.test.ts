@@ -136,6 +136,67 @@ describe('csv-export.service', () => {
     });
   });
 
+  // WR-7: user-controlled cells (stock-adjustment reason, user name, item
+  // name, category) must not be able to trigger spreadsheet formula
+  // execution when the CSV is opened in Excel/Sheets/Numbers.
+  describe('CSV formula-injection sanitization (WR-7)', () => {
+    describe('mapMovementsToRows', () => {
+      it('prefixes a Reason starting with "=" with a literal-text marker', () => {
+        const rows = mapMovementsToRows([mockMovement({ reason: '=HYPERLINK("http://evil.com","x")' })]);
+        expect(rows[0].Reason).toBe('\'=HYPERLINK("http://evil.com","x")');
+        expect(rows[0].Reason.startsWith('=')).toBe(false);
+      });
+
+      it('prefixes a Reason starting with "+" with a literal-text marker', () => {
+        const rows = mapMovementsToRows([mockMovement({ reason: '+1+1' })]);
+        expect(rows[0].Reason).toBe("'+1+1");
+      });
+
+      it('prefixes a Reason starting with "-" with a literal-text marker', () => {
+        const rows = mapMovementsToRows([mockMovement({ reason: "-2+3+cmd|' /C calc'!A1" })]);
+        expect(rows[0].Reason).toBe("'-2+3+cmd|' /C calc'!A1");
+      });
+
+      it('prefixes a Reason starting with "@" with a literal-text marker', () => {
+        const rows = mapMovementsToRows([mockMovement({ reason: '@SUM(1+1)' })]);
+        expect(rows[0].Reason).toBe("'@SUM(1+1)");
+      });
+
+      it('prefixes a User name starting with a formula-trigger character', () => {
+        const rows = mapMovementsToRows([mockMovement({ userName: '=cmd|/C calc' })]);
+        expect(rows[0].User).toBe("'=cmd|/C calc");
+      });
+
+      it('does not alter a Quantity cell that legitimately starts with "+"', () => {
+        const rows = mapMovementsToRows([mockMovement({ quantity: 10 })]);
+        expect(rows[0].Quantity).toBe('+10');
+      });
+
+      it('leaves a benign Reason untouched', () => {
+        const rows = mapMovementsToRows([mockMovement({ reason: 'damage' })]);
+        expect(rows[0].Reason).toBe('damage');
+      });
+    });
+
+    describe('mapWantListToRows', () => {
+      it('prefixes an Item Name starting with a formula-trigger character', () => {
+        const rows = mapWantListToRows([mockWantListItem({ name: '=HYPERLINK("http://evil.com","x")' })]);
+        expect(rows[0]['Item Name']).toBe('\'=HYPERLINK("http://evil.com","x")');
+      });
+
+      it('prefixes a Category starting with a formula-trigger character', () => {
+        const rows = mapWantListToRows([mockWantListItem({ category: '+CustomCategory' })]);
+        expect(rows[0].Category).toBe("'+CustomCategory");
+      });
+
+      it('leaves a benign Item Name/Category untouched', () => {
+        const rows = mapWantListToRows([mockWantListItem({ name: 'Amoxicillin 250mg', category: 'medicine' })]);
+        expect(rows[0]['Item Name']).toBe('Amoxicillin 250mg');
+        expect(rows[0].Category).toBe('medicine');
+      });
+    });
+  });
+
   describe('toBOMPrefixedCSV', () => {
     it('prepends the UTF-8 BOM character', () => {
       const csv = toBOMPrefixedCSV([{ a: 1 }]);

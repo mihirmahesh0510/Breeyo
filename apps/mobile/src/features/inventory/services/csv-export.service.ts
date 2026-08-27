@@ -49,6 +49,22 @@ export function formatDateStamp(date: Date): string {
   return `${year}${month}${day}`;
 }
 
+/**
+ * WR-7: neutralizes CSV/formula injection. A cell value beginning with `=`,
+ * `+`, `-`, or `@` is interpreted as a formula by Excel/Sheets/Numbers when
+ * the exported CSV is opened -- prefixing it with `'` forces literal-text
+ * treatment. Papaparse's `Papa.unparse` (used below in `toBOMPrefixedCSV`)
+ * only performs RFC-4180 quote/comma/newline escaping and does not guard
+ * against this, so user-controlled fields (item names, stock-adjustment
+ * reasons, user names, categories) must be sanitized before they reach it.
+ * Applied only to specific user-controlled fields, not whole rows, so that
+ * legitimately "+"-prefixed values (e.g. the Quantity column below) are
+ * left untouched.
+ */
+function sanitizeCsvCell(value: string): string {
+  return /^[=+\-@]/.test(value) ? `'${value}` : value;
+}
+
 export interface StockMovementCSVRow {
   Date: string;
   Type: string;
@@ -73,9 +89,9 @@ export function mapMovementsToRows(movements: StockMovement[]): StockMovementCSV
     Type: m.type,
     Quantity: m.quantity > 0 ? `+${m.quantity}` : String(m.quantity),
     Batch: m.batchId ?? '-',
-    Reason: m.reason ?? '-',
+    Reason: m.reason != null ? sanitizeCsvCell(m.reason) : '-',
     'Running Total': m.runningTotal,
-    User: m.userName,
+    User: sanitizeCsvCell(m.userName),
   }));
 }
 
@@ -90,8 +106,8 @@ export interface WantListCSVRow {
 
 export function mapWantListToRows(items: WantListItem[]): WantListCSVRow[] {
   return items.map((item) => ({
-    'Item Name': item.name,
-    Category: item.category,
+    'Item Name': sanitizeCsvCell(item.name),
+    Category: sanitizeCsvCell(item.category),
     Unit: item.unit,
     'Current Stock': item.currentStock,
     'Par Level': item.parLevel,

@@ -366,11 +366,27 @@ export class InventoryWebService {
   }
 }
 
-function csvEscape(value: string): string {
-  if (/[",\n]/.test(value)) {
-    return `"${value.replace(/"/g, '""')}"`;
+/**
+ * WR-7: neutralizes CSV/formula injection. A cell value beginning with `=`,
+ * `+`, `-`, or `@` is interpreted as a formula by Excel/Sheets when the
+ * export is opened -- prefixing it with `'` forces literal-text treatment.
+ * Must run before RFC-4180 quote/comma escaping below, since that escaping
+ * only wraps the value in quotes and would not itself stop a leading
+ * formula character from being interpreted.
+ */
+function sanitizeFormulaInjection(value: string): string {
+  if (/^[=+\-@]/.test(value)) {
+    return `'${value}`;
   }
   return value;
+}
+
+function csvEscape(value: string): string {
+  const sanitized = sanitizeFormulaInjection(value);
+  if (/[",\n]/.test(sanitized)) {
+    return `"${sanitized.replace(/"/g, '""')}"`;
+  }
+  return sanitized;
 }
 
 /**

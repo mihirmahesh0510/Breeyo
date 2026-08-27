@@ -305,4 +305,68 @@ describe('InventoryWebService analytics exports (D-36)', () => {
     expect(Buffer.isBuffer(pdf)).toBe(true);
     expect(pdf.subarray(0, 5).toString('latin1')).toBe('%PDF-');
   });
+
+  // WR-7: user-controlled item names must not be able to trigger spreadsheet
+  // formula execution when the CSV export is opened in Excel/Sheets.
+  it('sanitizes leading formula-trigger characters (=, +, -, @) in item names before CSV export', async () => {
+    const db = makeDb();
+    db.$queryRaw = vi
+      .fn()
+      .mockResolvedValue([
+        { itemId: 'item_1', itemName: '=HYPERLINK("http://evil.com","x")', dispensedQty: 12 },
+      ]);
+
+    const parLevelAlertService = makeParLevelAlertService();
+    parLevelAlertService.getExpiringSoonItems = vi.fn().mockResolvedValue([
+      {
+        batchId: 'batch_1',
+        itemId: 'item_1',
+        itemName: '+1+1',
+        lotNumber: 'LOT-A',
+        expiryDate: new Date('2026-09-01'),
+        currentQty: 40,
+        unit: 'tablets',
+      },
+    ]);
+    parLevelAlertService.getLowStockItems = vi.fn().mockResolvedValue([
+      {
+        id: 'item_2',
+        name: "-2+3+cmd|' /C calc'!A1",
+        category: 'medicine',
+        unit: 'tablets',
+        sellingPrice: 5.5,
+        parLevel: 50,
+        currentStock: 5,
+      },
+      {
+        id: 'item_3',
+        name: '@SUM(1+1)',
+        category: 'medicine',
+        unit: 'tablets',
+        sellingPrice: 5.5,
+        parLevel: 50,
+        currentStock: 3,
+      },
+    ]);
+
+    const { service } = buildService({ db, parLevelAlertService });
+    const csv = await service.exportAnalyticsCsv(CLINIC_ID);
+
+    // '=' case: RFC-4180 quoting still applies (embedded quotes/comma), but the
+    // cell content itself must be neutralized with a leading literal-text marker.
+    expect(csv).toContain('"\'=HYPERLINK(');
+    expect(csv).not.toContain('"=HYPERLINK(');
+
+    // '+' case: no RFC-4180 quoting needed, so the raw field is the whole story.
+    expect(csv).toContain(",'+1+1,");
+    expect(csv).not.toContain(',+1+1,');
+
+    // '-' case
+    expect(csv).toContain(",'-2+3+cmd|' /C calc'!A1,");
+    expect(csv).not.toContain(",-2+3+cmd|' /C calc'!A1,");
+
+    // '@' case
+    expect(csv).toContain(",'@SUM(1+1),");
+    expect(csv).not.toContain(',@SUM(1+1),');
+  });
 });
