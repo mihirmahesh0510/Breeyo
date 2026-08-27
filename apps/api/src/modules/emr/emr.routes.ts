@@ -24,6 +24,8 @@ import { StockValidatorService } from '../billing/stock-validator.service.js';
 import { StockMovementService } from '../inventory/stock-movement.service.js';
 import { authenticate } from '../../middleware/authenticate.js';
 import { tenantContext } from '../../middleware/tenant-context.js';
+import { requirePermission } from '../../middleware/authorize.js';
+import { PermissionService } from '../auth/permission.service.js';
 import type { TenantPrismaClient } from '../../lib/prisma-rls.js';
 
 export default async function emrRoutes(fastify: FastifyInstance) {
@@ -69,6 +71,18 @@ export default async function emrRoutes(fastify: FastifyInstance) {
 
   const controller = createEmrController(buildServices, notificationBus);
 
+  // AC-3 (access-control audit): `auth.routes.ts`'s
+  // `fastify.decorate('permissionService', ...)` never reaches this sibling
+  // `app.register(...)` call -- Fastify's plugin encapsulation scopes it to
+  // auth's own child context. Same wall patient/queue/billing/inventory/
+  // whatsapp/scheduling/clinic routes each hit and resolved the same way:
+  // re-decorate locally, guarded so a shared decoration (if one ever is
+  // reachable) is not clobbered.
+  const permissionService = new PermissionService(fastify.prisma, fastify.redis); // D-30 exemption
+  if (!fastify.hasDecorator('permissionService')) {
+    fastify.decorate('permissionService', permissionService);
+  }
+
   // Plan 10-03 (PLT-03, D-05 to D-09, D-24): mobile offline consultation
   // draft replay on reconnect. Deliberately its own controller/service,
   // mirroring `queue.routes.ts`'s `queueSyncController` -- clinical replay
@@ -92,25 +106,33 @@ export default async function emrRoutes(fastify: FastifyInstance) {
   const onDutyRosterProvider = new ClinicVetRosterProvider(new AvailabilityRepository(fastify.prisma));
 
   const consultationSyncController = createConsultationSyncController(
-    (db) => buildConsultationOfflineReplayService(db, replayBroadcast),
+    (db) => buildConsultationOfflineReplayService(db, permissionService, replayBroadcast),
     (db) => buildConsultationConflictResolutionService(db, replayBroadcast, onDutyRosterProvider),
   );
 
-  const preHandler = [authenticate, tenantContext];
+  // AC-3 (access-control audit): this module had zero permission checks --
+  // every route below ran on bare `[authenticate, tenantContext]`, so any
+  // authenticated clinic member (Front Desk, Inventory Manager -- neither
+  // holds VIEW_EMR/EDIT_EMR per seed.ts) could read or write clinical
+  // records. Mirrors the `viewHandler`/`editHandler` split
+  // `patient.routes.ts`/`queue.routes.ts` already use: reads require
+  // VIEW_EMR, every mutation requires EDIT_EMR.
+  const viewHandler = [authenticate, tenantContext, requirePermission('VIEW_EMR')];
+  const editHandler = [authenticate, tenantContext, requirePermission('EDIT_EMR')];
 
   // Consultation lifecycle
-  fastify.post('/consultations', { preHandler, handler: controller.createHandler });
-  fastify.get('/consultations/:consultationId', { preHandler, handler: controller.getConsultationHandler });
-  fastify.get('/consultations/:consultationId/draft', { preHandler, handler: controller.getDraftHandler });
-  fastify.patch('/consultations/:consultationId/draft', { preHandler, handler: controller.saveDraftHandler });
-  fastify.post('/consultations/:consultationId/finalize', { preHandler, handler: controller.finalizeHandler });
-  fastify.post('/consultations/:consultationId/addendum', { preHandler, handler: controller.addAddendumHandler });
+  fastify.post('/consultations', { preHandler: editHandler, handler: controller.createHandler });
+  fastify.get('/consultations/:consultationId', { preHandler: viewHandler, handler: controller.getConsultationHandler });
+  fastify.get('/consultations/:consultationId/draft', { preHandler: viewHandler, handler: controller.getDraftHandler });
+  fastify.patch('/consultations/:consultationId/draft', { preHandler: editHandler, handler: controller.saveDraftHandler });
+  fastify.post('/consultations/:consultationId/finalize', { preHandler: editHandler, handler: controller.finalizeHandler });
+  fastify.post('/consultations/:consultationId/addendum', { preHandler: editHandler, handler: controller.addAddendumHandler });
 
   // Plan 10-03: mobile offline consultation draft replay on reconnect.
   // Registered as a fixed segment (`/consultations/sync/replay`), same as
   // queue's `/queue/sync/replay` -- Fastify's radix router does not confuse
   // it with the parametric `/consultations/:consultationId` routes above.
-  fastify.post('/consultations/sync/replay', { preHandler, handler: consultationSyncController.replayHandler });
+  fastify.post('/consultations/sync/replay', { preHandler: editHandler, handler: consultationSyncController.replayHandler });
 
   // Verify-fix 10.5: moves a `SyncConflictRecord` off `OPEN`/`GUIDED_RETRY`/
   // `ESCALATED` via one of `ClinicalConflictResolutionSheet.tsx`'s four
@@ -121,18 +143,18 @@ export default async function emrRoutes(fastify: FastifyInstance) {
   // `/consultations/:consultationId/*` routes below by its trailing path.
   fastify.post(
     '/consultations/:consultationId/conflicts/:conflictId/resolve',
-    { preHandler, handler: consultationSyncController.resolveHandler },
+    { preHandler: editHandler, handler: consultationSyncController.resolveHandler },
   );
 
   // Lock management
-  fastify.post('/consultations/:consultationId/heartbeat', { preHandler, handler: controller.heartbeatHandler });
-  fastify.get('/consultations/:consultationId/lock', { preHandler, handler: controller.checkLockHandler });
-  fastify.post('/consultations/:consultationId/lock', { preHandler, handler: controller.acquireLockHandler });
-  fastify.delete('/consultations/:consultationId/lock', { preHandler, handler: controller.releaseLockHandler });
+  fastify.post('/consultations/:consultationId/heartbeat', { preHandler: editHandler, handler: controller.heartbeatHandler });
+  fastify.get('/consultations/:consultationId/lock', { preHandler: viewHandler, handler: controller.checkLockHandler });
+  fastify.post('/consultations/:consultationId/lock', { preHandler: editHandler, handler: controller.acquireLockHandler });
+  fastify.delete('/consultations/:consultationId/lock', { preHandler: editHandler, handler: controller.releaseLockHandler });
 
   // Dosage validation
-  fastify.post('/consultations/validate-dosage', { preHandler, handler: controller.validateDosageHandler });
+  fastify.post('/consultations/validate-dosage', { preHandler: editHandler, handler: controller.validateDosageHandler });
 
   // Medical history timeline (EMR-04)
-  fastify.get('/pets/:petId/history', { preHandler, handler: controller.getHistoryHandler });
+  fastify.get('/pets/:petId/history', { preHandler: viewHandler, handler: controller.getHistoryHandler });
 }

@@ -61,6 +61,21 @@ export class EmrService {
   ) {
     const parsed = createConsultationSchema.parse(input);
 
+    // Security (AC-4): verify the referenced pet actually belongs to the
+    // caller's clinic before creating anything — otherwise a caller from
+    // another clinic could pass a valid-looking petId from a DIFFERENT
+    // clinic and get a Consultation row created against it. RLS cannot
+    // catch this: it protects the Consultation row being written, not a
+    // foreign-key target (`Pet.clinicId`) in another table. Mirrors
+    // `saveDraft`'s consultationId ownership check just below.
+    const pet = await this.repository.findPetInClinic(clinicId, parsed.petId);
+    if (!pet) {
+      const error = new Error('Pet not found') as Error & { statusCode: number; code: string };
+      error.statusCode = 404;
+      error.code = 'PET_NOT_FOUND';
+      throw error;
+    }
+
     // D-06: Check for active consultation
     const existing = await this.repository.findActiveConsultation(clinicId, parsed.petId);
     if (existing) {

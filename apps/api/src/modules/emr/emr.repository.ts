@@ -31,6 +31,25 @@ export class EmrRepository {
   }
 
   /**
+   * Finds a pet within the calling clinic.
+   *
+   * AC-4 (access-control audit): `createConsultation` took `clinicId` and
+   * `petId` as independent parameters and never checked the referenced pet
+   * actually belongs to that clinic before creating the `Consultation` row —
+   * RLS protects the row being written (`Consultation.clinicId`), not a
+   * foreign-key target in another table (`Pet.clinicId`). Mirrors
+   * `QueueRepository.findPetInClinic`'s exact shape (D-30 defence in depth:
+   * an explicit clinicId filter that fails cleanly with a 404 rather than
+   * surfacing a constraint error).
+   */
+  async findPetInClinic(clinicId: string, petId: string) {
+    return this.prisma.pet.findFirst({
+      where: { id: petId, clinicId },
+      select: { id: true },
+    });
+  }
+
+  /**
    * Finds an active (draft) consultation for a pet at a clinic.
    * D-06: One active consultation per patient at a time.
    */

@@ -8,6 +8,7 @@ import {
   type ConsultationOfflineReplayGateway,
   type ConsultationReplayReceiptStore,
   type ClinicalConflictRecordStore,
+  type PermissionsProvider,
 } from '../services/consultationOfflineReplay.service.js';
 import {
   ConsultationConflictResolutionService,
@@ -60,6 +61,11 @@ function validationError(reply: FastifyReply, issues: { message: string }[]) {
 
 export function buildConsultationOfflineReplayService(
   db: TenantPrismaClient,
+  // AC-3: required, no default -- `emr.routes.ts` wires in the same
+  // plugin-scope `PermissionService` its `editHandler`/`viewHandler`
+  // preHandlers use, matching `dispense.routes.ts`'s
+  // `buildInventoryOfflineReplayService(db, permissionService, ...)` call.
+  permissionsProvider: PermissionsProvider,
   broadcast: ReplayBroadcastService = new ReplayBroadcastService(null),
 ): ConsultationOfflineReplayService {
   return new ConsultationOfflineReplayService(
@@ -76,6 +82,7 @@ export function buildConsultationOfflineReplayService(
     new EmrRepository(db) as unknown as ConsultationOfflineReplayGateway,
     db.syncReplayReceipt as unknown as ConsultationReplayReceiptStore,
     db.syncConflictRecord as unknown as ClinicalConflictRecordStore,
+    permissionsProvider,
     broadcast,
   );
 }

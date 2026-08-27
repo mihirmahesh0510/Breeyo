@@ -84,19 +84,30 @@ function createMockConflictRecords(): ClinicalConflictRecordStore {
   };
 }
 
+/** AC-3: every test in this file exercises the replay's OWN logic assuming
+ *  the caller is authorized, so this default grants `EDIT_EMR` -- the
+ *  dedicated permission-enforcement suite below overrides it per test. */
+function createMockPermissionsProvider(permissions: string[] = ['EDIT_EMR']) {
+  return {
+    getUserPermissions: vi.fn().mockResolvedValue(permissions),
+  };
+}
+
 const context = { clinicId: CLINIC_ID, userId: USER_ID, deviceId: DEVICE_A };
 
 describe('ConsultationOfflineReplayService', () => {
   let gateway: ReturnType<typeof createMockGateway>;
   let receipts: ReturnType<typeof createMockReceipts>;
   let conflictRecords: ReturnType<typeof createMockConflictRecords>;
+  let permissionsProvider: ReturnType<typeof createMockPermissionsProvider>;
   let service: ConsultationOfflineReplayService;
 
   beforeEach(() => {
     gateway = createMockGateway();
     receipts = createMockReceipts();
     conflictRecords = createMockConflictRecords();
-    service = new ConsultationOfflineReplayService(gateway, receipts, conflictRecords);
+    permissionsProvider = createMockPermissionsProvider();
+    service = new ConsultationOfflineReplayService(gateway, receipts, conflictRecords, permissionsProvider);
   });
 
   describe('idempotency', () => {
@@ -138,6 +149,46 @@ describe('ConsultationOfflineReplayService', () => {
 
       expect(result.status).toBe('REJECTED');
       expect(gateway.saveDraft).not.toHaveBeenCalled();
+    });
+  });
+
+  // AC-3 (access-control audit): this replay path had NO permission check at
+  // all -- a device replaying through `/consultations/sync/replay` could
+  // write/overwrite clinical drafts regardless of whether the authenticated
+  // user actually held EDIT_EMR. Exercises the service directly (bypassing
+  // `emr.routes.ts`'s own route-level `editHandler` gate) to prove the
+  // enforcement lives in the service itself, not only at the route.
+  describe('permission enforcement (AC-3)', () => {
+    it('rejects a replay from a user without EDIT_EMR with a 403, before touching the gateway at all', async () => {
+      permissionsProvider.getUserPermissions.mockResolvedValue(['VIEW_EMR']);
+
+      await expect(service.replayConsultationDraft(context, envelope())).rejects.toMatchObject({
+        statusCode: 403,
+        code: 'FORBIDDEN',
+      });
+
+      expect(permissionsProvider.getUserPermissions).toHaveBeenCalledWith(USER_ID, CLINIC_ID);
+      expect(gateway.getConsultation).not.toHaveBeenCalled();
+      expect(gateway.saveDraft).not.toHaveBeenCalled();
+      expect(receipts.create).not.toHaveBeenCalled();
+    });
+
+    it('rejects a replay from a user with no permissions at all', async () => {
+      permissionsProvider.getUserPermissions.mockResolvedValue([]);
+
+      await expect(service.replayConsultationDraft(context, envelope())).rejects.toMatchObject({
+        statusCode: 403,
+        code: 'FORBIDDEN',
+      });
+    });
+
+    it('allows a replay to proceed for a user with EDIT_EMR', async () => {
+      permissionsProvider.getUserPermissions.mockResolvedValue(['EDIT_EMR']);
+
+      const result = await service.replayConsultationDraft(context, envelope());
+
+      expect(result.status).toBe('APPLIED');
+      expect(permissionsProvider.getUserPermissions).toHaveBeenCalledWith(USER_ID, CLINIC_ID);
     });
   });
 
@@ -330,7 +381,13 @@ describe('ConsultationOfflineReplayService replay-broadcast wiring (verify-fix 1
       emitReplayConflictOpened: vi.fn(),
       emitReplayFailureEscalated: vi.fn(),
     };
-    service = new ConsultationOfflineReplayService(gateway, receipts, conflictRecords, broadcast as unknown as ReplayBroadcastService);
+    service = new ConsultationOfflineReplayService(
+      gateway,
+      receipts,
+      conflictRecords,
+      createMockPermissionsProvider(),
+      broadcast as unknown as ReplayBroadcastService,
+    );
   });
 
   it('emits a clinic-scoped REPLAY_APPLIED broadcast after a non-conflicting draft edit is applied', async () => {
