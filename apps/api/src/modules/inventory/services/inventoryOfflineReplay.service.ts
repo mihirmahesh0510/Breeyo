@@ -90,6 +90,9 @@ export interface InventoryReplayReceiptStore {
     where: { clinicId_deviceId_operationId: { clinicId: string; deviceId: string; operationId: string } };
   }): Promise<{ operationId: string } | null>;
   create(args: { data: Record<string, unknown> }): Promise<{ operationId: string }>;
+  delete(args: {
+    where: { clinicId_deviceId_operationId: { clinicId: string; deviceId: string; operationId: string } };
+  }): Promise<unknown>;
 }
 
 export interface InventoryOfflineReplayContext {
@@ -296,13 +299,14 @@ export class InventoryOfflineReplayService {
       // WR-1: the `findUnique` in `replayInventoryOperation` and this
       // `create` are not transactional, so a genuinely concurrent duplicate
       // replay of the same operationId can both see no existing receipt and
-      // both reach here (both after already running `run()` above, in
-      // `applyOrReview`). The `[clinicId, deviceId, operationId]` unique
-      // constraint lets exactly one of them win; the loser hits P2002.
-      // Matching `replayIngest.service.ts`'s "Verify-fix 10.9" pattern:
-      // treat that as "already acknowledged by the request that won the
-      // race" and let the caller return an idempotent-duplicate outcome
-      // instead of this surfacing as an unhandled 500.
+      // both reach here. `applyOrReview` calls this BEFORE running any
+      // gateway mutation, so the `[clinicId, deviceId, operationId]` unique
+      // constraint lets exactly one of them win the reservation; the loser
+      // hits P2002 here and never runs the mutation at all. Matching
+      // `replayIngest.service.ts`'s "Verify-fix 10.9" pattern: treat that as
+      // "already acknowledged by the request that won the race" and let the
+      // caller return an idempotent-duplicate outcome instead of this
+      // surfacing as an unhandled 500.
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
         const racedReceipt = await this.replayReceipts.findUnique({
           where: {
@@ -322,15 +326,41 @@ export class InventoryOfflineReplayService {
   }
 
   /**
-   * Runs a gateway mutation, recording a receipt and returning `APPLIED` on
-   * success. If the gateway throws a KNOWN mismatch error (stock/batch/item
-   * state genuinely diverged), a lighter operational review is created
-   * instead of the mismatch propagating as a raw failure (D-10) -- a
-   * receipt is still recorded so a future flapping replay of this exact
-   * operationId resolves as an idempotent no-op rather than creating a
-   * second review task. Any OTHER (unexpected) error is rethrown unchanged
-   * -- this service must never swallow a genuine infrastructure failure
-   * into a false "reviewed" state.
+   * WR-1: releases a receipt this same request just reserved (in
+   * `applyOrReview`, below) after its gateway mutation turned out to fail
+   * with an unexpected error -- so a legitimate later retry of this exact
+   * operationId is not permanently and incorrectly told "already handled"
+   * for a mutation that never actually applied.
+   */
+  private async releaseReceipt(context: InventoryOfflineReplayContext, operationId: string): Promise<void> {
+    await this.replayReceipts.delete({
+      where: {
+        clinicId_deviceId_operationId: {
+          clinicId: context.clinicId,
+          deviceId: context.deviceId,
+          operationId,
+        },
+      },
+    });
+  }
+
+  /**
+   * WR-1: reserves this operationId's receipt FIRST -- before the gateway
+   * mutation ever runs -- so two genuinely concurrent replays of the same
+   * operationId cannot both pass the earlier `findUnique` check and both
+   * execute `run()` (e.g. both dispense stock). Only the request that wins
+   * the receipt-create race proceeds to run the mutation at all; the loser
+   * returns `ACKNOWLEDGED_DUPLICATE` immediately, untouched.
+   *
+   * If the gateway then throws a KNOWN mismatch error (stock/batch/item
+   * state genuinely diverged), the already-reserved receipt is kept (so a
+   * future flapping replay of this exact operationId resolves as an
+   * idempotent no-op rather than creating a second review task) and a
+   * lighter operational review is created instead of the mismatch
+   * propagating as a raw failure (D-10). Any OTHER (unexpected) error
+   * releases the reservation and rethrows unchanged -- this service must
+   * never swallow a genuine infrastructure failure into a false "reviewed"
+   * state, nor permanently lock out a retry of a mutation that never ran.
    */
   private async applyOrReview(
     context: InventoryOfflineReplayContext,
@@ -339,29 +369,27 @@ export class InventoryOfflineReplayService {
     itemId: string,
     run: () => Promise<void>,
   ): Promise<InventoryReplayOutcome> {
+    const reservation = await this.recordReceipt(context, operationId, entityType, itemId);
+    if (reservation.raced) {
+      // WR-1: lost the race to reserve this operationId's receipt -- a
+      // concurrent replay of the SAME operation already won it and is the
+      // request of record, so this request acknowledges without ever
+      // running the mutation.
+      return { operationId, status: 'ACKNOWLEDGED_DUPLICATE', itemId };
+    }
+
     try {
       await run();
-      const receiptResult = await this.recordReceipt(context, operationId, entityType, itemId);
-      if (receiptResult.raced) {
-        // WR-1: lost the race to record this operationId's receipt -- a
-        // concurrent replay of the SAME operation already won and is the
-        // request of record, so this request acknowledges rather than
-        // reporting a second (conflicting) APPLIED outcome.
-        return { operationId, status: 'ACKNOWLEDGED_DUPLICATE', itemId };
-      }
       // Verify-fix 10.3: an open browser inventory view watching this item
       // should hear about the applied replay without waiting for its own poll.
       this.broadcast.emitReplayApplied({ clinicId: context.clinicId, domain: 'inventory', entityIds: [itemId] });
       return { operationId, status: 'APPLIED', itemId };
     } catch (error) {
       if (!isKnownMismatchError(error)) {
+        await this.releaseReceipt(context, operationId);
         throw error;
       }
 
-      const receiptResult = await this.recordReceipt(context, operationId, entityType, itemId);
-      if (receiptResult.raced) {
-        return { operationId, status: 'ACKNOWLEDGED_DUPLICATE', itemId };
-      }
       const reviewTaskId = await this.conflictReview.createInventoryReviewTask(context, {
         operationId,
         itemId,

@@ -75,6 +75,8 @@ function createMockReceipts(): QueueReplayReceiptStore {
   return {
     findUnique: vi.fn().mockResolvedValue(null),
     create: vi.fn().mockResolvedValue({ operationId: 'op-1' }),
+    update: vi.fn().mockResolvedValue(undefined),
+    delete: vi.fn().mockResolvedValue(undefined),
   };
 }
 
@@ -146,6 +148,35 @@ describe('QueueOfflineReplayService', () => {
 
       expect(result.status).toBe('ACKNOWLEDGED_DUPLICATE');
       expect(result.operationId).toBe('op-1');
+    });
+
+    it('never applies the check-in mutation more than once when two genuinely concurrent replays race for the same operationId', async () => {
+      vi.mocked(gateway.createEntry).mockResolvedValue(makeEntry({ position: 1 }));
+
+      vi.mocked(receipts.findUnique)
+        .mockResolvedValueOnce(null) // request A's initial existingReceipt check
+        .mockResolvedValueOnce(null) // request B's initial existingReceipt check
+        .mockResolvedValueOnce({ operationId: 'op-1' }); // request B's re-fetch after losing the P2002 race
+      vi.mocked(receipts.create)
+        .mockResolvedValueOnce({ operationId: 'op-1' }) // request A wins the reservation
+        .mockRejectedValueOnce(
+          new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+            code: 'P2002',
+            clientVersion: '6.19.3',
+          }),
+        ); // request B loses it
+
+      const [resultA, resultB] = await Promise.all([
+        service.replayQueueOperation(context, baseEnvelope()),
+        service.replayQueueOperation(context, baseEnvelope()),
+      ]);
+
+      const statuses = [resultA.status, resultB.status].sort();
+      expect(statuses).toEqual(['ACKNOWLEDGED_DUPLICATE', 'APPLIED']);
+      // The double-check-in bug WR-1 fixes: before the fix, both requests
+      // ran `gateway.createEntry` before the receipt race was ever resolved,
+      // creating two live queue entries for the same offline check-in.
+      expect(gateway.createEntry).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -257,6 +288,8 @@ describe('QueueOfflineReplayService', () => {
       const fakeReceipts: QueueReplayReceiptStore = {
         findUnique: vi.fn().mockResolvedValue(null),
         create: vi.fn().mockResolvedValue({ operationId: 'noop' }),
+        update: vi.fn().mockResolvedValue(undefined),
+        delete: vi.fn().mockResolvedValue(undefined),
       };
 
       const fakeService = new QueueOfflineReplayService(fakeGateway, fakeReceipts, fakeReviewTasks, () => FIXED_NOW);

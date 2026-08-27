@@ -48,6 +48,7 @@ function createMockReceipts(): InventoryReplayReceiptStore {
   return {
     findUnique: vi.fn().mockResolvedValue(null),
     create: vi.fn().mockResolvedValue({ operationId: 'op-1' }),
+    delete: vi.fn().mockResolvedValue(undefined),
   };
 }
 
@@ -174,6 +175,42 @@ describe('InventoryOfflineReplayService', () => {
 
       expect(result.status).toBe('ACKNOWLEDGED_DUPLICATE');
       expect(result.operationId).toBe('op-1');
+      // WR-1: the loser of the receipt-create race must never have run the
+      // underlying gateway mutation at all -- otherwise stock is deducted
+      // twice even though only one request reports APPLIED.
+      expect(gateway.dispense).not.toHaveBeenCalled();
+    });
+
+    it('never applies the gateway mutation more than once when two genuinely concurrent replays race for the same operationId', async () => {
+      vi.mocked(gateway.dispense).mockResolvedValue({
+        deductions: [{ batchId: 'batch-1', lotNumber: null, quantity: 3 }],
+        newTotal: 7,
+        movementIds: ['movement-1'],
+      } as any);
+
+      vi.mocked(receipts.findUnique)
+        .mockResolvedValueOnce(null) // request A's initial existingReceipt check
+        .mockResolvedValueOnce(null) // request B's initial existingReceipt check
+        .mockResolvedValueOnce({ operationId: 'op-1' }); // request B's re-fetch after losing the P2002 race
+      vi.mocked(receipts.create)
+        .mockResolvedValueOnce({ operationId: 'op-1' }) // request A wins the reservation
+        .mockRejectedValueOnce(
+          new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+            code: 'P2002',
+            clientVersion: '6.19.3',
+          }),
+        ); // request B loses it
+
+      const [resultA, resultB] = await Promise.all([
+        service.replayInventoryOperation(context, baseEnvelope()),
+        service.replayInventoryOperation(context, baseEnvelope()),
+      ]);
+
+      const statuses = [resultA.status, resultB.status].sort();
+      expect(statuses).toEqual(['ACKNOWLEDGED_DUPLICATE', 'APPLIED']);
+      // The double-dispense bug WR-1 fixes: before the fix, both requests ran
+      // `gateway.dispense` before the receipt race was ever resolved.
+      expect(gateway.dispense).toHaveBeenCalledTimes(1);
     });
   });
 

@@ -76,6 +76,7 @@ function createMockReceipts(): ConsultationReplayReceiptStore {
   return {
     findUnique: vi.fn().mockResolvedValue(null),
     create: vi.fn().mockResolvedValue({ operationId: 'op-1' }),
+    delete: vi.fn().mockResolvedValue(undefined),
   };
 }
 
@@ -153,6 +154,37 @@ describe('ConsultationOfflineReplayService', () => {
 
       expect(result.status).toBe('ACKNOWLEDGED_DUPLICATE');
       expect(result.operationId).toBe('op-1');
+    });
+
+    it('never applies the draft-save mutation more than once when two genuinely concurrent replays race for the same operationId', async () => {
+      const base = baseline();
+      const local = { ...base, careInstructions: 'Offline-only addition.' };
+      vi.mocked(gateway.loadDraft).mockResolvedValue(base);
+
+      vi.mocked(receipts.findUnique)
+        .mockResolvedValueOnce(null) // request A's initial existingReceipt check
+        .mockResolvedValueOnce(null) // request B's initial existingReceipt check
+        .mockResolvedValueOnce({ operationId: 'op-1' }); // request B's re-fetch after losing the P2002 race
+      vi.mocked(receipts.create)
+        .mockResolvedValueOnce({ operationId: 'op-1' }) // request A wins the reservation
+        .mockRejectedValueOnce(
+          new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+            code: 'P2002',
+            clientVersion: '6.19.3',
+          }),
+        ); // request B loses it
+
+      const env = envelope({}, { baseline: base, draft: local });
+      const [resultA, resultB] = await Promise.all([
+        service.replayConsultationDraft(context, env),
+        service.replayConsultationDraft(context, env),
+      ]);
+
+      const statuses = [resultA.status, resultB.status].sort();
+      expect(statuses).toEqual(['ACKNOWLEDGED_DUPLICATE', 'APPLIED']);
+      // The double-write bug WR-1 fixes: before the fix, both requests ran
+      // `gateway.saveDraft` before the receipt race was ever resolved.
+      expect(gateway.saveDraft).toHaveBeenCalledTimes(1);
     });
   });
 
