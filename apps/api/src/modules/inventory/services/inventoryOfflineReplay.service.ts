@@ -378,45 +378,59 @@ export class InventoryOfflineReplayService {
       return { operationId, status: 'ACKNOWLEDGED_DUPLICATE', itemId };
     }
 
+    let mismatchError: unknown;
     try {
       await run();
+    } catch (error) {
+      mismatchError = error;
+    }
+
+    if (mismatchError === undefined) {
       // Verify-fix 10.3: an open browser inventory view watching this item
       // should hear about the applied replay without waiting for its own poll.
+      // A failure here happens AFTER `run()` already durably applied the
+      // mutation, so it must propagate without releasing the receipt --
+      // releasing it would let a retry re-run `run()` and double-apply.
       this.broadcast.emitReplayApplied({ clinicId: context.clinicId, domain: 'inventory', entityIds: [itemId] });
       return { operationId, status: 'APPLIED', itemId };
-    } catch (error) {
-      if (!isKnownMismatchError(error)) {
-        await this.releaseReceipt(context, operationId);
-        throw error;
-      }
-
-      try {
-        const reviewTaskId = await this.conflictReview.createInventoryReviewTask(context, {
-          operationId,
-          itemId,
-          mismatch: {
-            operationType: ENTITY_TYPE_TO_OPERATION[entityType] ?? 'ADJUST',
-            itemId,
-            errorCode: error.code,
-            errorMessage: error.message,
-            requestedQuantity: error.requested,
-            availableQuantity: error.available,
-          },
-        });
-        // Verify-fix 10.3: D-05/D-10 -- a known mismatch produced a new
-        // unresolved review task, not a silent overwrite.
-        this.broadcast.emitReplayConflictOpened({ clinicId: context.clinicId, domain: 'inventory', entityIds: [itemId] });
-        return { operationId, status: 'REVIEW_CREATED', itemId, reviewTaskId };
-      } catch (reviewError) {
-        // WR-1: the mismatch mutation never applied and the review task
-        // never got created either, so the receipt reserved above does not
-        // yet reflect anything real -- release it so a legitimate retry of
-        // this operationId is not permanently told "already handled" with no
-        // review-queue trace to show for it.
-        await this.releaseReceipt(context, operationId);
-        throw reviewError;
-      }
     }
+
+    if (!isKnownMismatchError(mismatchError)) {
+      await this.releaseReceipt(context, operationId);
+      throw mismatchError;
+    }
+
+    let reviewTaskId: string;
+    try {
+      reviewTaskId = await this.conflictReview.createInventoryReviewTask(context, {
+        operationId,
+        itemId,
+        mismatch: {
+          operationType: ENTITY_TYPE_TO_OPERATION[entityType] ?? 'ADJUST',
+          itemId,
+          errorCode: mismatchError.code,
+          errorMessage: mismatchError.message,
+          requestedQuantity: mismatchError.requested,
+          availableQuantity: mismatchError.available,
+        },
+      });
+    } catch (reviewError) {
+      // WR-1: the mismatch mutation never applied and the review task
+      // never got created either, so the receipt reserved above does not
+      // yet reflect anything real -- release it so a legitimate retry of
+      // this operationId is not permanently told "already handled" with no
+      // review-queue trace to show for it.
+      await this.releaseReceipt(context, operationId);
+      throw reviewError;
+    }
+
+    // Verify-fix 10.3: D-05/D-10 -- a known mismatch produced a new
+    // unresolved review task, not a silent overwrite. This runs AFTER the
+    // review task already durably exists, so a failure here must not
+    // release the receipt -- that would let a retry create a duplicate
+    // review task for the same mismatch.
+    this.broadcast.emitReplayConflictOpened({ clinicId: context.clinicId, domain: 'inventory', entityIds: [itemId] });
+    return { operationId, status: 'REVIEW_CREATED', itemId, reviewTaskId };
   }
 
   private async replayReceive(

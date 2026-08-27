@@ -370,6 +370,7 @@ export class QueueOfflineReplayService {
         return { operationId, status: 'ACKNOWLEDGED_DUPLICATE', entryId: existingActive.id };
       }
 
+      let reviewTaskId: string;
       try {
         // D-34: auto-merge into the earlier-created entry -- keep its
         // check-in time and position, discard the duplicate.
@@ -390,30 +391,34 @@ export class QueueOfflineReplayService {
           await this.gateway.updateEntry(existingActive.id, { queuePriorityAt: incomingCheckedInAt });
         }
 
-        const reviewTaskId = await this.createOperationalReviewTask(context, {
+        reviewTaskId = await this.createOperationalReviewTask(context, {
           operationId,
           entryId: existingActive.id,
           note: `Duplicate offline check-in for the same patient merged into existing queue entry ${existingActive.id} (D-34).`,
         });
-        // Verify-fix 10.3: a merge still leaves a review note behind (D-10) --
-        // treated as a conflict-opened broadcast, not an applied one, so an
-        // open browser tab surfaces it for review rather than silently
-        // refreshing as if nothing needed a second look.
-        this.broadcast.emitReplayConflictOpened({
-          clinicId: context.clinicId,
-          domain: 'queue',
-          entityIds: [existingActive.id],
-        });
-        return {
-          operationId,
-          status: 'MERGED_DUPLICATE_CHECK_IN',
-          entryId: existingActive.id,
-          reviewTaskId,
-        };
       } catch (error) {
         await this.releaseReceipt(context, operationId);
         throw error;
       }
+
+      // Verify-fix 10.3: a merge still leaves a review note behind (D-10) --
+      // treated as a conflict-opened broadcast, not an applied one, so an
+      // open browser tab surfaces it for review rather than silently
+      // refreshing as if nothing needed a second look. This runs AFTER the
+      // review task already durably exists, so a failure here must not
+      // release the receipt -- that would let a retry create a duplicate
+      // review task for the same merge.
+      this.broadcast.emitReplayConflictOpened({
+        clinicId: context.clinicId,
+        domain: 'queue',
+        entityIds: [existingActive.id],
+      });
+      return {
+        operationId,
+        status: 'MERGED_DUPLICATE_CHECK_IN',
+        entryId: existingActive.id,
+        reviewTaskId,
+      };
     }
 
     // WR-1: reserve this operationId's receipt BEFORE `createEntry` runs --
@@ -545,15 +550,20 @@ export class QueueOfflineReplayService {
       return { operationId, status: 'ACKNOWLEDGED_DUPLICATE', entryId: entry.id };
     }
 
+    let updated: QueueEntryRecord;
     try {
-      const updated = await this.gateway.updateEntry(entry.id, updateData);
-      // Verify-fix 10.3: same broadcast the check-in path fires above.
-      this.broadcast.emitReplayApplied({ clinicId: context.clinicId, domain: 'queue', entityIds: [updated.id] });
-      return { operationId, status: 'APPLIED', entryId: updated.id };
+      updated = await this.gateway.updateEntry(entry.id, updateData);
     } catch (error) {
       await this.releaseReceipt(context, operationId);
       throw error;
     }
+
+    // Verify-fix 10.3: same broadcast the check-in path fires above. This
+    // runs AFTER `updateEntry` already durably committed, so a failure here
+    // must not release the receipt -- that would let a retry re-apply the
+    // same transition.
+    this.broadcast.emitReplayApplied({ clinicId: context.clinicId, domain: 'queue', entityIds: [updated.id] });
+    return { operationId, status: 'APPLIED', entryId: updated.id };
   }
 
   private async reviewInsteadOfOverwrite(
@@ -574,15 +584,20 @@ export class QueueOfflineReplayService {
       // creating a second one.
       return { operationId, status: 'ACKNOWLEDGED_DUPLICATE', entryId };
     }
+    let reviewTaskId: string;
     try {
-      const reviewTaskId = await this.createOperationalReviewTask(context, { operationId, entryId, note });
-      // Verify-fix 10.3: D-05 review-before-overwrite -- a browser tab
-      // watching this entry needs the conflict prompt, not a stale render.
-      this.broadcast.emitReplayConflictOpened({ clinicId: context.clinicId, domain: 'queue', entityIds: [entryId] });
-      return { operationId, status: 'REVIEW_CREATED', entryId, reviewTaskId };
+      reviewTaskId = await this.createOperationalReviewTask(context, { operationId, entryId, note });
     } catch (error) {
       await this.releaseReceipt(context, operationId);
       throw error;
     }
+
+    // Verify-fix 10.3: D-05 review-before-overwrite -- a browser tab
+    // watching this entry needs the conflict prompt, not a stale render.
+    // This runs AFTER the review task already durably exists, so a failure
+    // here must not release the receipt -- that would let a retry create a
+    // duplicate review task.
+    this.broadcast.emitReplayConflictOpened({ clinicId: context.clinicId, domain: 'queue', entityIds: [entryId] });
+    return { operationId, status: 'REVIEW_CREATED', entryId, reviewTaskId };
   }
 }

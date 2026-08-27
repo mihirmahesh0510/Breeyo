@@ -279,6 +279,19 @@ describe('ConsultationOfflineReplayService', () => {
       expect(result.status).toBe('APPLIED');
       expect(gateway.saveDraft).not.toHaveBeenCalled();
     });
+
+    it('releases the reserved receipt when saveDraft itself fails, so a legitimate retry is not permanently blocked', async () => {
+      const base = baseline();
+      const local = { ...base, careInstructions: 'Offline-only addition.' };
+      vi.mocked(gateway.loadDraft).mockResolvedValue(base);
+      vi.mocked(gateway.saveDraft).mockRejectedValue(new Error('database connection lost'));
+
+      await expect(
+        service.replayConsultationDraft(context, envelope({}, { baseline: base, draft: local })),
+      ).rejects.toThrow('database connection lost');
+
+      expect(receipts.delete).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe('SAFETY_CRITICAL clinical conflicts (D-05, D-06, D-09, D-24)', () => {
@@ -342,6 +355,19 @@ describe('ConsultationOfflineReplayService', () => {
       // rather than partially applying the safe fields underneath it.
       expect(result.status).toBe('CONFLICT_CREATED');
       expect(gateway.saveDraft).not.toHaveBeenCalled();
+    });
+
+    it('releases the reserved receipt when creating the conflict record itself fails, so a legitimate retry is not permanently blocked', async () => {
+      const base = baseline();
+      const local = { ...base, assessment: 'Offline device: suspected pancreatitis.' };
+      vi.mocked(gateway.loadDraft).mockResolvedValue({ ...base, assessment: 'Another device: suspected renal failure.' });
+      vi.mocked(conflictRecords.create).mockRejectedValue(new Error('transient db error creating conflict record'));
+
+      await expect(
+        service.replayConsultationDraft(context, envelope({}, { baseline: base, draft: local })),
+      ).rejects.toThrow('transient db error creating conflict record');
+
+      expect(receipts.delete).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -416,6 +442,19 @@ describe('ConsultationOfflineReplayService', () => {
       expect(result.status).toBe('ACKNOWLEDGED_DUPLICATE');
       expect(gateway.addAddendum).not.toHaveBeenCalled();
       expect(gateway.getConsultation).not.toHaveBeenCalled();
+    });
+
+    it('releases the reserved receipt when addAddendum itself fails, so a legitimate retry is not permanently blocked', async () => {
+      const base = baseline();
+      const local = { ...base, assessment: 'Owner reports improvement overnight.' };
+      vi.mocked(gateway.getConsultation).mockResolvedValue(makeConsultation({ status: 'finalized' }));
+      vi.mocked(gateway.addAddendum).mockRejectedValue(new Error('database connection lost'));
+
+      await expect(
+        service.replayConsultationDraft(context, envelope({}, { baseline: base, draft: local })),
+      ).rejects.toThrow('database connection lost');
+
+      expect(receipts.delete).toHaveBeenCalledTimes(1);
     });
   });
 });
@@ -496,5 +535,58 @@ describe('ConsultationOfflineReplayService replay-broadcast wiring (verify-fix 1
 
     expect(broadcast.emitReplayApplied).not.toHaveBeenCalled();
     expect(broadcast.emitReplayConflictOpened).not.toHaveBeenCalled();
+  });
+
+  it('does not release the reserved receipt when the applied broadcast fails after saveDraft already durably committed', async () => {
+    const base = baseline();
+    const local = { ...base, careInstructions: 'Offline-only addition.' };
+    vi.mocked(gateway.loadDraft).mockResolvedValue(base);
+    broadcast.emitReplayApplied.mockImplementation(() => {
+      throw new Error('socket emit failed');
+    });
+
+    await expect(
+      service.replayConsultationDraft(context, envelope({}, { baseline: base, draft: local })),
+    ).rejects.toThrow('socket emit failed');
+
+    // `saveDraft` already durably committed -- releasing the receipt here
+    // would let a retry re-apply the same draft write.
+    expect(receipts.delete).not.toHaveBeenCalled();
+  });
+
+  it('does not release the reserved receipt when the conflict-opened broadcast fails after the conflict record already durably committed', async () => {
+    const base = baseline();
+    const local = { ...base, assessment: 'Offline device: suspected pancreatitis.' };
+    vi.mocked(gateway.loadDraft).mockResolvedValue({ ...base, assessment: 'Another device: suspected renal failure.' });
+    broadcast.emitReplayConflictOpened.mockImplementation(() => {
+      throw new Error('socket emit failed');
+    });
+
+    await expect(
+      service.replayConsultationDraft(context, envelope({}, { baseline: base, draft: local })),
+    ).rejects.toThrow('socket emit failed');
+
+    // The conflict record already durably exists -- releasing the receipt
+    // here would let a retry create a duplicate conflict record.
+    expect(receipts.delete).not.toHaveBeenCalled();
+    expect(conflictRecords.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not release the reserved receipt when the applied broadcast fails after addAddendum already durably committed', async () => {
+    const base = baseline();
+    const local = { ...base, assessment: 'Owner reports improvement overnight.' };
+    vi.mocked(gateway.getConsultation).mockResolvedValue(makeConsultation({ status: 'finalized' }));
+    broadcast.emitReplayApplied.mockImplementation(() => {
+      throw new Error('socket emit failed');
+    });
+
+    await expect(
+      service.replayConsultationDraft(context, envelope({}, { baseline: base, draft: local })),
+    ).rejects.toThrow('socket emit failed');
+
+    // `addAddendum` already durably committed -- releasing the receipt here
+    // would let a retry append a duplicate addendum entry.
+    expect(receipts.delete).not.toHaveBeenCalled();
+    expect(gateway.addAddendum).toHaveBeenCalledTimes(1);
   });
 });

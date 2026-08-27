@@ -480,6 +480,40 @@ describe('InventoryOfflineReplayService replay-broadcast wiring (verify-fix 10.3
     expect(broadcast.emitReplayApplied).not.toHaveBeenCalled();
     expect(broadcast.emitReplayConflictOpened).not.toHaveBeenCalled();
   });
+
+  it('does not release the reserved receipt when the applied broadcast fails after the dispense already durably committed', async () => {
+    vi.mocked(gateway.dispense).mockResolvedValue({
+      deductions: [{ batchId: 'batch-1', lotNumber: null, quantity: 3 }],
+      newTotal: 7,
+      movementIds: ['movement-1'],
+    } as any);
+    broadcast.emitReplayApplied.mockImplementation(() => {
+      throw new Error('socket emit failed');
+    });
+
+    await expect(service.replayInventoryOperation(context, baseEnvelope())).rejects.toThrow('socket emit failed');
+
+    // The dispense already durably applied -- releasing the receipt here
+    // would let a retry of this operationId re-run `gateway.dispense` and
+    // double-apply the stock deduction.
+    expect(receipts.delete).not.toHaveBeenCalled();
+  });
+
+  it('does not release the reserved receipt when the conflict-opened broadcast fails after the mismatch review task already durably committed', async () => {
+    vi.mocked(gateway.dispense).mockRejectedValue(
+      structuredError('INSUFFICIENT_STOCK', 'Insufficient stock', 409, { itemId: ITEM_ID, requested: 3, available: 1 }),
+    );
+    broadcast.emitReplayConflictOpened.mockImplementation(() => {
+      throw new Error('socket emit failed');
+    });
+
+    await expect(service.replayInventoryOperation(context, baseEnvelope())).rejects.toThrow('socket emit failed');
+
+    // The review task already durably exists -- releasing the receipt here
+    // would let a retry create a duplicate review task for the same mismatch.
+    expect(receipts.delete).not.toHaveBeenCalled();
+    expect(reviewTasks.create).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('InventoryConflictReviewService (D-10: lighter operational review than EMR)', () => {

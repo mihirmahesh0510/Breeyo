@@ -405,6 +405,18 @@ describe('QueueOfflineReplayService', () => {
       expect(result.status).toBe('MERGED_DUPLICATE_CHECK_IN');
       expect(gateway.updateEntry).not.toHaveBeenCalled();
     });
+
+    it('releases the reserved receipt when creating the merge review task itself fails, so a legitimate retry is not permanently blocked', async () => {
+      const existingEntry = makeEntry({ id: ENTRY_ID, position: 1 });
+      vi.mocked(gateway.findTodayActiveEntryForPet).mockResolvedValue(existingEntry);
+      vi.mocked(reviewTasks.create).mockRejectedValue(new Error('transient db error creating review task'));
+
+      await expect(
+        service.replayQueueOperation(context, baseEnvelope({ operationId: 'op-merge-fail' })),
+      ).rejects.toThrow('transient db error creating review task');
+
+      expect(receipts.delete).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe('status transition replay preserves Phase 3 rules and reviews mismatches', () => {
@@ -475,6 +487,28 @@ describe('QueueOfflineReplayService', () => {
         ENTRY_ID,
         expect.objectContaining({ status: QueueStatus.WAITING, position: 5, checkedInAt: FIXED_NOW }),
       );
+    });
+
+    it('releases the reserved receipt when updateEntry itself fails, so a legitimate retry is not permanently blocked', async () => {
+      vi.mocked(gateway.findEntryById).mockResolvedValue(makeEntry({ status: 'WAITING' }));
+      vi.mocked(gateway.updateEntry).mockRejectedValue(new Error('database connection lost'));
+
+      await expect(
+        service.replayQueueOperation(context, statusEnvelope(QueueStatus.IN_CONSULT)),
+      ).rejects.toThrow('database connection lost');
+
+      expect(receipts.delete).toHaveBeenCalledTimes(1);
+    });
+
+    it('releases the reserved receipt when creating the review task itself fails, so a legitimate retry is not permanently blocked', async () => {
+      vi.mocked(gateway.findEntryById).mockResolvedValue(null);
+      vi.mocked(reviewTasks.create).mockRejectedValue(new Error('transient db error creating review task'));
+
+      await expect(
+        service.replayQueueOperation(context, statusEnvelope(QueueStatus.IN_CONSULT)),
+      ).rejects.toThrow('transient db error creating review task');
+
+      expect(receipts.delete).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -580,5 +614,60 @@ describe('QueueOfflineReplayService replay-broadcast wiring (verify-fix 10.3)', 
 
     expect(broadcast.emitReplayApplied).not.toHaveBeenCalled();
     expect(broadcast.emitReplayConflictOpened).not.toHaveBeenCalled();
+  });
+
+  it('does not release the reserved receipt when the merge-conflict broadcast fails after the review task already durably committed', async () => {
+    const existingEntry = makeEntry({ id: ENTRY_ID, position: 1 });
+    vi.mocked(gateway.findTodayActiveEntryForPet).mockResolvedValue(existingEntry);
+    broadcast.emitReplayConflictOpened.mockImplementation(() => {
+      throw new Error('socket emit failed');
+    });
+
+    await expect(
+      service.replayQueueOperation(context, baseEnvelope({ operationId: 'op-merge-broadcast-fail' })),
+    ).rejects.toThrow('socket emit failed');
+
+    // The review task already durably exists -- releasing the receipt here
+    // would let a retry create a duplicate review task for the same merge.
+    expect(receipts.delete).not.toHaveBeenCalled();
+    expect(reviewTasks.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not release the reserved receipt when the status-transition broadcast fails after updateEntry already durably committed', async () => {
+    vi.mocked(gateway.findEntryById).mockResolvedValue(makeEntry({ status: 'WAITING' }));
+    vi.mocked(gateway.updateEntry).mockResolvedValue(makeEntry({ status: 'IN_CONSULT' }));
+    broadcast.emitReplayApplied.mockImplementation(() => {
+      throw new Error('socket emit failed');
+    });
+
+    const statusEnvelope = baseEnvelope({
+      entityType: QUEUE_STATUS_TRANSITION_ENTITY_TYPE,
+      entityId: ENTRY_ID,
+      payload: { entryId: ENTRY_ID, status: QueueStatus.IN_CONSULT },
+    });
+
+    await expect(service.replayQueueOperation(context, statusEnvelope)).rejects.toThrow('socket emit failed');
+
+    // `updateEntry` already durably committed -- releasing the receipt here
+    // would let a retry re-apply the same transition.
+    expect(receipts.delete).not.toHaveBeenCalled();
+  });
+
+  it('does not release the reserved receipt when the review-created broadcast fails after the review task already durably committed', async () => {
+    vi.mocked(gateway.findEntryById).mockResolvedValue(null);
+    broadcast.emitReplayConflictOpened.mockImplementation(() => {
+      throw new Error('socket emit failed');
+    });
+
+    const statusEnvelope = baseEnvelope({
+      entityType: QUEUE_STATUS_TRANSITION_ENTITY_TYPE,
+      entityId: ENTRY_ID,
+      payload: { entryId: ENTRY_ID, status: QueueStatus.IN_CONSULT },
+    });
+
+    await expect(service.replayQueueOperation(context, statusEnvelope)).rejects.toThrow('socket emit failed');
+
+    expect(receipts.delete).not.toHaveBeenCalled();
+    expect(reviewTasks.create).toHaveBeenCalledTimes(1);
   });
 });
