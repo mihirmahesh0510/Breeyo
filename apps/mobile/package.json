@@ -9,7 +9,8 @@
     "build": "echo 'mobile build handled by EAS'",
     "test": "vitest run",
     "test:watch": "vitest",
-    "lint": "echo 'no lint configured'"
+    "lint": "echo 'no lint configured'",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@babel/runtime": "^8.0.0",

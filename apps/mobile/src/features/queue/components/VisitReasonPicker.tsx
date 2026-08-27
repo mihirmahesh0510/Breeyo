@@ -69,9 +69,11 @@ export function VisitReasonPicker({
       </View>
 
       <View style={styles.actions}>
-        <Button mode="contained" onPress={handleConfirm} buttonColor="#2E7D32">
-          {selectedReason ? 'Continue' : 'Skip'}
-        </Button>
+        {selectedReason && (
+          <Button mode="contained" onPress={handleConfirm} buttonColor="#2E7D32">
+            Continue
+          </Button>
+        )}
         <Button mode="text" onPress={handleSkip}>
           Skip
         </Button>

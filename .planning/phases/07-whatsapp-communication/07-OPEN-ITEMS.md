@@ -33,7 +33,7 @@ Ran against a real Android emulator (Breeyo_Pixel_7, API 34), with a freshly sig
 
 **Two pre-existing bugs found blocking this session** (not Phase 7 scope):
 1. `usePetProfile`'s `select` assumed `{pet, owner, visits}` as siblings; the real API returns a flat pet object with `owner` nested and `visitHistory`. Crashed `PatientDetailScreen` for every pet. Fixed separately, own PR (`fix/patient-profile-visit-history-shape`), already merged to `main`.
-2. `PatientListScreen`/`OwnerDetailScreen` navigate to `/(app)/register-patient`, but the actual route is `/(app)/patient/register` — "Add Patient" hits an Unmatched Route screen. **Not yet fixed** — worked around by creating test patients via direct API calls during this session. Phase 3 scope, not touched here — needs its own small fix.
+2. `PatientListScreen`/`OwnerDetailScreen` navigate to `/(app)/register-patient`, but the actual route is `/(app)/patient/register` — "Add Patient" hits an Unmatched Route screen. Worked around by creating test patients via direct API calls during this session. Phase 3 scope, not touched here at the time — **fixed** in the Phase 3 route-constant cleanup (see `03-VALIDATION.md`, E2E-BUG-FIX-PLAN.md §3.1–3.4).
 
 Both crashes reinforce the same pattern already noted in §4: these screens had never been opened on a real device before.
 
@@ -59,7 +59,7 @@ Six for six were caught by deliberately tracing "is this thing actually reachabl
 - **WhatsApp consent grant/withdraw has no UI anywhere in Phase 7** (D-24, your explicit call during the plan review). The read side (`D-13`'s warn-but-never-block) works; the write side is deferred to a future phase or an external/manual process. Every Phase 7 send will show the missing-consent warning indefinitely until that lands — expected, not a defect.
 - **Correcting an invalid WhatsApp number clears the flag but can't persist a new phone number.** There is no `PATCH`/edit endpoint for an existing `PetOwner` **anywhere in the entire app** — this predates Phase 7 (it's a Phase 1/3 patient-management gap, not a WhatsApp one) and is out of this phase's proper scope to fix. Flagged for whichever phase owns Patient/Owner management.
 - **No CLI or debug route exists to manually trigger the reminder sweep** for demos/testing. `runReminderSweep(deps)` in `apps/api/src/modules/whatsapp/reminders/reminder-sweep.job.ts` is a plain, directly-callable async function — for now, triggering it requires a one-off script assembling the same deps `whatsapp.routes.ts` already wires up (prisma, the reminder repositories/service, `WhatsAppService.sendTemplate`, the outbound queue). Worth a small `pnpm --filter @breeyo/api exec tsx scripts/trigger-reminder-sweep.ts`-style script if this becomes a recurring need — not built here to avoid scope creep into ops tooling.
-- **"Add Patient" navigates to a route that doesn't exist** (`/(app)/register-patient` vs. the real `/(app)/patient/register`) — found during §1a's device session, blocked test-data creation there. Phase 3 scope, not fixed in this session; needs its own small fix (likely a one-line route-path correction).
+- ~~**"Add Patient" navigates to a route that doesn't exist**~~ — see §1a item 2; fixed in the Phase 3 route-constant cleanup, not a live limitation anymore.
 
 ---
 
@@ -75,5 +75,4 @@ Six for six were caught by deliberately tracing "is this thing actually reachabl
 ## 5. Not yet done
 
 - **15 of the original 37 human-verification steps** (see §1) — still need a full device pass.
-- **The Phase 3 "Add Patient" route-mismatch bug** (§3) — small, one-line-ish fix, not yet done.
 - **Phase 6 integration hook is ready and documented, but NOT yet wired in — and it can be now.** Phase 6's invoice-detail screen already exists on `main` (`apps/mobile/src/features/billing/screens/InvoiceDetailScreen.tsx` + `InvoiceActionBar.tsx`, with an existing `onShare` action). `SendTemplateLauncher.tsx`'s header comment records the exact props to pass for `invoice_delivery` (template key, `contextType: 'INVOICE'`, opaque `contextId`, `payment_link` omitted for paid invoices per D-23). Deliberately not wired in during this phase: `InvoiceActionBar.tsx` is governed by its own strict, already-reviewed conventions from Phase 6 (a documented "phase-level grep gate rejects status equality tests and status switches," and action visibility derived entirely from `invoiceActionSet`/`isValidInvoiceTransition` in `lib/invoice-actions.ts`, not hardcoded). This is a small, well-scoped, low-risk follow-up: add a `whatsapp` action key alongside the existing `share`/`print`/`download` actions, gated the same way those are, calling `SendTemplateLauncher` with the documented props. Recommend its own small reviewed change.

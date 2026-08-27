@@ -10,6 +10,8 @@ import { ReplayBroadcastService } from '../sync/services/replayBroadcast.service
 import { authenticate } from '../../middleware/authenticate.js';
 import { tenantContext } from '../../middleware/tenant-context.js';
 import { requireBrowserModuleAccess } from '../web-dashboard/browser-access.middleware.js';
+import { requirePermission } from '../../middleware/authorize.js';
+import { PermissionService } from '../auth/permission.service.js';
 import type { TenantPrismaClient } from '../../lib/prisma-rls.js';
 import { createNotificationBus } from '../notifications/notification-bus.js';
 import { PushTriggerService } from '../scheduling/push-trigger.service.js';
@@ -73,33 +75,48 @@ export default async function queueRoutes(fastify: FastifyInstance) {
 
   const preHandler = [authenticate, tenantContext];
 
+  // `auth.routes.ts`'s `fastify.decorate('permissionService', ...)` never
+  // reaches this sibling `app.register(...)` call — same plugin-encapsulation
+  // wall billing/inventory/whatsapp/scheduling/clinic routes each hit and
+  // resolved the same way: re-decorate locally, guarded against clobbering.
+  const permissionService = new PermissionService(fastify.prisma, fastify.redis); // D-30 exemption
+  if (!fastify.hasDecorator('permissionService')) {
+    fastify.decorate('permissionService', permissionService);
+  }
+
+  // E2E-BUG-FIX-PLAN.md §3.6: board read requires VIEW_QUEUE; every
+  // mutation (including call-next, which advances queue state) requires
+  // MANAGE_QUEUE.
+  const viewHandler = [authenticate, tenantContext, requirePermission('VIEW_QUEUE')];
+  const manageHandler = [authenticate, tenantContext, requirePermission('MANAGE_QUEUE')];
+
   // Get queue board (QUE-03)
   fastify.get('/queue', {
-    preHandler,
+    preHandler: viewHandler,
     handler: controller.getQueueBoardHandler,
   });
 
   // Check in a patient (QUE-01)
   fastify.post('/queue/check-in', {
-    preHandler,
+    preHandler: manageHandler,
     handler: controller.checkInHandler,
   });
 
   // Update queue entry status (QUE-04)
   fastify.patch('/queue/:entryId/status', {
-    preHandler,
+    preHandler: manageHandler,
     handler: controller.updateStatusHandler,
   });
 
   // Call next patient (QUE-05)
   fastify.post('/queue/call-next', {
-    preHandler,
+    preHandler: manageHandler,
     handler: controller.callNextHandler,
   });
 
   // Archive entries from before today (D-23)
   fastify.post('/queue/archive', {
-    preHandler,
+    preHandler: manageHandler,
     handler: controller.archiveEntriesHandler,
   });
 

@@ -3,6 +3,8 @@ import { View, StyleSheet } from 'react-native';
 import { Text } from 'react-native-paper';
 import { Button, FormField } from '@breeyo/ui';
 import type { Pet } from '@breeyo/types';
+import { SpeciesBreedPicker } from '../components/SpeciesBreedPicker';
+import { buildPetUpdates, editPetFormValuesFromPet, validateEditPetForm } from '../lib/edit-pet-form';
 
 interface EditPetFormProps {
   pet: Pet;
@@ -12,54 +14,15 @@ interface EditPetFormProps {
 }
 
 export function EditPetForm({ pet, onSave, onCancel, isSaving }: EditPetFormProps) {
-  const [name, setName] = useState(pet.name);
-  const [breed, setBreed] = useState(pet.breed ?? '');
-  const [weight, setWeight] = useState(pet.weight != null ? String(pet.weight) : '');
-  const [color, setColor] = useState(pet.color ?? '');
-  const [microchipId, setMicrochipId] = useState(pet.microchipId ?? '');
-  const [notes, setNotes] = useState(pet.notes ?? '');
+  const [form, setForm] = useState(() => editPetFormValuesFromPet(pet));
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  const validate = (): boolean => {
-    const newErrors: Record<string, string> = {};
-
-    if (!name.trim()) {
-      newErrors.name = 'Pet name is required';
-    }
-
-    if (weight && (isNaN(Number(weight)) || Number(weight) < 0)) {
-      newErrors.weight = 'Weight must be a positive number';
-    }
-
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
-  };
-
   const handleSave = async () => {
-    if (!validate()) return;
+    const newErrors = validateEditPetForm(form);
+    setErrors(newErrors);
+    if (Object.keys(newErrors).length > 0) return;
 
-    const updates: Record<string, unknown> = {
-      name: name.trim(),
-    };
-
-    // Only include changed fields
-    if (breed.trim() !== (pet.breed ?? '')) {
-      updates.breed = breed.trim() || null;
-    }
-    if (weight !== (pet.weight != null ? String(pet.weight) : '')) {
-      updates.weight = weight ? Number(weight) : null;
-    }
-    if (color.trim() !== (pet.color ?? '')) {
-      updates.color = color.trim() || null;
-    }
-    if (microchipId.trim() !== (pet.microchipId ?? '')) {
-      updates.microchipId = microchipId.trim() || null;
-    }
-    if (notes.trim() !== (pet.notes ?? '')) {
-      updates.notes = notes.trim() || null;
-    }
-
-    await onSave(updates);
+    await onSave(buildPetUpdates(form, pet));
   };
 
   return (
@@ -71,8 +34,8 @@ export function EditPetForm({ pet, onSave, onCancel, isSaving }: EditPetFormProp
       <View style={styles.fieldGroup}>
         <FormField
           label="Name"
-          value={name}
-          onChangeText={setName}
+          value={form.name}
+          onChangeText={(name) => setForm((f) => ({ ...f, name }))}
           error={errors.name}
           required
           testID="edit-pet-name"
@@ -80,19 +43,40 @@ export function EditPetForm({ pet, onSave, onCancel, isSaving }: EditPetFormProp
       </View>
 
       <View style={styles.fieldGroup}>
+        <SpeciesBreedPicker
+          species={form.species}
+          breed={form.breed}
+          onSpeciesChange={(species) => setForm((f) => ({ ...f, species }))}
+          onBreedChange={(breed) => setForm((f) => ({ ...f, breed }))}
+          testID="edit-pet-species-breed"
+        />
+      </View>
+
+      <View style={styles.fieldGroup}>
         <FormField
-          label="Breed"
-          value={breed}
-          onChangeText={setBreed}
-          testID="edit-pet-breed"
+          label="Birth Year"
+          value={form.birthYear}
+          onChangeText={(birthYear) => setForm((f) => ({ ...f, birthYear }))}
+          error={errors.birthYear}
+          testID="edit-pet-birth-year"
+        />
+      </View>
+
+      <View style={styles.fieldGroup}>
+        <FormField
+          label="Birth Month (1-12)"
+          value={form.birthMonth}
+          onChangeText={(birthMonth) => setForm((f) => ({ ...f, birthMonth }))}
+          error={errors.birthMonth}
+          testID="edit-pet-birth-month"
         />
       </View>
 
       <View style={styles.fieldGroup}>
         <FormField
           label="Weight (kg)"
-          value={weight}
-          onChangeText={setWeight}
+          value={form.weight}
+          onChangeText={(weight) => setForm((f) => ({ ...f, weight }))}
           error={errors.weight}
           testID="edit-pet-weight"
         />
@@ -101,8 +85,8 @@ export function EditPetForm({ pet, onSave, onCancel, isSaving }: EditPetFormProp
       <View style={styles.fieldGroup}>
         <FormField
           label="Color"
-          value={color}
-          onChangeText={setColor}
+          value={form.color}
+          onChangeText={(color) => setForm((f) => ({ ...f, color }))}
           testID="edit-pet-color"
         />
       </View>
@@ -110,8 +94,8 @@ export function EditPetForm({ pet, onSave, onCancel, isSaving }: EditPetFormProp
       <View style={styles.fieldGroup}>
         <FormField
           label="Microchip ID"
-          value={microchipId}
-          onChangeText={setMicrochipId}
+          value={form.microchipId}
+          onChangeText={(microchipId) => setForm((f) => ({ ...f, microchipId }))}
           testID="edit-pet-microchip"
         />
       </View>
@@ -119,8 +103,8 @@ export function EditPetForm({ pet, onSave, onCancel, isSaving }: EditPetFormProp
       <View style={styles.fieldGroup}>
         <FormField
           label="Notes"
-          value={notes}
-          onChangeText={setNotes}
+          value={form.notes}
+          onChangeText={(notes) => setForm((f) => ({ ...f, notes }))}
           testID="edit-pet-notes"
         />
       </View>
