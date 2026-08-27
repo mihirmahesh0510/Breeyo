@@ -9,9 +9,12 @@ import { ADJUSTMENT_REASONS } from '@breeyo/types';
 import { BottomSheet, FormField, BreeyoChip, Button, showToast } from '@breeyo/ui';
 import { useAuth } from '../../../providers/AuthProvider';
 import { useAdjustStock } from '../hooks/useInventoryApi';
+import { useOfflineStockActions } from '../hooks/useOfflineStockActions';
+import { isNetworkFailure } from '../services/offlineStockActionStore';
 import {
   buildStockAdjustmentSubmission,
   getAdjustmentSuccessToast,
+  getAdjustmentQueuedToast,
 } from '../lib/stock-adjustment-logic';
 import type { AdjustmentType, StockAdjustmentFormErrors } from '../lib/stock-adjustment-logic';
 
@@ -21,6 +24,10 @@ export interface StockAdjustmentSheetProps {
   visible: boolean;
   itemId: string;
   itemName: string;
+  /** Verify-fix 10.2 (D-04): needed to seed `useOfflineStockActions`'s
+   *  working-set cache the first time this item is touched offline --
+   *  `StockActionKnownItem` requires it. */
+  category: string;
   unit: string;
   currentStock: number;
   onDismiss: () => void;
@@ -41,6 +48,7 @@ export function StockAdjustmentSheet({
   visible,
   itemId,
   itemName,
+  category,
   unit,
   currentStock,
   onDismiss,
@@ -48,6 +56,11 @@ export function StockAdjustmentSheet({
 }: StockAdjustmentSheetProps) {
   const { activeClinicId } = useAuth();
   const adjustStock = useAdjustStock(activeClinicId, itemId);
+  // Verify-fix 10.2 (D-04, D-10, D-15 to D-17): falls through here only when
+  // `adjustStock.mutateAsync` fails with a genuine network failure (never
+  // reached the server) -- same shape `CheckInSheet.tsx`/`useOfflineQueueActions.ts`
+  // established for queue check-in.
+  const offlineStockActions = useOfflineStockActions();
 
   const [type, setType] = useState<AdjustmentType>('add');
   const [quantity, setQuantity] = useState('');
@@ -90,12 +103,46 @@ export function StockAdjustmentSheet({
       resetForm();
       onDismiss();
     } catch (err) {
-      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      setServerError(err instanceof Error ? err.message : 'Could not adjust stock');
+      if (isNetworkFailure(err)) {
+        // The server was never reached -- fall through to the offline
+        // capture path instead of leaving the user at a dead-end error
+        // (10-04-SUMMARY.md Deviation 2 / verify-fix 10.2).
+        try {
+          await offlineStockActions.adjustOffline(
+            itemId,
+            { itemId, name: itemName, category, unit, currentStock },
+            result.payload,
+          );
+          void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          showToast('info', getAdjustmentQueuedToast(type, result.payload.quantity, unit, itemName));
+          resetForm();
+          onDismiss();
+        } catch (offlineErr) {
+          void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+          setServerError(offlineErr instanceof Error ? offlineErr.message : 'Could not adjust stock');
+        }
+      } else {
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        setServerError(err instanceof Error ? err.message : 'Could not adjust stock');
+      }
     } finally {
       setIsSubmitting(false);
     }
-  }, [quantity, type, reason, notes, adjustStock, unit, itemName, resetForm, onDismiss]);
+  }, [
+    quantity,
+    type,
+    reason,
+    notes,
+    adjustStock,
+    offlineStockActions,
+    itemId,
+    category,
+    currentStock,
+    unit,
+    itemName,
+    resetForm,
+    onDismiss,
+  ]);
 
   return (
     <BottomSheet visible={visible} onDismiss={handleDismiss} title="Adjust Stock" testID={testID}>

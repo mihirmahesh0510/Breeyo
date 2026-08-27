@@ -35,6 +35,8 @@ const OWNER = '55555555-5555-4555-8555-555555555555';
 
 const ACTOR = { userId: 'user-1', userName: 'Front Desk' };
 
+const LIVE_UPDATED_AT = new Date('2026-08-20T09:00:00.000Z');
+
 function invoiceRow(overrides: Record<string, unknown> = {}) {
   return {
     id: INVOICE,
@@ -45,6 +47,7 @@ function invoiceRow(overrides: Record<string, unknown> = {}) {
     balancePaise: 50000,
     amountPaidPaise: 0,
     exceptionFlag: null,
+    updatedAt: LIVE_UPDATED_AT,
     ownerId: OWNER,
     petId: null,
     owner: { id: OWNER, name: 'Asha Rao', mobile: '+919812345678' },
@@ -68,6 +71,7 @@ function lockedRow(row: Record<string, unknown>) {
     balance_paise: row.balancePaise,
     exception_flag: row.exceptionFlag,
     invoice_number: row.invoiceNumber,
+    updated_at: row.updatedAt,
   };
 }
 
@@ -237,6 +241,29 @@ describe('PaymentService.recordCashPayment — D-10 cash in hand', () => {
     });
 
     expect(tx.payment.create).not.toHaveBeenCalled();
+  });
+
+  describe('optimistic-concurrency enforcement (Plan 10-05, D-05, F1)', () => {
+    it('applies normally when expectedVersion matches the invoice\'s live updatedAt', async () => {
+      const { service, tx } = build();
+
+      await service.recordCashPayment(CLINIC, INVOICE, ACTOR, 50000, LIVE_UPDATED_AT.getTime());
+
+      expect(tx.payment.create).toHaveBeenCalledTimes(1);
+    });
+
+    it('rejects with a 409 STALE_WRITE_CONFLICT when expectedVersion is behind the invoice\'s live updatedAt, and inserts nothing (F1: checked under the SAME FOR UPDATE lock as the real write, so a rejected claim can never bump the version)', async () => {
+      const { service, tx } = build();
+
+      const staleExpectedVersion = LIVE_UPDATED_AT.getTime() - 60_000;
+
+      await expect(
+        service.recordCashPayment(CLINIC, INVOICE, ACTOR, 50000, staleExpectedVersion),
+      ).rejects.toMatchObject({ statusCode: 409, code: 'STALE_WRITE_CONFLICT' });
+
+      expect(tx.payment.create).not.toHaveBeenCalled();
+      expect(tx.payment.updateMany).not.toHaveBeenCalled();
+    });
   });
 
   it('locks the invoice row FOR UPDATE before reading its balance', async () => {

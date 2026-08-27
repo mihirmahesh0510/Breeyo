@@ -16,6 +16,7 @@ import type {
 } from '@breeyo/types';
 import type { TenantPrismaClient, TenantTransactionClient } from '../../lib/prisma-rls.js';
 import { BillingAuditEvent, writeBillingAuditLog } from '../../lib/billing-audit-log.js';
+import { staleWriteConflictError } from '../../realtime/browser-sync.service.js';
 import { resolveDiscountPaise } from './money.js';
 import { nextDocumentNumber } from './numbering.service.js';
 import type { StockPlanLine, StockValidatorService } from './stock-validator.service.js';
@@ -679,12 +680,13 @@ export class InvoiceRepository {
     reason: string,
     restoreStock: boolean,
     actor: BillingActor,
+    expectedVersion?: number,
   ): Promise<VoidResult> {
     return this.prisma.$transaction(async (tx) => {
       const locked = await tx.$queryRaw<
-        Array<{ id: string; status: string; void_restored_stock: boolean }>
+        Array<{ id: string; status: string; void_restored_stock: boolean; updated_at: Date }>
       >(Prisma.sql`
-        SELECT id, status, void_restored_stock
+        SELECT id, status, void_restored_stock, updated_at
         FROM invoices
         WHERE id = ${invoiceId}::uuid
           AND clinic_id = ${clinicId}::uuid
@@ -693,6 +695,19 @@ export class InvoiceRepository {
 
       const row = locked[0];
       if (!row) throw invoiceNotFound(invoiceId);
+
+      // D-05: checked under the SAME `FOR UPDATE` lock and transaction as the
+      // real void below, so a caller's `expectedVersion` guard can never be
+      // satisfied by a claim that then fails the transition check that follows.
+      if (expectedVersion !== undefined && row.updated_at.getTime() !== expectedVersion) {
+        throw staleWriteConflictError({
+          domain: 'billing',
+          entityType: 'INVOICE',
+          entityId: invoiceId,
+          currentVersion: row.updated_at.getTime(),
+          expectedVersion,
+        });
+      }
 
       if (!isValidInvoiceTransition(row.status as InvoiceStatus, 'VOIDED')) {
         throw invalidStateTransition(row.status, 'VOIDED');

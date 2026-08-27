@@ -137,24 +137,44 @@ export class BillingWorkbenchService {
   }
 
   /** D-05: cash quick-collection, open to Front Desk and Admin alike -- delegates to the existing cash-payment path unchanged. */
-  async collectPayment(clinicId: string, actor: BillingActor, invoiceId: string, amountPaise?: number) {
-    return this.paymentService.recordCashPayment(clinicId, invoiceId, actor, amountPaise);
+  async collectPayment(
+    clinicId: string,
+    actor: BillingActor,
+    invoiceId: string,
+    amountPaise?: number,
+    expectedVersion?: number,
+  ) {
+    return this.paymentService.recordCashPayment(clinicId, invoiceId, actor, amountPaise, expectedVersion);
   }
 
   /** D-22: Admin-only. Throws 403 FORBIDDEN before touching `RefundService` for any other role. */
-  async refundInvoice(clinicId: string, userId: string, actor: BillingActor, invoiceId: string, input: RefundInput) {
+  async refundInvoice(
+    clinicId: string,
+    userId: string,
+    actor: BillingActor,
+    invoiceId: string,
+    input: RefundInput,
+    expectedVersion?: number,
+  ) {
     if (!(await this.isAdmin(clinicId, userId))) {
       throw forbiddenError('Refunds are Admin-only in the browser, even with routine billing access (D-22)');
     }
-    return this.refundService.createRefund(clinicId, invoiceId, actor, input);
+    return this.refundService.createRefund(clinicId, invoiceId, actor, input, expectedVersion);
   }
 
   /** D-22: Admin-only. Throws 403 FORBIDDEN before touching `InvoiceService.voidInvoice` for any other role. */
-  async voidInvoice(clinicId: string, userId: string, actor: BillingActor, invoiceId: string, input: VoidInvoiceInput) {
+  async voidInvoice(
+    clinicId: string,
+    userId: string,
+    actor: BillingActor,
+    invoiceId: string,
+    input: VoidInvoiceInput,
+    expectedVersion?: number,
+  ) {
     if (!(await this.isAdmin(clinicId, userId))) {
       throw forbiddenError('Voiding an invoice is Admin-only in the browser, even with routine billing access (D-22)');
     }
-    return this.invoiceService.voidInvoice(clinicId, invoiceId, actor, input);
+    return this.invoiceService.voidInvoice(clinicId, invoiceId, actor, input, expectedVersion);
   }
 
   /**

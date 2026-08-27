@@ -5,6 +5,7 @@ import type { AccessPolicyService } from '../web-dashboard/access-policy.service
 import type { ParLevelAlertService } from './par-level-alert.service.js';
 import type { WantListService } from './want-list.service.js';
 import type { StockAdjustmentService } from './stock-adjustment.service.js';
+import { BrowserSyncService } from '../../realtime/browser-sync.service.js';
 
 function forbiddenError(message: string): Error & { statusCode: number; code: string } {
   const error = new Error(message) as Error & { statusCode: number; code: string };
@@ -144,6 +145,7 @@ export class InventoryWebService {
     private readonly parLevelAlertService: ParLevelAlertService,
     private readonly wantListService: WantListService,
     private readonly stockAdjustmentService: StockAdjustmentService,
+    private readonly browserSyncService: BrowserSyncService = new BrowserSyncService(null),
   ) {}
 
   /**
@@ -294,6 +296,27 @@ export class InventoryWebService {
    * existing `StockAdjustmentService`, which already enforces the D-04
    * reason requirement and records D-24 actor metadata -- this is never a
    * barcode-scan endpoint (D-37), only a reason-bearing quantity change.
+   *
+   * Plan 10-05, D-05: when `expectedVersion` is present, the write only
+   * applies if the item's LIVE `updatedAt` still matches it -- a stale claim
+   * is rejected with a 409 `STALE_WRITE_CONFLICT` instead of silently
+   * applying a write against a view the caller has not refreshed since
+   * another session changed this item's stock. Omitting `expectedVersion`
+   * (every caller before this plan) is unaffected.
+   *
+   * Verify-fix 10.10: the check used to be a separate `findUnique` read
+   * followed, several awaits later, by `StockAdjustmentService.adjust`'s own
+   * write -- two genuinely concurrent callers sharing a stale
+   * `expectedVersion` could both read the row before either had written and
+   * both proceed. That was tightened to an atomic conditional `updateMany`
+   * claim run BEFORE `StockAdjustmentService.adjust`, but that always
+   * committed a fresh `updatedAt` even when the downstream adjustment then
+   * failed its own validation -- bumping the version with no real stock
+   * change applied. `StockAdjustmentService.adjust` now takes
+   * `expectedVersion` itself and folds the version check into the SAME
+   * conditional `updateMany` (inside the same transaction as the movement
+   * record) that applies the real stock change, so the version only ever
+   * advances when a real change lands.
    */
   async adjustStock(
     clinicId: string,
@@ -301,13 +324,14 @@ export class InventoryWebService {
     userName: string,
     itemId: string,
     input: unknown,
+    expectedVersion?: number,
   ) {
     const writeAllowed = await this.resolveWriteAllowed(clinicId, userId);
     if (!writeAllowed) {
       throw forbiddenError('Inventory write access is disabled for your role in the browser (D-18)');
     }
 
-    return this.stockAdjustmentService.adjust(clinicId, itemId, userId, userName, input);
+    return this.stockAdjustmentService.adjust(clinicId, itemId, userId, userName, input, expectedVersion);
   }
 
   /** D-36: CSV export of the same analytics summary shown in the tab. */

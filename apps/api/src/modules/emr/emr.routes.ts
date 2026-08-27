@@ -4,7 +4,15 @@ import { EmrService } from './emr.service.js';
 import { ConsultationLockService } from './consultation-lock.service.js';
 import { DosageService } from './dosage.service.js';
 import { createEmrController } from './emr.controller.js';
+import {
+  createConsultationSyncController,
+  buildConsultationOfflineReplayService,
+  buildConsultationConflictResolutionService,
+} from './controllers/consultationSync.controller.js';
 import { createNotificationBus } from '../notifications/notification-bus.js';
+import { ReplayBroadcastService } from '../sync/services/replayBroadcast.service.js';
+import { ClinicVetRosterProvider } from '../sync/services/onDutyRoster.service.js';
+import { AvailabilityRepository } from '../scheduling/availability.repository.js';
 // D-03: the EMR module depends on billing so that ending a consultation can
 // seed a draft invoice. This is a deliberate ONE-DIRECTIONAL dependency — EMR
 // imports billing, never the reverse. Billing reads consultations through its
@@ -61,6 +69,33 @@ export default async function emrRoutes(fastify: FastifyInstance) {
 
   const controller = createEmrController(buildServices, notificationBus);
 
+  // Plan 10-03 (PLT-03, D-05 to D-09, D-24): mobile offline consultation
+  // draft replay on reconnect. Deliberately its own controller/service,
+  // mirroring `queue.routes.ts`'s `queueSyncController` -- clinical replay
+  // has its own review posture (whole-draft hold on any conflict) and must
+  // not share a code path with queue/inventory replay's lighter rules.
+  // Verify-fix 10.3: plugin-scope singleton, same `fastify.io` convention
+  // `queue.routes.ts` uses -- a late EMR replay now actually pushes a
+  // scoped `replay:applied`/`replay:conflict-opened` event instead of
+  // `ReplayBroadcastService` sitting unreached.
+  const replayBroadcast = new ReplayBroadcastService(fastify.io ?? null);
+
+  // Verify-fix 10.6 (D-24, D-36): same `ClinicVetRosterProvider` shape
+  // `sync/routes.ts`'s live retry/escalate routes use, built from
+  // `fastify.prisma` per `AvailabilityRepository`'s own no-DB-RLS
+  // tenancy-boundary convention (see `scheduling.routes.ts`). Stateless, so
+  // it stays a plugin-scope singleton alongside `replayBroadcast`.
+  // D-30 exemption: those scheduling tables have no DB-level RLS, so
+  // `clinicId` is the only tenancy boundary, always supplied explicitly by
+  // `resolveNextOnDutyClinicianId` from the authenticated session, never
+  // from client input.
+  const onDutyRosterProvider = new ClinicVetRosterProvider(new AvailabilityRepository(fastify.prisma));
+
+  const consultationSyncController = createConsultationSyncController(
+    (db) => buildConsultationOfflineReplayService(db, replayBroadcast),
+    (db) => buildConsultationConflictResolutionService(db, replayBroadcast, onDutyRosterProvider),
+  );
+
   const preHandler = [authenticate, tenantContext];
 
   // Consultation lifecycle
@@ -70,6 +105,24 @@ export default async function emrRoutes(fastify: FastifyInstance) {
   fastify.patch('/consultations/:consultationId/draft', { preHandler, handler: controller.saveDraftHandler });
   fastify.post('/consultations/:consultationId/finalize', { preHandler, handler: controller.finalizeHandler });
   fastify.post('/consultations/:consultationId/addendum', { preHandler, handler: controller.addAddendumHandler });
+
+  // Plan 10-03: mobile offline consultation draft replay on reconnect.
+  // Registered as a fixed segment (`/consultations/sync/replay`), same as
+  // queue's `/queue/sync/replay` -- Fastify's radix router does not confuse
+  // it with the parametric `/consultations/:consultationId` routes above.
+  fastify.post('/consultations/sync/replay', { preHandler, handler: consultationSyncController.replayHandler });
+
+  // Verify-fix 10.5: moves a `SyncConflictRecord` off `OPEN`/`GUIDED_RETRY`/
+  // `ESCALATED` via one of `ClinicalConflictResolutionSheet.tsx`'s four
+  // resolve actions (KEEP_LOCAL/KEEP_SERVER/MERGE_SAFE_FIELDS/ESCALATE).
+  // Registered as its own parametric segment under `/consultations/:consultationId`
+  // -- Fastify's radix router distinguishes it from the fixed
+  // `/consultations/sync/replay` segment above and from the other
+  // `/consultations/:consultationId/*` routes below by its trailing path.
+  fastify.post(
+    '/consultations/:consultationId/conflicts/:conflictId/resolve',
+    { preHandler, handler: consultationSyncController.resolveHandler },
+  );
 
   // Lock management
   fastify.post('/consultations/:consultationId/heartbeat', { preHandler, handler: controller.heartbeatHandler });

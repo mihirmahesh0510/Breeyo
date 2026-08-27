@@ -1,8 +1,7 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
-import { stockAdjustmentSchema } from '@breeyo/validators';
 import type { InventoryWebService, InventoryWebTab } from './inventory-web.service.js';
 import type { TenantPrismaClient } from '../../lib/prisma-rls.js';
-import { itemParamsSchema } from './inventory.schema.js';
+import { itemParamsSchema, webStockAdjustmentBodySchema } from './inventory.schema.js';
 
 function validationError(reply: FastifyReply, issues: { message: string }[]) {
   return reply.status(400).send({
@@ -64,15 +63,17 @@ export class InventoryWebController {
     const params = itemParamsSchema.safeParse(request.params);
     if (!params.success) return validationError(reply, params.error.errors);
 
-    const body = stockAdjustmentSchema.safeParse(request.body);
+    const body = webStockAdjustmentBodySchema.safeParse(request.body);
     if (!body.success) return validationError(reply, body.error.errors);
 
+    const { expectedVersion, ...adjustInput } = body.data;
     const result = await inventoryWebService.adjustStock(
       request.user.activeClinicId,
       request.user.id,
       (request as unknown as { userName?: string }).userName ?? 'Unknown',
       params.data.itemId,
-      body.data,
+      adjustInput,
+      expectedVersion,
     );
 
     return reply.status(200).send({ data: result });

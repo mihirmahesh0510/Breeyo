@@ -191,8 +191,44 @@ export class QueueRepository {
 
   /**
    * Updates a queue entry and returns it with pet/owner data.
+   *
+   * When `expectedVersion` is supplied, the write is a single conditional
+   * `updateMany` (`WHERE id = ? AND updated_at = ?`) instead of an
+   * unconditional `update` -- the version check and the real field changes
+   * land in the same statement, so a caller's `expectedVersion` guard can
+   * never be satisfied by a write that doesn't actually happen. Returns
+   * `null` when the row didn't match (either it no longer has that version,
+   * or it no longer exists) -- callers that care which one it was should
+   * follow up with `findEntryById`.
    */
-  async updateEntry(entryId: string, data: Record<string, unknown>) {
+  async updateEntry(entryId: string, data: Record<string, unknown>): ReturnType<QueueRepository['updateEntryUnconditionally']>;
+  async updateEntry(
+    entryId: string,
+    data: Record<string, unknown>,
+    expectedVersion: number,
+  ): Promise<Awaited<ReturnType<QueueRepository['updateEntryUnconditionally']>> | null>;
+  async updateEntry(entryId: string, data: Record<string, unknown>, expectedVersion?: number) {
+    if (expectedVersion === undefined) {
+      return this.updateEntryUnconditionally(entryId, data);
+    }
+
+    const claim = await this.prisma.queueEntry.updateMany({
+      where: { id: entryId, updatedAt: new Date(expectedVersion) },
+      data,
+    });
+
+    if (claim.count !== 1) {
+      return null;
+    }
+
+    return this.prisma.queueEntry.findUnique({
+      where: { id: entryId },
+      include: PET_OWNER_INCLUDE,
+    });
+  }
+
+  /** The plain, unconditional write every pre-Plan-10-05 caller of `updateEntry` still gets -- pulled out only so its return type can be pinned down for `updateEntry`'s overload declarations above. */
+  private async updateEntryUnconditionally(entryId: string, data: Record<string, unknown>) {
     return this.prisma.queueEntry.update({
       where: { id: entryId },
       data,

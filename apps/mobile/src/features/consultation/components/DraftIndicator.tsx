@@ -1,7 +1,7 @@
 import React, { useRef, useEffect } from 'react';
 import { View, Text, Animated, StyleSheet } from 'react-native';
 
-type DraftStatus = 'saved' | 'dirty' | 'saving' | 'error';
+type DraftStatus = 'saved' | 'dirty' | 'saving' | 'error' | 'offline';
 
 interface DraftIndicatorProps {
   status: DraftStatus;
@@ -61,6 +61,15 @@ export function DraftIndicator({ status, lastSavedAt }: DraftIndicatorProps) {
             Could not save draft. Will retry.
           </Text>
         );
+      case 'offline':
+        // D-03, D-19: reassuring, not alarming -- this edit is safely on
+        // the device and will sync automatically, never a failure state
+        // the clinician needs to act on.
+        return (
+          <Text style={[styles.text, styles.offlineText]}>
+            Saved offline -- will sync when back online
+          </Text>
+        );
     }
   };
 
@@ -99,5 +108,8 @@ const styles = StyleSheet.create({
   },
   errorText: {
     color: '#BA1A1A',
+  },
+  offlineText: {
+    color: '#5D4037',
   },
 });

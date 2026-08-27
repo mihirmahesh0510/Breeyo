@@ -1,7 +1,7 @@
 // Plan 09-03 Task 2: browser inventory workbench UI, against 09-CONTEXT.md
 // D-18, D-20, D-26, D-30 to D-37 and 09-UI-SPEC.md's module-depth contract.
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent, waitFor, act } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { writeSession, clearSession } from '../../../lib/auth-store';
 import { AuthProvider } from '../../../lib/AuthProvider';
@@ -14,10 +14,27 @@ vi.mock('next/navigation', () => ({
   usePathname: () => '/inventory',
 }));
 
+// F6: lets a test simulate a server-pushed `replay:applied`/
+// `replay:conflict-opened` broadcast without a real Socket.IO connection --
+// `useInventoryReplayRealtime` registers its listeners through this mock
+// exactly as it would through the real client, matching
+// `queue-board.test.tsx`'s established pattern for the same broadcast.
+const socketHandlers: Record<string, (payload: unknown) => void> = {};
+
+vi.mock('socket.io-client', () => ({
+  io: vi.fn(() => ({
+    on: (event: string, handler: (payload: unknown) => void) => {
+      socketHandlers[event] = handler;
+    },
+    disconnect: vi.fn(),
+  })),
+}));
+
 afterEach(() => {
   cleanup();
   clearSession();
   mockRouterReplace.mockClear();
+  for (const key of Object.keys(socketHandlers)) delete socketHandlers[key];
   vi.unstubAllGlobals();
 });
 
@@ -132,6 +149,63 @@ describe('Inventory workbench default tab and scanning boundary (D-32, D-37)', (
 
     await screen.findByText('Amoxicillin 250mg Tab');
     expect(screen.getByText(/use mobile scanner for barcode capture/i)).toBeInTheDocument();
+  });
+});
+
+describe('Inventory workbench replay realtime banner (F6, finding 10.3 residual gap)', () => {
+  it('renders the real StaleStateBanner with the conflict copy when a scoped replay:conflict-opened event names a rendered item', async () => {
+    seedSession();
+    mockFetchByUrl({
+      'web-dashboard/cockpit': cockpitBody,
+      'inventory/web/workbench': stockAndBatchesBody(true),
+    });
+
+    render(
+      <AuthProvider>
+        <InventoryPage />
+      </AuthProvider>,
+    );
+
+    await screen.findByText('Amoxicillin 250mg Tab');
+    expect(screen.queryByTestId('stale-state-banner')).not.toBeInTheDocument();
+
+    act(() => {
+      socketHandlers['replay:conflict-opened']?.({
+        clinicId: 'clinic-1',
+        domain: 'inventory',
+        entityIds: ['item_1'],
+      });
+    });
+
+    const banner = await screen.findByTestId('stale-state-banner');
+    expect(banner).toBeInTheDocument();
+    expect(screen.getByText(/changed elsewhere/i)).toBeInTheDocument();
+  });
+
+  it('ignores a replay broadcast for an item not currently rendered', async () => {
+    seedSession();
+    mockFetchByUrl({
+      'web-dashboard/cockpit': cockpitBody,
+      'inventory/web/workbench': stockAndBatchesBody(true),
+    });
+
+    render(
+      <AuthProvider>
+        <InventoryPage />
+      </AuthProvider>,
+    );
+
+    await screen.findByText('Amoxicillin 250mg Tab');
+
+    act(() => {
+      socketHandlers['replay:conflict-opened']?.({
+        clinicId: 'clinic-1',
+        domain: 'inventory',
+        entityIds: ['item_not_rendered'],
+      });
+    });
+
+    expect(screen.queryByTestId('stale-state-banner')).not.toBeInTheDocument();
   });
 });
 

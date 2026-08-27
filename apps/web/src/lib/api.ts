@@ -45,15 +45,35 @@ export async function apiClient<T>(
     const details =
       data.error?.details ?? (data.error?.clinics ? { clinics: data.error.clinics } : undefined);
 
+    // Verify-fix 10.3: `apps/api/src/middleware/error-handler.ts` forwards a
+    // structured `.conflict` payload (domain/entityType/entityId/
+    // currentVersion/expectedVersion/severity) on a 409 STALE_WRITE_CONFLICT
+    // (Plan 10-05's browser optimistic-concurrency check), but nothing on
+    // this client read it back off the wire -- a caller could never drive
+    // D-05 review-before-overwrite UI off a real rejection. Forwarded the
+    // same way `.details` already is, just above.
+    const conflict = data.error?.conflict as ApiConflictInfo | undefined;
+
     throw new ApiClientError(
       data.error?.message || 'Request failed',
       data.error?.code || 'UNKNOWN_ERROR',
       response.status,
       details,
+      conflict,
     );
   }
 
   return data as T;
+}
+
+/** Mirrors `BrowserWriteConflictInfo` (`apps/api/src/realtime/browser-sync.service.ts`) plus its `severity` field -- the shape `error-handler.ts` puts on the wire for a 409 STALE_WRITE_CONFLICT. */
+export interface ApiConflictInfo {
+  domain: string;
+  entityType: string;
+  entityId: string;
+  currentVersion: number;
+  expectedVersion: number;
+  severity: string;
 }
 
 export class ApiClientError extends Error {
@@ -62,6 +82,7 @@ export class ApiClientError extends Error {
     public code: string,
     public status: number,
     public details?: Record<string, unknown>,
+    public conflict?: ApiConflictInfo,
   ) {
     super(message);
     this.name = 'ApiClientError';

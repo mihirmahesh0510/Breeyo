@@ -1,5 +1,6 @@
 import type { TenantPrismaClient } from '../../lib/prisma-rls.js';
 import { stockAdjustmentSchema } from '@breeyo/validators';
+import { staleWriteConflictError } from '../../realtime/browser-sync.service.js';
 import { StockMovementService } from './stock-movement.service.js';
 
 function notFoundError(message: string): Error & { statusCode: number; code: string } {
@@ -34,6 +35,7 @@ export class StockAdjustmentService {
     userId: string,
     userName: string,
     input: unknown,
+    expectedVersion?: number,
   ) {
     const parsed = stockAdjustmentSchema.parse(input);
     const signedQuantity = parsed.type === 'add' ? parsed.quantity : -parsed.quantity;
@@ -60,10 +62,34 @@ export class StockAdjustmentService {
         notes: parsed.notes ?? null,
       });
 
-      const updatedItem = await tx.inventoryItem.update({
-        where: { id: itemId },
+      // D-05: the version check and the real stock mutation are the SAME
+      // conditional `updateMany`, inside the SAME transaction as the
+      // movement record above -- there is no separate claim write that can
+      // commit ahead of (or independent of) the real change, so a failed
+      // adjustment can never leave a bumped version with no real change.
+      const claim = await tx.inventoryItem.updateMany({
+        where: {
+          id: itemId,
+          ...(expectedVersion !== undefined ? { updatedAt: new Date(expectedVersion) } : {}),
+        },
         data: { currentStock: { increment: signedQuantity } },
       });
+
+      if (claim.count !== 1) {
+        const current = await tx.inventoryItem.findUnique({ where: { id: itemId }, select: { updatedAt: true } });
+        if (current && expectedVersion !== undefined) {
+          throw staleWriteConflictError({
+            domain: 'inventory',
+            entityType: 'INVENTORY_ITEM',
+            entityId: itemId,
+            currentVersion: current.updatedAt.getTime(),
+            expectedVersion,
+          });
+        }
+        throw notFoundError('Inventory item not found');
+      }
+
+      const updatedItem = await tx.inventoryItem.findUniqueOrThrow({ where: { id: itemId } });
 
       return { movement, item: updatedItem };
     });

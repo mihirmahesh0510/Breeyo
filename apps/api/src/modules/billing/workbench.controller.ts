@@ -1,10 +1,9 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
-import { refundInputSchema, voidInvoiceSchema } from '@breeyo/validators';
 import type { TenantPrismaClient } from '../../lib/prisma-rls.js';
 import type { BillingActor } from './invoice.repository.js';
 import type { BillingWorkbenchService } from './billing-workbench.service.js';
 import { invoiceParamsSchema } from './billing.schema.js';
-import { collectPaymentBodySchema, webBillingWorkbenchQuerySchema } from './billing.schema.js';
+import { collectPaymentBodySchema, webBillingWorkbenchQuerySchema, webRefundBodySchema, webVoidBodySchema } from './billing.schema.js';
 
 function validationError(reply: FastifyReply, issues: { message: string }[]) {
   return reply.status(400).send({
@@ -75,6 +74,7 @@ export function createWorkbenchController(
         actorFor(request),
         params.data.invoiceId,
         body.data.amountPaise,
+        body.data.expectedVersion,
       );
 
       return reply.status(200).send({ data: result });
@@ -89,17 +89,19 @@ export function createWorkbenchController(
         return validationError(reply, params.error.errors);
       }
 
-      const body = refundInputSchema.safeParse(request.body);
+      const body = webRefundBodySchema.safeParse(request.body);
       if (!body.success) {
         return validationError(reply, body.error.errors);
       }
 
+      const { expectedVersion, ...refundInput } = body.data;
       const result = await service.refundInvoice(
         request.user.activeClinicId,
         request.user.id,
         actorFor(request),
         params.data.invoiceId,
-        body.data,
+        refundInput,
+        expectedVersion,
       );
 
       return reply.status(201).send({ data: result });
@@ -114,17 +116,19 @@ export function createWorkbenchController(
         return validationError(reply, params.error.errors);
       }
 
-      const body = voidInvoiceSchema.safeParse(request.body ?? {});
+      const body = webVoidBodySchema.safeParse(request.body ?? {});
       if (!body.success) {
         return validationError(reply, body.error.errors);
       }
 
+      const { expectedVersion, ...voidInput } = body.data;
       const result = await service.voidInvoice(
         request.user.activeClinicId,
         request.user.id,
         actorFor(request),
         params.data.invoiceId,
-        body.data,
+        voidInput,
+        expectedVersion,
       );
 
       return reply.status(200).send({ data: result });

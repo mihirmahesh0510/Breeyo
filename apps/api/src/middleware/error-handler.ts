@@ -94,5 +94,21 @@ export function errorHandler(
     errorResponse.details = (error as any).details;
   }
 
+  // Forward a structured `.conflict` payload on a 409 STALE_WRITE_CONFLICT
+  // (Plan 10-05's browser optimistic-concurrency check,
+  // `browser-sync.service.ts`'s `staleWriteConflictError`). Found via Plan
+  // 10-06's HTTP-level integration proof: the version-check services
+  // attach a rich domain/entityType/entityId/currentVersion/expectedVersion/
+  // severity object mirroring `SyncConflictEnvelope`'s shape so a client can
+  // render an actual before/after comparison, but nothing forwarded it onto
+  // the wire -- a real HTTP 409 response silently dropped everything except
+  // the bare code/message, indistinguishable from any other unstructured
+  // 409. D-05 requires review-before-overwrite; a client cannot review a
+  // conflict it was never told the shape of. This mirrors the `.details`
+  // forwarding immediately above and is equally safe on the >= 500 guard.
+  if ((error as any).conflict) {
+    errorResponse.conflict = (error as any).conflict;
+  }
+
   reply.status(statusCode).send({ error: errorResponse });
 }

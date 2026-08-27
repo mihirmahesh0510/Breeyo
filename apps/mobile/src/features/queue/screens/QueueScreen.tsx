@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import { View, StyleSheet, Alert } from 'react-native';
 import { Text, FAB, ActivityIndicator } from 'react-native-paper';
 import { useRouter } from 'expo-router';
@@ -15,18 +15,19 @@ import {
 import { useQueue } from '../hooks/useQueue';
 import { useQueueSocket } from '../hooks/useQueueSocket';
 import { useUpdateQueueStatus, useCallNext } from '../hooks/useQueueActions';
-import { useQueueUIStore } from '../store/queueUIStore';
+import { useOfflineQueueActions } from '../hooks/useOfflineQueueActions';
+import { useQueueOfflineStore } from '../store/queueOfflineStore';
 import { QueueBoard } from '../components/QueueBoard';
 import { CallNextButton } from '../components/CallNextButton';
 import { CheckInSheet } from '../components/CheckInSheet';
 import { ExpectedActionSheet } from '../components/ExpectedActionSheet';
 import { OfflineBanner } from '../components/OfflineBanner';
+import { mergeLocalQueueEntriesIntoBoard, findEntryInBoard } from '../lib/queue-offline-utils';
 
 export function QueueScreen() {
   const router = useRouter();
   const { activeClinicId } = useAuth();
   const queryClient = useQueryClient();
-  const isOffline = useQueueUIStore((s) => s.isOffline);
 
   const [checkInVisible, setCheckInVisible] = useState(false);
   const [expectedEntry, setExpectedEntry] = useState<QueueEntryWithPet | null>(null);
@@ -46,17 +47,53 @@ export function QueueScreen() {
   const updateStatus = useUpdateQueueStatus();
   const callNext = useCallNext();
 
-  const hasWaiting = (queueData?.waiting.length ?? 0) > 0;
+  // Plan 10-02 (D-01 to D-03, D-12): local queue projection + the
+  // offline-aware mutation hook. `mergedQueueData` is what actually renders
+  // -- a locally-created or locally-modified entry shows up in its real
+  // section immediately, with a quiet pending marker (QueueCardItem), never
+  // demoted to a placeholder or a separate "pending" area.
+  const offlineActions = useOfflineQueueActions();
+  const localEntriesById = useQueueOfflineStore((state) => state.localEntriesById);
+  const localEntries = useMemo(() => Object.values(localEntriesById), [localEntriesById]);
+  const mergedQueueData = useMemo(
+    () => (queueData ? mergeLocalQueueEntriesIntoBoard(queueData, localEntries) : queueData),
+    [queueData, localEntries],
+  );
+
+  const hasWaiting = (mergedQueueData?.waiting.length ?? 0) > 0;
 
   const handleCallNext = useCallback(() => {
-    callNext.mutate();
-  }, [callNext]);
+    callNext.mutate(undefined, {
+      onError: async (error: any) => {
+        // Online call-next failed for a connectivity reason (not a real
+        // server rejection) -- fall back to this device's own local
+        // WAITING-section view via the offline-aware hook rather than
+        // leaving staff stuck with no way to advance the queue at all.
+        if (error?.status !== undefined) return; // a real server error already surfaced via useCallNext's own handler
+        try {
+          await offlineActions.callNext(mergedQueueData?.waiting ?? []);
+        } catch {
+          // Nothing waiting locally either -- useCallNext's own error
+          // handler already gave the standard haptic/error feedback.
+        }
+      },
+    });
+  }, [callNext, offlineActions, mergedQueueData]);
 
   const handleStatusChange = useCallback(
     (entryId: string, newStatus: QueueStatus) => {
-      updateStatus.mutate({ entryId, status: newStatus });
+      updateStatus.mutate(
+        { entryId, status: newStatus },
+        {
+          onError: async (error: any) => {
+            if (error?.status !== undefined) return;
+            const baseEntry = mergedQueueData ? findEntryInBoard(mergedQueueData, entryId) : undefined;
+            await offlineActions.updateStatus(entryId, newStatus, baseEntry);
+          },
+        },
+      );
     },
-    [updateStatus],
+    [updateStatus, offlineActions, mergedQueueData],
   );
 
   const handleNoShow = useCallback(
@@ -70,16 +107,25 @@ export function QueueScreen() {
             text: 'Mark No-show',
             style: 'destructive',
             onPress: () => {
-              updateStatus.mutate({
-                entryId,
-                status: QueueStatus.NO_SHOW,
-              });
+              updateStatus.mutate(
+                {
+                  entryId,
+                  status: QueueStatus.NO_SHOW,
+                },
+                {
+                  onError: async (error: any) => {
+                    if (error?.status !== undefined) return;
+                    const baseEntry = mergedQueueData ? findEntryInBoard(mergedQueueData, entryId) : undefined;
+                    await offlineActions.noShow(entryId, baseEntry);
+                  },
+                },
+              );
             },
           },
         ],
       );
     },
-    [updateStatus],
+    [updateStatus, offlineActions, mergedQueueData],
   );
 
   const handleCardPress = useCallback(
@@ -148,10 +194,18 @@ export function QueueScreen() {
               );
             }
           },
+          onError: async (error: any) => {
+            if (error?.status !== undefined) return;
+            const baseEntry = expectedEntry ?? (mergedQueueData ? findEntryInBoard(mergedQueueData, entryId) : undefined);
+            const result = await offlineActions.updateStatus(entryId, QueueStatus.WAITING, baseEntry);
+            if (petName) {
+              showToast('success', `${petName} checked in — Position #${result.data.position}`);
+            }
+          },
         },
       );
     },
-    [updateStatus, expectedEntry],
+    [updateStatus, expectedEntry, offlineActions, mergedQueueData],
   );
 
   const handleExpectedNoShow = useCallback(
@@ -165,14 +219,23 @@ export function QueueScreen() {
             text: 'Mark No-show',
             style: 'destructive',
             onPress: () => {
-              updateStatus.mutate({ entryId, status: QueueStatus.NO_SHOW });
+              updateStatus.mutate(
+                { entryId, status: QueueStatus.NO_SHOW },
+                {
+                  onError: async (error: any) => {
+                    if (error?.status !== undefined) return;
+                    const baseEntry = expectedEntry ?? (mergedQueueData ? findEntryInBoard(mergedQueueData, entryId) : undefined);
+                    await offlineActions.noShow(entryId, baseEntry);
+                  },
+                },
+              );
               setExpectedEntry(null);
             },
           },
         ],
       );
     },
-    [updateStatus],
+    [updateStatus, expectedEntry, offlineActions, mergedQueueData],
   );
 
   const handleViewAppointment = useCallback(
@@ -229,13 +292,17 @@ export function QueueScreen() {
       <CallNextButton
         onPress={handleCallNext}
         loading={callNext.isPending}
-        disabled={!hasWaiting || isOffline}
+        disabled={!hasWaiting}
       />
 
-      {queueData && (
+      {mergedQueueData && (
         <QueueBoard
-          data={queueData}
-          disabled={isOffline}
+          data={mergedQueueData}
+          // Plan 10-02 (D-01 to D-03): the board stays fully interactive
+          // offline -- check-in/status-transition/no-show/call-next all
+          // queue for replay instead of being blocked. Connectivity no
+          // longer gates interaction.
+          disabled={false}
           onCardPress={handleQueueCardPress}
           onStatusChange={handleStatusChange}
           onNoShow={handleNoShow}
@@ -244,12 +311,14 @@ export function QueueScreen() {
         />
       )}
 
+      {/* Plan 10-02 (D-01, D-03): check-in stays available offline -- it
+          captures locally and queues for replay via `useOfflineQueueActions`
+          instead of being blocked by connectivity. */}
       <FAB
         icon="plus"
         label="Check In"
         onPress={() => setCheckInVisible(true)}
-        style={[styles.fab, isOffline && styles.fabDisabled]}
-        disabled={isOffline}
+        style={styles.fab}
         color="#FFFFFF"
         customSize={56}
         testID="check-in-fab"
@@ -305,8 +374,5 @@ const styles = StyleSheet.create({
     bottom: 16,
     backgroundColor: '#2E7D32',
     borderRadius: 16,
-  },
-  fabDisabled: {
-    backgroundColor: '#CAC4D0',
   },
 });

@@ -1,0 +1,143 @@
+# Plan 10-06 Task 1 (PLT-03, D-27, D-32, D-33): THREE separate drop/recover
+# cycles in one drill, not a single clean reconnect at the end -- this is
+# the named acceptance criterion for this file ("must contain more than one
+# drop/recover cycle"). D-32 additionally asks the app to remain usable for
+# SEVERAL HOURS offline, not just a brief outage -- a human running this on
+# real hardware should space cycle 2 and cycle 3 well apart in wall-clock
+# time (see the comments at each cycle boundary) rather than running all
+# three back-to-back in under a minute, which would only prove the replay
+# logic, not the multi-hour usability D-32 actually asks for.
+#
+# Same `toggleAirplaneMode` approach as `offline-recovery.yaml` (Android-only
+# built-in Maestro command; see that file's header for the full rationale).
+# Six toggles total below: OFF->ON, ON->OFF, OFF->ON, ON->OFF, OFF->ON,
+# ON->OFF -- each pair is one full drop/recover cycle.
+appId: app.breeyo.mobile
+---
+- launchApp:
+    clearState: false
+
+- tapOn: "priya@clinic.com"
+- inputText: "vet@example-clinic.test"
+- tapOn: "Enter your password"
+- inputText: "REPLACE_WITH_REAL_STAGING_PASSWORD"
+- tapOn: "Log In"
+- extendedWaitUntil:
+    visible: "Queue"
+    timeout: 15000
+
+# ==================================================================
+# CYCLE 1 of 3
+# ==================================================================
+- toggleAirplaneMode # OFF -> ON
+- assertVisible: "You're offline. Changes will sync when you're back online."
+
+- tapOn:
+    id: "check-in-fab"
+- tapOn:
+    id: "check-in-mobile-input"
+- inputText: "9000000011"
+- extendedWaitUntil:
+    visible: "Tap a pet to check in"
+    timeout: 10000
+- tapOn:
+    text: "Check in .*"
+    index: 0
+- assertVisible:
+    id: "queue-card-pending-sync"
+
+- toggleAirplaneMode # ON -> OFF (cycle 1 recover)
+- extendedWaitUntil:
+    notVisible:
+      id: "queue-card-pending-sync"
+    timeout: 30000
+
+# ---- HUMAN NOTE: for a genuine D-32 "usable for several hours offline"
+# drill, let real time pass here (ideally 1+ hours of normal clinic use in
+# between drops) before starting cycle 2, rather than looping the toggles
+# immediately. The automated timing below has no such gap -- it exists to
+# prove the REPLAY LOGIC survives repetition; the human checkpoint is what
+# proves the multi-hour usability claim on real hardware. ----
+
+# ==================================================================
+# CYCLE 2 of 3 -- a second, independent drop while mid-consultation.
+# ==================================================================
+- toggleAirplaneMode # OFF -> ON
+- assertVisible: "You're offline. Changes will sync when you're back online."
+
+- tapOn: "Patients"
+- tapOn:
+    text: ".*"
+    index: 0
+- extendedWaitUntil:
+    visible: "Consultation"
+    timeout: 10000
+- tapOn: "Assessment"
+- inputText: "Cycle 2 offline note"
+- assertVisible: "Saved offline"
+
+- tapOn: "Inventory"
+- tapOn:
+    id: "inventory-scan-button"
+- assertVisible:
+    id: "barcode-scanner-screen"
+- tapOn:
+    id: "manual-entry-trigger"
+- tapOn:
+    id: "manual-barcode-input"
+- inputText: "8901030826830"
+- pressKey: "Enter"
+- assertVisible:
+    id: "scan-result-card"
+
+- toggleAirplaneMode # ON -> OFF (cycle 2 recover)
+- tapOn: "Patients"
+- tapOn:
+    text: ".*"
+    index: 0
+- extendedWaitUntil:
+    visible: "Cycle 2 offline note"
+    timeout: 15000
+- assertNotVisible: "Saved offline"
+
+# ==================================================================
+# CYCLE 3 of 3 -- a third, independent drop, a flaky-signal moment where
+# the device drops again almost immediately after reconnecting (proving
+# the app tolerates a rapid flap, not only one clean settle per outage).
+# ==================================================================
+- tapOn: "Queue"
+- toggleAirplaneMode # OFF -> ON
+- assertVisible: "You're offline. Changes will sync when you're back online."
+
+- tapOn:
+    id: "check-in-fab"
+- tapOn:
+    id: "check-in-mobile-input"
+- inputText: "9000000012"
+- extendedWaitUntil:
+    visible: "Tap a pet to check in"
+    timeout: 10000
+- tapOn:
+    text: "Check in .*"
+    index: 0
+- assertVisible:
+    id: "queue-card-pending-sync"
+
+- toggleAirplaneMode # ON -> OFF (brief recover)
+- toggleAirplaneMode # OFF -> ON again almost immediately -- the flap
+- assertVisible: "You're offline. Changes will sync when you're back online."
+- toggleAirplaneMode # ON -> OFF (cycle 3 final recover)
+
+# ---- Final settle: after THREE independent drop/recover cycles (one of
+# them a rapid flap), everything must be caught up -- no stuck pending
+# markers, no silently dropped work, no duplicate entries from any of the
+# three check-ins above. ----
+- tapOn: "Queue"
+- extendedWaitUntil:
+    notVisible:
+      id: "queue-card-pending-sync"
+    timeout: 30000
+- extendedWaitUntil:
+    notVisible: "You're offline. Changes will sync when you're back online."
+    timeout: 30000
+- assertNotVisible: "Needs your retry"

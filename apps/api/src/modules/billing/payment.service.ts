@@ -8,6 +8,7 @@ import {
 import type { InvoiceStatus, PaymentMethod } from '@breeyo/types';
 import type { TenantPrismaClient, TenantTransactionClient } from '../../lib/prisma-rls.js';
 import { BillingAuditEvent, writeBillingAuditLog } from '../../lib/billing-audit-log.js';
+import { staleWriteConflictError } from '../../realtime/browser-sync.service.js';
 import type { BillingActor } from './invoice.repository.js';
 import { InvoiceRepository } from './invoice.repository.js';
 import { nextDocumentNumber } from './numbering.service.js';
@@ -283,6 +284,7 @@ export interface LockedInvoiceRow {
   balance_paise: number;
   exception_flag: string | null;
   invoice_number: string | null;
+  updated_at: Date;
 }
 
 // ─── Shared collection guards ───────────────────────────────────────────────
@@ -308,7 +310,7 @@ export async function lockInvoiceForPayment(
   invoiceId: string,
 ): Promise<LockedInvoiceRow> {
   const rows = await tx.$queryRaw<LockedInvoiceRow[]>(Prisma.sql`
-    SELECT id, status, grand_total_paise, balance_paise, exception_flag, invoice_number
+    SELECT id, status, grand_total_paise, balance_paise, exception_flag, invoice_number, updated_at
     FROM invoices
     WHERE id = ${invoiceId}::uuid
       AND clinic_id = ${clinicId}::uuid
@@ -318,6 +320,27 @@ export async function lockInvoiceForPayment(
   const row = rows[0];
   if (!row) throw invoiceNotFound(invoiceId);
   return row;
+}
+
+/**
+ * D-05: throws a 409 `STALE_WRITE_CONFLICT` when `expectedVersion` is
+ * supplied and no longer matches the row's live `updated_at` -- called AFTER
+ * the caller's own `FOR UPDATE` lock (`lockInvoiceForPayment`/`lockInvoice`)
+ * so the check and the real mutation that follows it commit or roll back
+ * together in the same transaction. A no-op when `expectedVersion` is
+ * omitted -- every pre-Plan-10-05 caller is unaffected.
+ */
+export function assertLockedInvoiceVersionCurrent(invoice: LockedInvoiceRow, expectedVersion?: number): void {
+  if (expectedVersion === undefined) return;
+  if (invoice.updated_at.getTime() === expectedVersion) return;
+
+  throw staleWriteConflictError({
+    domain: 'billing',
+    entityType: 'INVOICE',
+    entityId: invoice.id,
+    currentVersion: invoice.updated_at.getTime(),
+    expectedVersion,
+  });
 }
 
 /**
@@ -393,9 +416,11 @@ export class PaymentService {
     invoiceId: string,
     actor: BillingActor,
     amountPaise?: number,
+    expectedVersion?: number,
   ) {
     const result = await this.prisma.$transaction(async (tx) => {
       const invoice = await this.lockInvoice(tx, clinicId, invoiceId);
+      assertLockedInvoiceVersionCurrent(invoice, expectedVersion);
       const amount = amountPaise ?? invoice.balance_paise;
 
       this.assertCollectable(invoice, amount);

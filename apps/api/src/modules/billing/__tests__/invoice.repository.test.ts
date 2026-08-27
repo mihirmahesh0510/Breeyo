@@ -554,4 +554,32 @@ describe('InvoiceRepository.voidInvoice', () => {
     );
     expect(result.cancelledPaymentLinkIds).toEqual(['plink_abc']);
   });
+
+  describe('optimistic-concurrency enforcement (Plan 10-05, D-05, F1)', () => {
+    const LIVE_UPDATED_AT = new Date('2026-08-20T09:00:00.000Z');
+
+    it('voids normally when expectedVersion matches the invoice\'s live updated_at', async () => {
+      const { repository, tx } = createHarness({
+        lockedRows: [{ id: INVOICE, status: 'UNPAID', void_restored_stock: false, exception_flag: null, updated_at: LIVE_UPDATED_AT }],
+      });
+
+      await repository.voidInvoice(CLINIC, INVOICE, 'wrong pet', true, ACTOR, LIVE_UPDATED_AT.getTime());
+
+      expect(tx.invoice.update).toHaveBeenCalled();
+    });
+
+    it('rejects with a 409 STALE_WRITE_CONFLICT when expectedVersion is behind the invoice\'s live updated_at, and never voids (F1: checked under the SAME FOR UPDATE lock as the real void, so a rejected claim can never bump the version)', async () => {
+      const { repository, tx } = createHarness({
+        lockedRows: [{ id: INVOICE, status: 'UNPAID', void_restored_stock: false, exception_flag: null, updated_at: LIVE_UPDATED_AT }],
+      });
+
+      const staleExpectedVersion = LIVE_UPDATED_AT.getTime() - 60_000;
+
+      await expect(
+        repository.voidInvoice(CLINIC, INVOICE, 'wrong pet', true, ACTOR, staleExpectedVersion),
+      ).rejects.toMatchObject({ statusCode: 409, code: 'STALE_WRITE_CONFLICT' });
+
+      expect(tx.invoice.update).not.toHaveBeenCalled();
+    });
+  });
 });

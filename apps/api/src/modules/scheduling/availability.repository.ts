@@ -230,4 +230,28 @@ export class AvailabilityRepository {
 
     return users.map((u) => ({ id: u.id, name: u.fullName }));
   }
+
+  /**
+   * D-36: the clinic's currently-active Admin-role member ids -- used by
+   * `ClinicVetRosterProvider` to exclude Admins from the on-duty escalation
+   * roster even though `listClinicVets` above deliberately includes them
+   * (Admin is vet-capable for `EDIT_EMR`/color-assignment purposes, but
+   * D-36 rules out an Admin ever being an escalation hand-off target).
+   */
+  async listAdminUserIds(clinicId: string): Promise<string[]> {
+    const admins = await this.prisma.user.findMany({
+      where: {
+        clinicMemberships: {
+          some: {
+            clinicId,
+            isActive: true,
+            roles: { some: { role: { name: 'Admin' } } },
+          },
+        },
+      },
+      select: { id: true },
+    });
+
+    return admins.map((admin) => admin.id);
+  }
 }

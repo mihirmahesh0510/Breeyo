@@ -4,7 +4,9 @@ import { QueueService } from './queue.service.js';
 import { createQueueController } from './queue.controller.js';
 import { WebQueueService } from './web-queue.service.js';
 import { createWebQueueController } from './web-queue.controller.js';
+import { createQueueSyncController, buildQueueOfflineReplayService } from './controllers/queueSync.controller.js';
 import { BrowserSyncService } from '../../realtime/browser-sync.service.js';
+import { ReplayBroadcastService } from '../sync/services/replayBroadcast.service.js';
 import { authenticate } from '../../middleware/authenticate.js';
 import { tenantContext } from '../../middleware/tenant-context.js';
 import { requireBrowserModuleAccess } from '../web-dashboard/browser-access.middleware.js';
@@ -41,6 +43,20 @@ export default async function queueRoutes(fastify: FastifyInstance) {
     new QueueService(new QueueRepository(db), fastify.io, pushTriggers);
 
   const controller = createQueueController(buildService);
+
+  // Plan 10-02 (PLT-03, D-01 to D-03, D-12 to D-14, D-34): queue-specific
+  // offline replay reconciliation. Deliberately its own controller/service
+  // rather than folded into `controller` above -- `QueueOfflineReplayService`
+  // applies replayed mobile envelopes (idempotent via the shared
+  // `SyncReplayReceipt` ledger from Plan 10-01), not live authenticated
+  // requests, so it needs its own request/response shape.
+  //
+  // Verify-fix 10.3: `fastify.io` is shared as the same plugin-scope
+  // singleton `BrowserSyncService` already uses below -- a mobile replay
+  // through this endpoint now actually pushes to an open browser queue
+  // board instead of `ReplayBroadcastService` sitting unreached.
+  const replayBroadcast = new ReplayBroadcastService(fastify.io);
+  const queueSyncController = createQueueSyncController((db) => buildQueueOfflineReplayService(db, replayBroadcast));
 
   // Plan 09-04: the browser queue workbench (D-07, D-40, D-41, D-43). Shares
   // `fastify.io` as its realtime transport with `QueueService` above
@@ -85,6 +101,15 @@ export default async function queueRoutes(fastify: FastifyInstance) {
   fastify.post('/queue/archive', {
     preHandler,
     handler: controller.archiveEntriesHandler,
+  });
+
+  // Plan 10-02: mobile offline queue replay on reconnect. Queue-first
+  // (D-12): this is the ONE endpoint every offline queue mutation (check-in,
+  // status transition, no-show, call-next) replays through, never shared
+  // with lower-tier (clinical/inventory/ancillary) replay traffic.
+  fastify.post('/queue/sync/replay', {
+    preHandler,
+    handler: queueSyncController.replayHandler,
   });
 
   // Plan 09-04: browser queue workbench. Registered after the fixed

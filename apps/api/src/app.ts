@@ -148,6 +148,15 @@ export async function buildApp(
   // own tenant scope from the validated magic-link row.
   await app.register(import('./modules/owner-portal/owner-portal.routes.js'), { prefix: '/api/v1' });
 
+  // Phase 10 (plan 10-01 Task 2): the shared offline-sync replay ingress
+  // (PLT-03). `POST /sync/replay` is the untrusted-mobile-payload trust
+  // boundary (T-10-01) every domain-specific offline replay adapter will
+  // eventually sit behind. Registration alone does not exercise the new
+  // `SyncReplayReceipt`/`SyncConflictRecord`/`SyncFailureTask` Prisma
+  // delegates against a live table -- that requires Task 3's blocking
+  // `prisma db push` + `prisma generate`, deliberately not run yet.
+  await app.register(import('./modules/sync/routes.js'), { prefix: '/api/v1' });
+
   // Midnight archive cron (skip in test environment)
   if (!isTest) {
     scheduleMidnightArchive(app.prisma, app.io);

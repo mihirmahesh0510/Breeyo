@@ -53,8 +53,11 @@ export function OfflineBanner() {
       accessibilityRole="alert"
     >
       <MaterialCommunityIcons name="wifi-off" size={16} color="#BF360C" />
+      {/* Plan 10-02 (D-03, D-19): check-ins and status changes made now are
+          real queue work, not blocked or lost -- calm status text, not a
+          "something is broken/stale" warning. */}
       <Text variant="bodySmall" style={styles.text}>
-        You are offline. Queue may be outdated.
+        You're offline. Changes will sync when you're back online.
       </Text>
     </Animated.View>
   );

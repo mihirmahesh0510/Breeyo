@@ -3,11 +3,12 @@ import { View, StyleSheet, Pressable } from 'react-native';
 import { Text } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { StatusBadge } from '@breeyo/ui';
-import { SPECIES_ICONS, QUEUE_STATUS_LABELS, type QueueStatus } from '@breeyo/types';
+import { SPECIES_ICONS, QUEUE_STATUS_LABELS, SyncVisibilityState, type QueueStatus } from '@breeyo/types';
 import type { QueueEntryWithPet } from '@breeyo/types';
+import type { QueueEntryWithPendingState } from '../lib/queue-offline-utils';
 
 interface QueueCardItemProps {
-  entry: QueueEntryWithPet;
+  entry: QueueEntryWithPet | QueueEntryWithPendingState;
   position?: number;
   estimatedWait?: string;
   disabled?: boolean;
@@ -43,6 +44,15 @@ export function QueueCardItem({
   const statusVariant = STATUS_TO_VARIANT[entry.status] || 'waiting';
   const isEmergency = entry.isEmergency;
   const isWaiting = entry.status === 'WAITING';
+  // D-03, D-19: an offline-created/-modified entry is operationally real
+  // immediately -- this is a quiet marker alongside the pet name, never a
+  // blocking modal and never a reason to move the card out of its normal
+  // section. PENDING/REPLAYING both read as "still catching up"; FAILED
+  // gets a visually distinct color so it can escalate into the failure
+  // center without staff having to guess anything is wrong.
+  const pendingReplayState = (entry as { pendingReplayState?: SyncVisibilityState }).pendingReplayState;
+  const isPendingSync = pendingReplayState === SyncVisibilityState.PENDING || pendingReplayState === SyncVisibilityState.REPLAYING;
+  const isFailedSync = pendingReplayState === SyncVisibilityState.FAILED;
 
   return (
     <Pressable
@@ -76,6 +86,24 @@ export function QueueCardItem({
           </Text>
           {isEmergency && (
             <MaterialCommunityIcons name="alert-circle" size={16} color="#BA1A1A" />
+          )}
+          {isPendingSync && (
+            <MaterialCommunityIcons
+              name="cloud-sync-outline"
+              size={14}
+              color="#E65100"
+              accessibilityLabel="Waiting to sync"
+              testID="queue-card-pending-sync"
+            />
+          )}
+          {isFailedSync && (
+            <MaterialCommunityIcons
+              name="cloud-alert"
+              size={14}
+              color="#BA1A1A"
+              accessibilityLabel="Sync failed"
+              testID="queue-card-failed-sync"
+            />
           )}
         </View>
         {entry.visitReason && (

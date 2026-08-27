@@ -1116,6 +1116,20 @@ export async function cleanupTestData() {
     await tx.userDashboardPreference.deleteMany();
     await tx.clinicBrowserAccessPolicy.deleteMany();
 
+    // Phase 10 offline-sync tables (plan 10-01) only carry a `clinic`
+    // relation (no FK on userId/deviceId), but that relation alone is enough
+    // to block `tx.clinic.deleteMany()` below with a FK violation once any
+    // test exercises a real HTTP replay endpoint (buildTestApp() + supertest)
+    // against the real DB instead of a mocked Prisma delegate -- which none
+    // of Plan 10-01 to 10-05's own service-level tests ever did, so this gap
+    // was invisible until Plan 10-06's end-to-end integration suite started
+    // hitting `/sync/replay`, `/queue/sync/replay`, `/consultations/sync/replay`,
+    // and `/inventory/sync/replay` for real. Found and fixed here per D-28.
+    await tx.deviceSyncCursor.deleteMany();
+    await tx.syncFailureTask.deleteMany();
+    await tx.syncConflictRecord.deleteMany();
+    await tx.syncReplayReceipt.deleteMany();
+
     await tx.queueEntry.deleteMany();
     await tx.consentRecord.deleteMany();
     await tx.serviceCatalog.deleteMany();

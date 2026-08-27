@@ -163,6 +163,7 @@ describe('BillingWorkbenchService.collectPayment (D-05: Front Desk and Admin bot
       'inv_1',
       { userId: FRONT_DESK_USER_ID, userName: 'Priya Sharma' },
       50000,
+      undefined,
     );
   });
 });
@@ -198,6 +199,75 @@ describe('BillingWorkbenchService.refundInvoice Admin-only enforcement (D-22)', 
     ).rejects.toMatchObject({ statusCode: 403, code: 'FORBIDDEN' });
 
     expect(refundService.createRefund).not.toHaveBeenCalled();
+  });
+});
+
+describe('BillingWorkbenchService optimistic-concurrency pass-through (Plan 10-05, D-05)', () => {
+  // Verify-fix 10.10 (F1): the version check used to run here, as a separate
+  // `db.invoice.updateMany` claim BEFORE the delegate service, which could
+  // commit a fresh `updatedAt` even when the delegate then rejected the
+  // mutation for an unrelated reason -- a false conflict for a later,
+  // genuinely current caller. `expectedVersion` is now threaded straight
+  // through to `PaymentService.recordCashPayment`/`RefundService.createRefund`/
+  // `InvoiceService.voidInvoice`, which check it under their own `FOR UPDATE`
+  // lock, in the SAME transaction as the real mutation (see those services'
+  // own test files for the actual staleness/atomicity coverage).
+  it('collectPayment passes expectedVersion through to PaymentService.recordCashPayment unchanged', async () => {
+    const paymentService = makePaymentService();
+    const { service } = buildService({ paymentService });
+
+    await service.collectPayment(
+      CLINIC_ID,
+      { userId: FRONT_DESK_USER_ID, userName: 'Priya Sharma' },
+      'inv_1',
+      50000,
+      123456,
+    );
+
+    expect(paymentService.recordCashPayment).toHaveBeenCalledWith(CLINIC_ID, 'inv_1', expect.anything(), 50000, 123456);
+  });
+
+  it('collectPayment applies normally when expectedVersion is omitted (no breaking change for existing callers)', async () => {
+    const paymentService = makePaymentService();
+    const { service } = buildService({ paymentService });
+
+    await service.collectPayment(CLINIC_ID, { userId: FRONT_DESK_USER_ID, userName: 'Priya Sharma' }, 'inv_1', 50000);
+
+    expect(paymentService.recordCashPayment).toHaveBeenCalledWith(CLINIC_ID, 'inv_1', expect.anything(), 50000, undefined);
+  });
+
+  it('refundInvoice passes expectedVersion through to RefundService.createRefund unchanged', async () => {
+    const refundService = makeRefundService();
+    const { service } = buildService({ roleCode: 'ADMIN', refundService });
+    const input = { amountPaise: 10000, reason: 'owner request' } as never;
+
+    await service.refundInvoice(
+      CLINIC_ID,
+      ADMIN_USER_ID,
+      { userId: ADMIN_USER_ID, userName: 'Admin User' },
+      'inv_1',
+      input,
+      123456,
+    );
+
+    expect(refundService.createRefund).toHaveBeenCalledWith(CLINIC_ID, 'inv_1', expect.anything(), input, 123456);
+  });
+
+  it('voidInvoice passes expectedVersion through to InvoiceService.voidInvoice unchanged', async () => {
+    const invoiceService = makeInvoiceService();
+    const { service } = buildService({ roleCode: 'ADMIN', invoiceService });
+    const input = { reason: 'duplicate', restoreStock: true } as never;
+
+    await service.voidInvoice(
+      CLINIC_ID,
+      ADMIN_USER_ID,
+      { userId: ADMIN_USER_ID, userName: 'Admin User' },
+      'inv_1',
+      input,
+      123456,
+    );
+
+    expect(invoiceService.voidInvoice).toHaveBeenCalledWith(CLINIC_ID, 'inv_1', expect.anything(), input, 123456);
   });
 });
 

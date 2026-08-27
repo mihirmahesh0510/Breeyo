@@ -122,18 +122,49 @@ export class WebQueueService {
     };
   }
 
-  /** D-43: status change, same state machine as mobile, plus browser-sync metadata on the response and a realtime push. */
+  /**
+   * D-43: status change, same state machine as mobile, plus browser-sync
+   * metadata on the response and a realtime push.
+   *
+   * Plan 10-05, D-05: when the caller sends `expectedVersion` (the last
+   * `staleVersion` it rendered for this row), the write only applies if the
+   * row's LIVE `updatedAt` still matches it -- a stale claim is rejected
+   * with a 409 `STALE_WRITE_CONFLICT` instead of silently applying a write
+   * against a view the caller has not refreshed since another session
+   * (mobile replay or another browser tab) changed this row. Omitting
+   * `expectedVersion` (every caller before this plan) is unaffected.
+   *
+   * Verify-fix 10.10: the check used to be a separate `findUnique` read
+   * followed, several awaits later, by `QueueService.updateStatus`'s own
+   * write -- two genuinely concurrent callers with the same stale
+   * `expectedVersion` could both read the row BEFORE either had written,
+   * both see themselves as current, and both proceed.
+   *
+   * That was tightened to an atomic conditional `updateMany` claim run
+   * BEFORE `QueueService.updateStatus`, but that introduced a different gap:
+   * the claim always committed a fresh `updatedAt`, even when the
+   * downstream state-machine transition then turned out to be invalid --
+   * bumping the version with no real change applied, so a second, genuinely
+   * current caller got a false 409. `QueueService.updateStatus` now takes
+   * `expectedVersion` itself and folds the version check into the SAME
+   * conditional `updateMany` that applies the real field changes
+   * (`QueueRepository.updateEntry`) -- there is no longer a separate write
+   * that can commit ahead of (or independent of) the real mutation, so the
+   * version only ever advances when a real change lands.
+   */
   async updateEntryStatus(
     clinicId: string,
     userId: string,
     entryId: string,
     status: QueueStatus,
+    expectedVersion?: number,
   ): Promise<WebQueueEntry & { changeMetadata: BrowserSyncChangeMetadata }> {
     const updated = (await this.queueService.updateStatus({
       clinicId,
       entryId,
       status,
       userId,
+      expectedVersion,
     })) as RawQueueEntry;
 
     const changeMetadata = this.browserSyncService.buildChangeMetadata({

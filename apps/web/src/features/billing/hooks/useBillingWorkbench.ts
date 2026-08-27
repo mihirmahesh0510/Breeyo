@@ -5,10 +5,11 @@
 // no separate `useBillingRealtime.ts` -- Plan 09-04 keeps billing's
 // browser-sync push folded into its one workbench hook rather than a
 // second file, since nothing else on this page needs it split out).
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { io, type Socket } from 'socket.io-client';
 import { apiClient, ApiClientError } from '../../../lib/api';
 import { useAuth, handleUnauthorized } from '../../../lib/AuthProvider';
+import { useReplayStaleState } from '../../dashboard/hooks/useReplayStaleState';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
 const BILLING_WORKBENCH_SYNC_EVENT = 'browser:billing-workbench-sync';
@@ -84,6 +85,21 @@ export function useBillingWorkbench() {
   const knownVersionRef = useRef<number | undefined>(undefined);
   const socketRef = useRef<Socket | null>(null);
 
+  // Verify-fix 10.3 (D-05): billing has no dedicated mobile-replay socket
+  // hook (billing invoices are never captured offline in the first place --
+  // Phase 6 D-41), so its own offline-recovery race is a stale BROWSER write
+  // racing another session, caught by `billing-workbench.service.ts`'s
+  // `expectedVersion` check and surfaced as a 409 `.conflict` payload
+  // (`collectPayment` below). Mounted here rather than in
+  // `BillingWorkbench.tsx` because that write-rejection handler lives in
+  // this hook, matching this file's own header: billing folds its realtime/
+  // mutation state into the one workbench hook rather than a second file.
+  const watchedInvoiceIds = useMemo(
+    () => (data ? [...data.unpaid, ...data.overdue].map((row) => row.id) : []),
+    [data],
+  );
+  const replayStale = useReplayStaleState(watchedInvoiceIds);
+
   const load = useCallback(
     async (signal?: AbortSignal) => {
       if (!accessToken) return;
@@ -151,8 +167,12 @@ export function useBillingWorkbench() {
       knownVersionRef.current = Math.max(0, ...versions);
     }
     setRealtimeNotice(null);
+    // Verify-fix 10.3: the same "Refresh" action also clears an open
+    // write-rejection conflict prompt -- D-11 says unresolved conflicts stay
+    // visible until actually cleared, and this IS that explicit clearing.
+    replayStale.acknowledge();
     refetch();
-  }, [data, refetch]);
+  }, [data, refetch, replayStale]);
 
   const dismissRealtimeNotice = useCallback(() => setRealtimeNotice(null), []);
 
@@ -180,10 +200,19 @@ export function useBillingWorkbench() {
         });
         await load();
       } catch (err) {
+        // Verify-fix 10.3 (D-05): a 409 STALE_WRITE_CONFLICT is a real,
+        // review-before-overwrite conflict, not a generic mutation failure --
+        // routes through the same stale-state mechanism a mobile-replay
+        // broadcast would use so `StaleStateBanner` can render
+        // `status="conflict"` instead of only a toast the caller could miss
+        // or dismiss without ever seeing the other session's edit.
+        if (err instanceof ApiClientError && err.conflict) {
+          replayStale.onReplayConflictOpened([err.conflict.entityId]);
+        }
         setMutationError(describeMutationFailure(err, 'Could not collect payment. Try again.'));
       }
     },
-    [accessToken, load],
+    [accessToken, load, replayStale],
   );
 
   /** D-22: the server re-checks Admin-only itself; a 403 here means the flag was stale or bypassed and propagates as an error, never a silent success. */
@@ -234,5 +263,9 @@ export function useBillingWorkbench() {
     collectPayment,
     refundInvoice,
     voidInvoice,
+    // Verify-fix 10.3: drives `StaleStateBanner`'s real status prop on
+    // `BillingWorkbench` -- `'conflict'` after a rejected stale write,
+    // `'stale'`/`'fresh'` otherwise.
+    replayStatus: replayStale.status,
   };
 }

@@ -918,3 +918,86 @@ CREATE POLICY owner_portal_checkout_sessions_update ON owner_portal_checkout_ses
 DROP POLICY IF EXISTS owner_portal_checkout_sessions_delete ON owner_portal_checkout_sessions;
 CREATE POLICY owner_portal_checkout_sessions_delete ON owner_portal_checkout_sessions
   FOR DELETE USING (EXISTS (SELECT 1 FROM owner_portal_magic_links m WHERE m.id = owner_portal_checkout_sessions.magic_link_id AND m.clinic_id = current_setting('app.clinic_id', true)::uuid));
+
+-- ============================================================
+-- 11. Phase 10 offline-sync tables (plan 10-01 Task 2, PLT-03)
+-- ============================================================
+-- sync_replay_receipts
+ALTER TABLE sync_replay_receipts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE sync_replay_receipts FORCE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS sync_replay_receipts_select ON sync_replay_receipts;
+CREATE POLICY sync_replay_receipts_select ON sync_replay_receipts
+  FOR SELECT USING (clinic_id = current_setting('app.clinic_id', true)::uuid);
+
+DROP POLICY IF EXISTS sync_replay_receipts_insert ON sync_replay_receipts;
+CREATE POLICY sync_replay_receipts_insert ON sync_replay_receipts
+  FOR INSERT WITH CHECK (clinic_id = current_setting('app.clinic_id', true)::uuid);
+
+DROP POLICY IF EXISTS sync_replay_receipts_update ON sync_replay_receipts;
+CREATE POLICY sync_replay_receipts_update ON sync_replay_receipts
+  FOR UPDATE USING (clinic_id = current_setting('app.clinic_id', true)::uuid);
+
+DROP POLICY IF EXISTS sync_replay_receipts_delete ON sync_replay_receipts;
+CREATE POLICY sync_replay_receipts_delete ON sync_replay_receipts
+  FOR DELETE USING (clinic_id = current_setting('app.clinic_id', true)::uuid);
+
+-- sync_conflict_records
+ALTER TABLE sync_conflict_records ENABLE ROW LEVEL SECURITY;
+ALTER TABLE sync_conflict_records FORCE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS sync_conflict_records_select ON sync_conflict_records;
+CREATE POLICY sync_conflict_records_select ON sync_conflict_records
+  FOR SELECT USING (clinic_id = current_setting('app.clinic_id', true)::uuid);
+
+DROP POLICY IF EXISTS sync_conflict_records_insert ON sync_conflict_records;
+CREATE POLICY sync_conflict_records_insert ON sync_conflict_records
+  FOR INSERT WITH CHECK (clinic_id = current_setting('app.clinic_id', true)::uuid);
+
+DROP POLICY IF EXISTS sync_conflict_records_update ON sync_conflict_records;
+CREATE POLICY sync_conflict_records_update ON sync_conflict_records
+  FOR UPDATE USING (clinic_id = current_setting('app.clinic_id', true)::uuid);
+
+DROP POLICY IF EXISTS sync_conflict_records_delete ON sync_conflict_records;
+CREATE POLICY sync_conflict_records_delete ON sync_conflict_records
+  FOR DELETE USING (clinic_id = current_setting('app.clinic_id', true)::uuid);
+
+-- sync_failure_tasks
+ALTER TABLE sync_failure_tasks ENABLE ROW LEVEL SECURITY;
+ALTER TABLE sync_failure_tasks FORCE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS sync_failure_tasks_select ON sync_failure_tasks;
+CREATE POLICY sync_failure_tasks_select ON sync_failure_tasks
+  FOR SELECT USING (clinic_id = current_setting('app.clinic_id', true)::uuid);
+
+DROP POLICY IF EXISTS sync_failure_tasks_insert ON sync_failure_tasks;
+CREATE POLICY sync_failure_tasks_insert ON sync_failure_tasks
+  FOR INSERT WITH CHECK (clinic_id = current_setting('app.clinic_id', true)::uuid);
+
+DROP POLICY IF EXISTS sync_failure_tasks_update ON sync_failure_tasks;
+CREATE POLICY sync_failure_tasks_update ON sync_failure_tasks
+  FOR UPDATE USING (clinic_id = current_setting('app.clinic_id', true)::uuid);
+
+DROP POLICY IF EXISTS sync_failure_tasks_delete ON sync_failure_tasks;
+CREATE POLICY sync_failure_tasks_delete ON sync_failure_tasks
+  FOR DELETE USING (clinic_id = current_setting('app.clinic_id', true)::uuid);
+
+-- device_sync_cursors
+ALTER TABLE device_sync_cursors ENABLE ROW LEVEL SECURITY;
+ALTER TABLE device_sync_cursors FORCE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS device_sync_cursors_select ON device_sync_cursors;
+CREATE POLICY device_sync_cursors_select ON device_sync_cursors
+  FOR SELECT USING (clinic_id = current_setting('app.clinic_id', true)::uuid);
+
+DROP POLICY IF EXISTS device_sync_cursors_insert ON device_sync_cursors;
+CREATE POLICY device_sync_cursors_insert ON device_sync_cursors
+  FOR INSERT WITH CHECK (clinic_id = current_setting('app.clinic_id', true)::uuid);
+
+DROP POLICY IF EXISTS device_sync_cursors_update ON device_sync_cursors;
+CREATE POLICY device_sync_cursors_update ON device_sync_cursors
+  FOR UPDATE USING (clinic_id = current_setting('app.clinic_id', true)::uuid);
+
+DROP POLICY IF EXISTS device_sync_cursors_delete ON device_sync_cursors;
+CREATE POLICY device_sync_cursors_delete ON device_sync_cursors
+  FOR DELETE USING (clinic_id = current_setting('app.clinic_id', true)::uuid);

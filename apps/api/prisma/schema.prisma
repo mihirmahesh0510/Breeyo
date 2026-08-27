@@ -135,6 +135,12 @@ model Clinic {
   dashboardPreferences  UserDashboardPreference[]
   ownerPortalMagicLinks OwnerPortalMagicLink[]
 
+  // Phase 10 back-relations (PLT-03, D-05..D-24, D-35..D-37)
+  syncReplayReceipts  SyncReplayReceipt[]
+  syncConflictRecords SyncConflictRecord[]
+  syncFailureTasks    SyncFailureTask[]
+  deviceSyncCursors   DeviceSyncCursor[]
+
   @@map("clinics")
 }
 
@@ -1850,4 +1856,147 @@ model OwnerPortalCheckoutSession {
 
   @@index([magicLinkId, returnState])
   @@map("owner_portal_checkout_sessions")
+}
+
+// ─── Phase 10: Offline Hardening & Integration Polish (PLT-03) ───────────
+// Server-side persistence for the shared offline-sync contracts in
+// @breeyo/types (ReplayPriority, SyncVisibilityState, ConflictSeverity,
+// ResolutionState -- see packages/types/src/offline-sync/constants.ts). The
+// mobile replay ingress (apps/api/src/modules/sync) is the untrusted-payload
+// trust boundary (T-10-01): clinicId/userId on every row here are always
+// derived server-side from the authenticated session, never trusted from the
+// replayed envelope itself.
+
+/// Idempotency ledger for POST /sync/replay (D-05 to D-11, T-10-03). The
+/// `[clinicId, deviceId, operationId]` unique constraint is what makes a
+/// duplicate or flapping replay of the same operation a no-op instead of a
+/// duplicate write -- `replayIngest.service.ts` upserts against this
+/// constraint before doing anything else with an incoming envelope.
+model SyncReplayReceipt {
+  id                 String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clinicId           String                  @map("clinic_id") @db.Uuid
+  deviceId           String                  @map("device_id")
+  operationId        String                  @map("operation_id")
+  userId             String                  @map("user_id") @db.Uuid
+  domain             String
+  entityType         String                  @map("entity_type")
+  entityId           String                  @map("entity_id")
+  status             SyncReplayReceiptStatus @default(ACKNOWLEDGED)
+  acknowledgedAt     DateTime                @default(now()) @map("acknowledged_at")
+  lastAcknowledgedAt DateTime                @default(now()) @map("last_acknowledged_at")
+  createdAt          DateTime                @default(now()) @map("created_at")
+
+  clinic Clinic @relation(fields: [clinicId], references: [id])
+
+  @@unique([clinicId, deviceId, operationId])
+  @@index([clinicId, domain, lastAcknowledgedAt])
+  @@map("sync_replay_receipts")
+}
+
+enum SyncReplayReceiptStatus {
+  ACKNOWLEDGED
+  DEFERRED
+}
+
+/// Structured review-before-overwrite conflict record (D-05 to D-10, D-24,
+/// D-36). Both payload snapshots are mandatory so a resolution sheet can
+/// always compare local vs server state explicitly (D-08). `severity`,
+/// `originatingUserId`, `currentOwnerUserId`, `guidedRetryCount`, and
+/// `nextSuggestedAction` give D-22 to D-24's guided-retry-then-escalate
+/// ownership handoff a persistence home on the conflict side, not just the
+/// failure-task side.
+model SyncConflictRecord {
+  id                     String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clinicId               String              @map("clinic_id") @db.Uuid
+  deviceId               String              @map("device_id")
+  operationId            String              @map("operation_id")
+  domain                 String
+  entityType             String              @map("entity_type")
+  entityId               String              @map("entity_id")
+  severity               SyncConflictSeverity
+  /// verify-fix 10.5: the offline device's own last-known-synced draft
+  /// snapshot, captured at conflict-creation time so `POST
+  /// .../conflicts/:conflictId/resolve`'s MERGE_SAFE_FIELDS action can rerun
+  /// `classifyClinicalConflict`'s real three-way diff instead of guessing.
+  /// Nullable because non-EMR (queue/inventory) OPERATIONAL conflicts have no
+  /// three-way-diff concept and never set it.
+  baselinePayloadJson    Json?               @map("baseline_payload_json")
+  localPayloadJson       Json                @map("local_payload_json")
+  serverPayloadJson      Json                @map("server_payload_json")
+  recommendedOwnerUserId String?             @map("recommended_owner_user_id") @db.Uuid
+  resolutionOwnerUserId  String?             @map("resolution_owner_user_id") @db.Uuid
+  originatingUserId      String              @map("originating_user_id") @db.Uuid
+  currentOwnerUserId     String              @map("current_owner_user_id") @db.Uuid
+  guidedRetryCount       Int                 @default(0) @map("guided_retry_count")
+  resolutionState        SyncResolutionState @default(OPEN) @map("resolution_state")
+  nextSuggestedAction    String?             @map("next_suggested_action")
+  lastAttemptedAt        DateTime?           @map("last_attempted_at")
+  createdAt              DateTime            @default(now()) @map("created_at")
+  updatedAt              DateTime            @updatedAt @map("updated_at")
+
+  clinic Clinic @relation(fields: [clinicId], references: [id])
+
+  @@unique([clinicId, deviceId, operationId])
+  @@index([clinicId, resolutionState, severity])
+  @@index([clinicId, currentOwnerUserId, resolutionState])
+  @@map("sync_conflict_records")
+}
+
+enum SyncConflictSeverity {
+  OPERATIONAL
+  SAFETY_CRITICAL
+}
+
+enum SyncResolutionState {
+  OPEN
+  GUIDED_RETRY
+  ESCALATED
+  RESOLVED
+}
+
+/// Actionable failure-center record (D-20, D-22, D-23). First retry stays
+/// with `originatingUserId`; escalation to `currentOwnerUserId` only happens
+/// after a guided retry fails (DEFAULT_GUIDED_RETRY_POLICY in
+/// @breeyo/types), never immediately and never silently.
+model SyncFailureTask {
+  id                  String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clinicId            String              @map("clinic_id") @db.Uuid
+  deviceId            String              @map("device_id")
+  operationId         String              @map("operation_id")
+  domain              String
+  originatingUserId   String              @map("originating_user_id") @db.Uuid
+  currentOwnerUserId  String              @map("current_owner_user_id") @db.Uuid
+  guidedRetryCount    Int                 @default(0) @map("guided_retry_count")
+  resolutionState     SyncResolutionState @default(OPEN) @map("resolution_state")
+  nextSuggestedAction String              @map("next_suggested_action")
+  lastAttemptedAt     DateTime            @default(now()) @map("last_attempted_at")
+  createdAt           DateTime            @default(now()) @map("created_at")
+  updatedAt           DateTime            @updatedAt @map("updated_at")
+
+  clinic Clinic @relation(fields: [clinicId], references: [id])
+
+  @@unique([clinicId, deviceId, operationId])
+  @@index([clinicId, currentOwnerUserId, resolutionState])
+  @@map("sync_failure_tasks")
+}
+
+/// Optional per-device watermark for replay acknowledgements and same-day
+/// refresh windows (RESEARCH.md). Not required for idempotency (that's
+/// SyncReplayReceipt's job) -- this is a cheap "how far has this device
+/// gotten in this domain" cursor for future replay-broadcast/refresh logic.
+model DeviceSyncCursor {
+  id                          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  clinicId                    String    @map("clinic_id") @db.Uuid
+  deviceId                    String    @map("device_id")
+  domain                      String
+  lastAcknowledgedOperationId String?   @map("last_acknowledged_operation_id")
+  lastAcknowledgedAt          DateTime? @map("last_acknowledged_at")
+  createdAt                   DateTime  @default(now()) @map("created_at")
+  updatedAt                   DateTime  @updatedAt @map("updated_at")
+
+  clinic Clinic @relation(fields: [clinicId], references: [id])
+
+  @@unique([clinicId, deviceId, domain])
+  @@index([clinicId, domain, lastAcknowledgedAt])
+  @@map("device_sync_cursors")
 }

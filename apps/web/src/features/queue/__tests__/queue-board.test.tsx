@@ -248,6 +248,94 @@ describe('Queue workbench stale-state prompts (D-40, D-43)', () => {
   });
 });
 
+describe('Queue workbench mobile-replay broadcast prompts (verify-fix 10.3)', () => {
+  it('renders the real StaleStateBanner with the conflict copy (not the generic stale copy) when a scoped replay:conflict-opened event names a rendered entry', async () => {
+    seedSession();
+    mockFetchByUrl({
+      'web-dashboard/cockpit': cockpitBody,
+      'queue/web/board': boardBody(),
+    });
+
+    render(
+      <AuthProvider>
+        <QueuePage />
+      </AuthProvider>,
+    );
+
+    await screen.findByText('Bruno');
+    expect(screen.queryByTestId('stale-state-banner')).not.toBeInTheDocument();
+
+    act(() => {
+      socketHandlers['replay:conflict-opened']?.({
+        clinicId: 'clinic-1',
+        domain: 'queue',
+        entityIds: ['entry_1'],
+      });
+    });
+
+    const banner = await screen.findByTestId('stale-state-banner');
+    expect(banner).toBeInTheDocument();
+    // The load-bearing assertion: this is the real StaleStateBanner
+    // rendered by the real QueueBoard/QueuePage, showing the conflict copy
+    // -- not the hardcoded "stale" string the finding reported.
+    expect(screen.getByText(/changed elsewhere/i)).toBeInTheDocument();
+  });
+
+  it('renders the generic stale copy (not conflict) for a plain replay:applied event on a rendered entry', async () => {
+    seedSession();
+    mockFetchByUrl({
+      'web-dashboard/cockpit': cockpitBody,
+      'queue/web/board': boardBody(),
+    });
+
+    render(
+      <AuthProvider>
+        <QueuePage />
+      </AuthProvider>,
+    );
+
+    await screen.findByText('Bruno');
+
+    act(() => {
+      socketHandlers['replay:applied']?.({
+        clinicId: 'clinic-1',
+        domain: 'queue',
+        entityIds: ['entry_1'],
+      });
+    });
+
+    const banner = await screen.findByTestId('stale-state-banner');
+    expect(screen.getByText(/out of date/i)).toBeInTheDocument();
+    expect(screen.queryByText(/changed elsewhere/i)).not.toBeInTheDocument();
+  });
+
+  it('ignores a replay-broadcast event for a different domain (defense in depth beyond server room scoping)', async () => {
+    seedSession();
+    mockFetchByUrl({
+      'web-dashboard/cockpit': cockpitBody,
+      'queue/web/board': boardBody(),
+    });
+
+    render(
+      <AuthProvider>
+        <QueuePage />
+      </AuthProvider>,
+    );
+
+    await screen.findByText('Bruno');
+
+    act(() => {
+      socketHandlers['replay:conflict-opened']?.({
+        clinicId: 'clinic-1',
+        domain: 'inventory',
+        entityIds: ['entry_1'],
+      });
+    });
+
+    expect(screen.queryByTestId('stale-state-banner')).not.toBeInTheDocument();
+  });
+});
+
 describe('Queue workbench mutation failures surface a visible error (D-42, D-43)', () => {
   it('shows an error toast when a status update fails, instead of failing silently', async () => {
     seedSession();

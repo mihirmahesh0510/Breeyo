@@ -11,12 +11,20 @@ import { dispenseSchema } from '@breeyo/validators';
 import { useAuth } from '../../../providers/AuthProvider';
 import { useInventoryItem } from '../hooks/useInventoryApi';
 import { useFifoDispense } from '../hooks/useFifoDispense';
+import { useOfflineStockActions } from '../hooks/useOfflineStockActions';
+import { isNetworkFailure } from '../services/offlineStockActionStore';
 import { QuantityStepper } from '../components/QuantityStepper';
 import { FifoBatchDisplay } from '../components/FifoBatchDisplay';
 import { BatchOverrideList } from '../components/BatchOverrideList';
 import { ExpiredBatchBlocker } from '../components/ExpiredBatchBlocker';
 import { OwnerAttributionPicker } from '../components/OwnerAttributionPicker';
-import { selectFifoBatch, isBatchExpired, getInsufficientStockError, buildDispenseSubmission } from '../lib/fifo-dispense-logic';
+import {
+  selectFifoBatch,
+  isBatchExpired,
+  getInsufficientStockError,
+  buildDispenseSubmission,
+  getDispenseQueuedToast,
+} from '../lib/fifo-dispense-logic';
 import type { StockBatch } from '@breeyo/types';
 
 // --- Component ---
@@ -53,6 +61,11 @@ export function DispenseScreen() {
 
   const itemQuery = useInventoryItem(activeClinicId, itemId);
   const dispenseStock = useFifoDispense(activeClinicId, itemId);
+  // Verify-fix 10.2 (D-04, D-10, D-15 to D-17): falls through here only when
+  // `dispenseStock.mutateAsync` fails with a genuine network failure (never
+  // reached the server) -- same shape `CheckInSheet.tsx`/`useOfflineQueueActions.ts`
+  // established for queue check-in.
+  const offlineStockActions = useOfflineStockActions();
 
   const [quantity, setQuantity] = useState(1);
   const [isOverriding, setIsOverriding] = useState(false);
@@ -139,12 +152,45 @@ export function DispenseScreen() {
       showToast('success', `${quantity} ${unit} of ${itemName} dispensed`);
       router.back();
     } catch (err) {
-      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      setServerError(err instanceof Error ? err.message : 'Could not dispense stock');
+      if (isNetworkFailure(err)) {
+        // The server was never reached -- fall through to the offline
+        // capture path instead of leaving the user at a dead-end error
+        // (10-04-SUMMARY.md Deviation 2 / verify-fix 10.2).
+        try {
+          await offlineStockActions.dispenseOffline(
+            itemId,
+            { itemId, name: itemName, category: item?.category ?? '', unit, currentStock: available },
+            result.payload,
+          );
+          void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          showToast('info', getDispenseQueuedToast(quantity, unit, itemName));
+          router.back();
+        } catch (offlineErr) {
+          void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+          setServerError(offlineErr instanceof Error ? offlineErr.message : 'Could not dispense stock');
+        }
+      } else {
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        setServerError(err instanceof Error ? err.message : 'Could not dispense stock');
+      }
     } finally {
       setIsSubmitting(false);
     }
-  }, [quantity, available, unit, activeBatch, fifoBatch, consultationId, selectedOwnerId, dispenseStock, itemName, router]);
+  }, [
+    quantity,
+    available,
+    unit,
+    activeBatch,
+    fifoBatch,
+    consultationId,
+    selectedOwnerId,
+    dispenseStock,
+    offlineStockActions,
+    itemId,
+    item,
+    itemName,
+    router,
+  ]);
 
   if (itemQuery.isLoading && !params.itemName) {
     return (

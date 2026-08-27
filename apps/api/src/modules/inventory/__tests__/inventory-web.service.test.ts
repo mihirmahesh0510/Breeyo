@@ -10,6 +10,7 @@ const FRONT_DESK_USER_ID = 'user_fd_1';
 function makeDb() {
   return {
     inventoryItem: {
+      findUnique: vi.fn().mockResolvedValue(null),
       findMany: vi.fn().mockResolvedValue([
         {
           id: 'item_1',
@@ -212,8 +213,79 @@ describe('InventoryWebService.adjustStock D-18 enforcement', () => {
     const input = { quantity: 5, type: 'add' as const, reason: 'correction' as const };
     const result = await service.adjustStock(CLINIC_ID, ADMIN_USER_ID, 'Admin User', 'item_1', input);
 
-    expect(stockAdjustmentService.adjust).toHaveBeenCalledWith(CLINIC_ID, 'item_1', ADMIN_USER_ID, 'Admin User', input);
+    expect(stockAdjustmentService.adjust).toHaveBeenCalledWith(CLINIC_ID, 'item_1', ADMIN_USER_ID, 'Admin User', input, undefined);
     expect(result).toMatchObject({ movement: { id: 'mov_1' } });
+  });
+});
+
+describe('InventoryWebService.adjustStock optimistic-concurrency pass-through (Plan 10-05, D-05, F1)', () => {
+  // F1: the version check used to run here, as a separate `db.inventoryItem.updateMany`
+  // claim BEFORE `StockAdjustmentService.adjust`, which could commit a fresh
+  // `updatedAt` even when the downstream adjustment then failed its own
+  // validation -- a false conflict for a later, genuinely current caller.
+  // `expectedVersion` is now threaded straight through to
+  // `StockAdjustmentService.adjust`, which folds the version check into the
+  // SAME conditional `updateMany` (inside the same transaction as the
+  // movement record) that applies the real stock change -- see
+  // `stock-adjustment.service.test.ts` for the actual staleness/atomicity
+  // coverage.
+  it('applies normally when expectedVersion is omitted (no breaking change for existing callers)', async () => {
+    const { service, stockAdjustmentService } = buildService({ roleCode: 'ADMIN', inventoryWriteEnabled: true });
+
+    await service.adjustStock(CLINIC_ID, ADMIN_USER_ID, 'Admin User', 'item_1', {
+      quantity: 5,
+      type: 'add',
+      reason: 'correction',
+    });
+
+    expect(stockAdjustmentService.adjust).toHaveBeenCalledWith(
+      CLINIC_ID,
+      'item_1',
+      ADMIN_USER_ID,
+      'Admin User',
+      expect.anything(),
+      undefined,
+    );
+  });
+
+  it('passes expectedVersion through to StockAdjustmentService.adjust unchanged', async () => {
+    const { service, stockAdjustmentService } = buildService({ roleCode: 'ADMIN', inventoryWriteEnabled: true });
+
+    await service.adjustStock(
+      CLINIC_ID,
+      ADMIN_USER_ID,
+      'Admin User',
+      'item_1',
+      { quantity: 5, type: 'add', reason: 'correction' },
+      123456,
+    );
+
+    expect(stockAdjustmentService.adjust).toHaveBeenCalledWith(
+      CLINIC_ID,
+      'item_1',
+      ADMIN_USER_ID,
+      'Admin User',
+      expect.anything(),
+      123456,
+    );
+  });
+
+  it('propagates a 409 STALE_WRITE_CONFLICT thrown by StockAdjustmentService.adjust unchanged', async () => {
+    const staleError = Object.assign(new Error('stale'), { statusCode: 409, code: 'STALE_WRITE_CONFLICT' });
+    const stockAdjustmentService = makeStockAdjustmentService();
+    stockAdjustmentService.adjust = vi.fn().mockRejectedValue(staleError);
+    const { service } = buildService({ roleCode: 'ADMIN', inventoryWriteEnabled: true, stockAdjustmentService });
+
+    await expect(
+      service.adjustStock(
+        CLINIC_ID,
+        ADMIN_USER_ID,
+        'Admin User',
+        'item_1',
+        { quantity: 5, type: 'add', reason: 'correction' },
+        123456,
+      ),
+    ).rejects.toMatchObject({ statusCode: 409, code: 'STALE_WRITE_CONFLICT' });
   });
 });
 

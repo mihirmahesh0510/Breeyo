@@ -6,11 +6,17 @@ import * as Haptics from 'expo-haptics';
 import { Button, showToast } from '@breeyo/ui';
 import { useAuth } from '../../../providers/AuthProvider';
 import { useInventoryItem, useReceiveStock } from '../hooks/useInventoryApi';
+import { useOfflineStockActions } from '../hooks/useOfflineStockActions';
+import { isNetworkFailure } from '../services/offlineStockActionStore';
 import { StockReceiptForm } from '../components/StockReceiptForm';
 // `buildStockReceiptSubmission` validates with `stockReceiptSchema` internally
 // (see lib/stock-receipt-logic.ts for the full validation pipeline: the D-27
 // category-conditional expiry requirement, then stockReceiptSchema itself).
-import { buildStockReceiptSubmission, EMPTY_STOCK_RECEIPT_FORM } from '../lib/stock-receipt-logic';
+import {
+  buildStockReceiptSubmission,
+  EMPTY_STOCK_RECEIPT_FORM,
+  getStockReceiptQueuedToast,
+} from '../lib/stock-receipt-logic';
 import type { StockReceiptFormData, StockReceiptFormErrors } from '../lib/stock-receipt-logic';
 import { stockReceiptSchema } from '@breeyo/validators';
 
@@ -38,6 +44,11 @@ export function StockReceiptScreen() {
 
   const itemQuery = useInventoryItem(activeClinicId, itemId);
   const receiveStock = useReceiveStock(activeClinicId, itemId);
+  // Verify-fix 10.2 (D-04, D-10, D-15 to D-17): falls through here only when
+  // `receiveStock.mutateAsync` fails with a genuine network failure (never
+  // reached the server) -- same shape `CheckInSheet.tsx`/`useOfflineQueueActions.ts`
+  // established for queue check-in.
+  const offlineStockActions = useOfflineStockActions();
 
   const [data, setData] = useState<StockReceiptFormData>(EMPTY_STOCK_RECEIPT_FORM);
   const [errors, setErrors] = useState<StockReceiptFormErrors>({});
@@ -67,12 +78,31 @@ export function StockReceiptScreen() {
       showToast('success', `${result.payload.quantity} ${unit} of ${itemName} received`);
       router.back();
     } catch (err) {
-      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      setServerError(err instanceof Error ? err.message : 'Could not receive stock');
+      if (isNetworkFailure(err)) {
+        // The server was never reached -- fall through to the offline
+        // capture path instead of leaving the user at a dead-end error
+        // (10-04-SUMMARY.md Deviation 2 / verify-fix 10.2).
+        try {
+          await offlineStockActions.receiveOffline(
+            itemId,
+            { itemId, name: itemName, category, unit, currentStock: item?.currentStock ?? 0 },
+            result.payload,
+          );
+          void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          showToast('info', getStockReceiptQueuedToast(result.payload.quantity, unit, itemName));
+          router.back();
+        } catch (offlineErr) {
+          void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+          setServerError(offlineErr instanceof Error ? offlineErr.message : 'Could not receive stock');
+        }
+      } else {
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        setServerError(err instanceof Error ? err.message : 'Could not receive stock');
+      }
     } finally {
       setIsSubmitting(false);
     }
-  }, [data, category, receiveStock, unit, itemName, router]);
+  }, [data, category, receiveStock, offlineStockActions, itemId, item, unit, itemName, router]);
 
   if (itemQuery.isLoading && !params.itemName) {
     return (

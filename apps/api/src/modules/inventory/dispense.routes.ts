@@ -8,6 +8,8 @@ import { ParLevelAlertService } from './par-level-alert.service.js';
 import { WantListService } from './want-list.service.js';
 import { DispenseController } from './dispense.controller.js';
 import { SyncOperationService } from './sync-operation.service.js';
+import { createInventorySyncController, buildInventoryOfflineReplayService } from './controllers/inventorySync.controller.js';
+import { ReplayBroadcastService } from '../sync/services/replayBroadcast.service.js';
 import { PermissionService } from '../auth/permission.service.js';
 import { authenticate } from '../../middleware/authenticate.js';
 import { tenantContext } from '../../middleware/tenant-context.js';
@@ -63,6 +65,23 @@ export default async function dispenseRoutes(fastify: FastifyInstance) {
     fastify.decorate('permissionService', permissionService);
   }
 
+  // Plan 10-04 (PLT-03, D-04, D-10): inventory-specific offline replay
+  // reconciliation. Deliberately its own controller/service, distinct from
+  // the pre-existing `SyncOperationService`/`/inventory/sync-operation`
+  // dispatcher below (Phase 5, D-53, Redis-idempotency-keyed, no `return`
+  // operation type) -- this one replays `INVENTORY_MEDIUM` envelopes through
+  // the SAME shared `SyncReplayReceipt`/`SyncConflictRecord` ledger Plan
+  // 10-01/10-02/10-03 use, matching this phase's cross-domain replay
+  // contract rather than Phase 5's own bespoke one. Both endpoints stay live
+  // side by side -- neither replaces the other in this plan.
+  // Verify-fix 10.3: plugin-scope singleton, same `fastify.io` convention
+  // `queue.routes.ts`/`emr.routes.ts` use -- a mobile inventory replay now
+  // actually pushes to an open browser inventory view.
+  const replayBroadcast = new ReplayBroadcastService(fastify.io ?? null);
+  const inventorySyncController = createInventorySyncController((db) =>
+    buildInventoryOfflineReplayService(db, permissionService, replayBroadcast),
+  );
+
   // D-30: the sync dispatcher wraps three tenant-scoped services, so it is
   // built per request too. `permissionService` and `redis` are tenant-agnostic
   // and stay plugin-scope singletons closed over by the factory.
@@ -91,6 +110,20 @@ export default async function dispenseRoutes(fastify: FastifyInstance) {
   // Stock adjustment + stock-take (D-04, D-37, D-40)
   fastify.post('/inventory/items/:itemId/adjust', { preHandler: manageStock, handler: controller.adjustStock });
   fastify.post('/inventory/stock-take', { preHandler: manageStock, handler: controller.processStockTake });
+
+  // Plan 10-04: mobile offline inventory replay on reconnect (INVENTORY_MEDIUM
+  // tier only). Only `base` (authenticate + tenantContext) runs as a
+  // preHandler -- like `/inventory/sync-operation` below, the permission
+  // requirement varies per replayed operation's entityType, which a
+  // route-level preHandler can't inspect. `InventoryOfflineReplayService`
+  // now enforces it per-entityType itself (matching
+  // `SyncOperationService.execute()`'s D-41-D-44 pattern), since none of
+  // `fifo-dispense.service.ts`, `stock-adjustment.service.ts`, or
+  // `stock-receipt.service.ts` reference `PermissionService` at all.
+  fastify.post('/inventory/sync/replay', {
+    preHandler: base,
+    handler: inventorySyncController.replayHandler,
+  });
 
   // Stock movement history + CSV export (D-45, D-46, D-47)
   fastify.get('/inventory/items/:itemId/movements', { preHandler: viewInventory, handler: controller.getMovementHistory });

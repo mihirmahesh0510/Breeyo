@@ -44,10 +44,27 @@ function makeQueueService(board: {
   };
 }
 
-function makeDb(users: Array<{ id: string; fullName: string }> = []) {
+function makeDb(
+  users: Array<{ id: string; fullName: string }> = [],
+  queueEntry?: { updatedAt: Date } | null,
+) {
+  const liveRow = queueEntry ?? null;
   return {
     user: {
       findMany: vi.fn().mockResolvedValue(users),
+    },
+    queueEntry: {
+      findUnique: vi.fn().mockResolvedValue(liveRow),
+      // Verify-fix 10.10: mirrors the real atomic conditional UPDATE --
+      // matches (and "claims" the version) only when the caller's
+      // `expectedVersion` equals this row's live `updatedAt`, exactly like
+      // Postgres's `WHERE id = ? AND updated_at = ?` would.
+      updateMany: vi.fn().mockImplementation(({ where }: { where: { updatedAt: Date } }) => {
+        if (liveRow && where.updatedAt.getTime() === liveRow.updatedAt.getTime()) {
+          return Promise.resolve({ count: 1 });
+        }
+        return Promise.resolve({ count: 0 });
+      }),
     },
   };
 }
@@ -137,5 +154,49 @@ describe('WebQueueService.updateEntryStatus (D-43)', () => {
       userId: USER_ID,
     });
     expect(result.changeMetadata.staleVersion).toBe(new Date('2026-08-20T09:05:00.000Z').getTime());
+  });
+});
+
+describe('WebQueueService.updateEntryStatus optimistic-concurrency pass-through (Plan 10-05, D-05)', () => {
+  // F1: the version check used to run here, as a separate `db.queueEntry.updateMany`
+  // claim BEFORE `QueueService.updateStatus`, which could commit a fresh
+  // `updatedAt` even when the downstream transition then turned out to be
+  // invalid -- a false conflict for a later, genuinely current caller.
+  // `expectedVersion` is now threaded straight through to
+  // `QueueService.updateStatus`, which folds the version check into the SAME
+  // conditional `updateMany` that applies the real field changes (see
+  // `queue.service.test.ts` for the actual staleness/atomicity coverage).
+  it('applies the write normally when expectedVersion is omitted (no breaking change for existing callers)', async () => {
+    const queueService = makeQueueService({});
+    const { service } = buildService({ queueService });
+
+    const result = await service.updateEntryStatus(CLINIC_ID, USER_ID, 'entry_1', 'IN_CONSULT' as never);
+
+    expect(queueService.updateStatus).toHaveBeenCalledWith(
+      expect.objectContaining({ entryId: 'entry_1', expectedVersion: undefined }),
+    );
+    expect(result.changeMetadata.staleVersion).toBe(new Date('2026-08-20T09:05:00.000Z').getTime());
+  });
+
+  it('passes expectedVersion through to QueueService.updateStatus unchanged', async () => {
+    const queueService = makeQueueService({});
+    const { service } = buildService({ queueService });
+
+    await service.updateEntryStatus(CLINIC_ID, USER_ID, 'entry_1', 'IN_CONSULT' as never, 123456);
+
+    expect(queueService.updateStatus).toHaveBeenCalledWith(
+      expect.objectContaining({ entryId: 'entry_1', expectedVersion: 123456 }),
+    );
+  });
+
+  it('propagates a 409 STALE_WRITE_CONFLICT thrown by QueueService.updateStatus unchanged', async () => {
+    const queueService = makeQueueService({});
+    const staleError = Object.assign(new Error('stale'), { statusCode: 409, code: 'STALE_WRITE_CONFLICT' });
+    vi.mocked(queueService.updateStatus).mockRejectedValue(staleError);
+    const { service } = buildService({ queueService });
+
+    await expect(
+      service.updateEntryStatus(CLINIC_ID, USER_ID, 'entry_1', 'IN_CONSULT' as never, 123456),
+    ).rejects.toMatchObject({ statusCode: 409, code: 'STALE_WRITE_CONFLICT' });
   });
 });

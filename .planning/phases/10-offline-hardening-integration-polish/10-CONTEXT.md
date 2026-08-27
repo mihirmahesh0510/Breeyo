@@ -27,16 +27,20 @@ Harden Breeyo's mobile-first system so the core clinic workflows remain trustwor
 - **D-09:** If two offline devices change the same clinical record, the assigned clinician should own resolution when possible.
 - **D-10:** Queue and inventory conflicts should use a lighter operational review flow than clinical-record conflicts.
 - **D-11:** Unresolved conflicts stay persistently visible until they are actually cleared.
+- **D-34:** If two offline devices independently check in the same patient, reconnect auto-merges the duplicate into a single queue entry (lightweight operational review per D-10) rather than keeping both entries for manual review or merging with no review trace at all.
+- **D-38 (verify-fix 10.1, 2026-08-26):** A late offline replay targeting an already-finalized consultation is auto-applied as a clinical addendum via Phase 4's existing addendum mechanism (`EmrService`/`EmrRepository.addAddendum`, `04-CONTEXT.md`'s "addendum-only" post-finalization editability), not treated as a draft conflict. `consultationOfflineReplay.service.ts` checks `consultation.status === 'finalized'` before running the draft/conflict diff at all; `ConsultationDraft` is never read or written on this path.
 
 ### Reconnect Priority
 - **D-12:** On reconnect, queue actions sync first.
 - **D-13:** After queue actions, backlog replay should follow operational priority tiers rather than strict raw timestamp order.
 - **D-14:** Higher-priority operational work should preempt lower-priority replay during reconnect instead of waiting for the entire backlog to drain.
+- **D-37:** Queue-first tier ordering (D-12 to D-14) has no severity-based exception. A safety-critical clinical conflict never preempts or interrupts queue replay; it stays visible and actionable in the failure center but waits its own `CLINICAL_MEDIUM` turn like any other clinical item.
 
 ### Offline Data Window
 - **D-15:** Beyond the active edit queue, the offline data target is a same-day working set rather than the full clinic dataset.
 - **D-16:** The app should be most aggressive about caching today's operational records: current queue state, active patients, today's consultations, and stock items actively in motion.
 - **D-17:** Older data outside the active working set can remain available only as limited fallback read-only context; broad historical offline access is not required.
+- **D-35:** The same-day working-set window anchors "today" to the calendar day the device went offline, not to local midnight. If an offline stretch spans midnight (e.g. an overnight emergency shift), the working set stays fully editable/aggressively cached until reconnect rather than demoting active overnight work to read-only fallback mid-shift.
 
 ### Sync Visibility
 - **D-18:** Sync state should always be visible during normal clinic use.
@@ -48,6 +52,8 @@ Harden Breeyo's mobile-first system so the core clinic workflows remain trustwor
 - **D-22:** The originating user owns the first recovery attempt for a stuck or repeatedly failed sync item.
 - **D-23:** Escalation happens after a guided retry fails, not immediately and not only by manual handoff.
 - **D-24:** For safety-critical conflicts, the next escalation owner should be the assigned clinician.
+- **D-36:** If a guided retry fails and the assigned clinician is also unreachable or their shift ends before acting, the stuck safety-critical item escalates further to any other on-duty clinician (not to Admin, and not left waiting indefinitely on the original clinician).
+- **D-39 (verify-fix 10.6, 2026-08-26):** `OnDutyRosterProvider` (the interface `retryEscalation.service.ts` was built against but never had a live implementation for) resolves "who else is on duty" from Phase 8's existing `AvailabilityRepository.listClinicVets(clinicId)`, minus the unreachable clinician — no new shift/on-duty tracking concept. `ClinicVetRosterProvider` (`apps/api/src/modules/sync/services/onDutyRoster.service.ts`) is a thin adapter over that call, reused by both the generic `POST /sync/failures/:failureTaskId/{retry,escalate}` routes and the EMR conflict-resolve endpoint's `ESCALATE` action (`apps/api/src/modules/emr/services/consultationConflictResolution.service.ts`, closing the gap verify-fix 10.5 deliberately left open) via a shared `resolveNextOnDutyClinicianId` helper — one roster-exhaustion/never-Admin behavior, not two independent copies of it.
 
 ### Integration Proof
 - **D-25:** Phase 10 completion requires proof broader than a single happy-path demo.
@@ -83,13 +89,14 @@ Harden Breeyo's mobile-first system so the core clinic workflows remain trustwor
 - `.planning/phases/03-patient-registration-walk-in-queue/03-CONTEXT.md` -- Queue is the primary workflow, real-time queue behavior, and the earlier explicit decision that offline queue modifications were deferred to Phase 10.
 - `.planning/phases/04-emr-clinical-records/04-CONTEXT.md` -- Consultation, note-taking, prescriptions, and audit sensitivity for clinical-record conflict handling.
 - `.planning/phases/05-inventory-management/05-CONTEXT.md` -- Barcode scanning, stock movements, and prior offline-scanning assumptions that Phase 10 now hardens.
+- `.planning/phases/06-invoicing-payments/06-CONTEXT.md` -- **D-41 already locks billing offline behavior**: Invoice Builder, Payment Collection, Quick Sale, Credit Note, Refund, and Billing Settings all block the action offline with a clear message and show only cached/read-only data. Phase 10's offline action boundaries (D-01 to D-04) deliberately do NOT extend to billing/payment -- the walk-in-to-payment golden-path proof (10-06-PLAN.md) must complete its invoice/payment step only after reconnect, not attempt offline invoice/payment capture.
 - `.planning/phases/07-whatsapp-communication/07-CONTEXT.md` -- Reminder/retry/action-item patterns and WhatsApp-triggered clinic flows that must still line up under integration proof.
 - `.planning/phases/08-scheduling-calendar/08-CONTEXT.md` -- Queue/scheduling coexistence and real-time handoff expectations that offline recovery must not break.
 - `.planning/phases/09-web-dashboard-owner-portal/09-CONTEXT.md` -- Browser/mobile stale-state philosophy, owner portal, and broader Phase 9 integration surfaces that Phase 10 must prove end to end.
 
 ### Technology And Codebase Context
 - `.planning/research/STACK.md` -- Planned stack including React Native/Expo, PostgreSQL, Redis, React Query, Zustand, Socket.IO, BullMQ, and the offline-first variant notes.
-- `.planning/intel/codebase-map.md` -- Confirms the repo is still planning-only with no implemented source code; planning must target the intended monorepo/module structure and integration seams.
+- `.planning/intel/codebase-map.md` -- **Stale as of the 2026-08-24 plan re-review.** Phases 1-9 are now merged to `main` (Phase 9 landed via PR #20 on 2026-08-23). Planning must target the actual shipped module structure below, not a greenfield assumption.
 
 </canonical_refs>
 
@@ -97,13 +104,15 @@ Harden Breeyo's mobile-first system so the core clinic workflows remain trustwor
 ## Existing Code Insights
 
 ### Reusable Assets
-- No implemented source code exists yet, so there are no live offline queues, sync engines, or conflict-resolution components to reuse directly.
-- Planned reusable assets from earlier phases should be treated as the offline hardening targets: Phase 3 queue flow, Phase 4 consultation/note-taking, Phase 5 inventory scanning, Phase 7 WhatsApp actions, Phase 8 scheduling handoff, and Phase 9 browser/mobile shared-state behavior.
+- **`apps/web/src/features/dashboard/components/StaleStateBanner.tsx`** already exists (Phase 9, D-40): a generic `status: 'stale' | 'conflict'` banner with `onRefresh`/`onReviewChanges` props. Plan 10-05's `useReplayStaleState.ts` should drive this existing component rather than build a parallel one.
+- **`apps/api/src/modules/shared/browser-sync.service.ts`'s `BrowserSyncService.resolveStaleStatus`**, plus the `knownVersion` query-param pattern already used by `webQueueBoardQuerySchema` and the billing workbench query schema, are the existing versioning primitive for read-side staleness. Plan 10-05 should extend this same versioning scheme for replay broadcasts rather than inventing a second one.
+- **Known gap to close, not just preserve:** a `no-mistakes` review of the Phase 9 branch (2026-08-22) found that `knownVersion` is read-only — no browser mutation path (`queue.schema.ts`'s `statusUpdateBodySchema`, billing's `collectPaymentBodySchema`, inventory's adjust schema) accepts or verifies an expected version before writing, so `StaleStateBanner`'s "conflict" state is never backed by a server-side rejection (a browser can silently overwrite a row that changed elsewhere). This finding was not part of Phase 9's auto-fix round and shipped as-is. D-05 ("review before overwrite, not silent last-write-wins") applies to the browser side of any offline-recovery race just as much as to mobile replay, so Plan 10-05 must add real optimistic-concurrency checks to these browser mutation paths, not only new prompt UI. See the corresponding edit in `10-05-PLAN.md`.
+- Phase 3 queue flow, Phase 4 consultation/note-taking, Phase 5 inventory scanning, Phase 7 WhatsApp actions, and Phase 8 scheduling handoff are all now real, merged code (not planning targets) — read the actual modules under `apps/api/src/modules/` and `apps/mobile/src/features/` before extending them, rather than the pre-implementation assumptions in `10-RESEARCH.md`.
 
 ### Established Patterns
-- Planned architecture remains a modular monolith with REST endpoints, zod boundary validation, PostgreSQL RLS multi-tenancy, and event-driven realtime updates.
-- Planned React Query + Zustand client patterns and Socket.IO-based live update model create the expected baseline that offline replay and stale/conflict prompts must preserve.
-- Planned mobile-first product posture means offline hardening centers on the mobile app, not on bringing equivalent offline behavior to the browser.
+- Actual architecture is a modular monolith with REST endpoints, zod boundary validation, PostgreSQL RLS multi-tenancy, and event-driven realtime updates -- confirmed in the shipped code, not just planned.
+- React Query + Zustand client patterns and a Socket.IO-based live update model are the existing baseline that offline replay and stale/conflict prompts must preserve.
+- Mobile-first product posture means offline hardening centers on the mobile app; Phase 9's browser/web surfaces get replay-visibility (stale prompts) but not offline editing themselves, consistent with D-01's mobile-workflow scope.
 
 ### Integration Points
 - Queue: offline check-in and reconnect behavior must preserve the walk-in-first operational truth.
