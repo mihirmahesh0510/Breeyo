@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { offlineOperationEnvelopeSchema } from '@breeyo/validators';
 import { ConflictSeverity, QueueStatus, ResolutionState, isValidTransition } from '@breeyo/types';
@@ -239,18 +240,47 @@ export class QueueOfflineReplayService {
     domain: string,
     entityType: string,
     entityId: string,
-  ): Promise<void> {
-    await this.replayReceipts.create({
-      data: {
-        clinicId: context.clinicId,
-        deviceId: context.deviceId,
-        operationId,
-        userId: context.userId,
-        domain,
-        entityType,
-        entityId,
-      },
-    });
+  ): Promise<{ raced: boolean }> {
+    try {
+      await this.replayReceipts.create({
+        data: {
+          clinicId: context.clinicId,
+          deviceId: context.deviceId,
+          operationId,
+          userId: context.userId,
+          domain,
+          entityType,
+          entityId,
+        },
+      });
+      return { raced: false };
+    } catch (err) {
+      // WR-1: the `findUnique` in `replayQueueOperation` and this `create`
+      // are not transactional, so a genuinely concurrent duplicate replay of
+      // the same operationId can both see no existing receipt and both
+      // reach here (both after already running their own mutation above).
+      // The `[clinicId, deviceId, operationId]` unique constraint lets
+      // exactly one of them win; the loser hits P2002. Matching
+      // `replayIngest.service.ts`'s "Verify-fix 10.9" pattern: treat that as
+      // "already acknowledged by the request that won the race" and let the
+      // caller return an idempotent-duplicate outcome instead of this
+      // surfacing as an unhandled 500.
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        const racedReceipt = await this.replayReceipts.findUnique({
+          where: {
+            clinicId_deviceId_operationId: {
+              clinicId: context.clinicId,
+              deviceId: context.deviceId,
+              operationId,
+            },
+          },
+        });
+        if (racedReceipt) {
+          return { raced: true };
+        }
+      }
+      throw err;
+    }
   }
 
   private async replayCheckIn(
@@ -299,7 +329,14 @@ export class QueueOfflineReplayService {
         await this.gateway.updateEntry(existingActive.id, { queuePriorityAt: incomingCheckedInAt });
       }
 
-      await this.recordReceipt(context, operationId, 'queue', QUEUE_CHECK_IN_ENTITY_TYPE, existingActive.id);
+      const receiptResult = await this.recordReceipt(context, operationId, 'queue', QUEUE_CHECK_IN_ENTITY_TYPE, existingActive.id);
+      if (receiptResult.raced) {
+        // WR-1: lost the race to record this operationId's receipt -- a
+        // concurrent replay of the SAME operation already won and already
+        // performed the merge + review task, so this request acknowledges
+        // rather than creating a second review task for the same operation.
+        return { operationId, status: 'ACKNOWLEDGED_DUPLICATE', entryId: existingActive.id };
+      }
       const reviewTaskId = await this.createOperationalReviewTask(context, {
         operationId,
         entryId: existingActive.id,
@@ -339,7 +376,13 @@ export class QueueOfflineReplayService {
       queuePriorityAt: new Date(payload.checkedInAt),
     });
 
-    await this.recordReceipt(context, operationId, 'queue', QUEUE_CHECK_IN_ENTITY_TYPE, entry.id);
+    const receiptResult = await this.recordReceipt(context, operationId, 'queue', QUEUE_CHECK_IN_ENTITY_TYPE, entry.id);
+    if (receiptResult.raced) {
+      // WR-1: lost the race to record this operationId's receipt -- a
+      // concurrent replay of the SAME operation already won and is the
+      // request of record.
+      return { operationId, status: 'ACKNOWLEDGED_DUPLICATE', entryId: entry.id };
+    }
 
     // Verify-fix 10.3: an open browser queue board watching this entity
     // should hear about the applied replay without waiting for its own poll.
@@ -413,7 +456,13 @@ export class QueueOfflineReplayService {
     }
 
     const updated = await this.gateway.updateEntry(entry.id, updateData);
-    await this.recordReceipt(context, operationId, 'queue', QUEUE_STATUS_TRANSITION_ENTITY_TYPE, updated.id);
+    const receiptResult = await this.recordReceipt(context, operationId, 'queue', QUEUE_STATUS_TRANSITION_ENTITY_TYPE, updated.id);
+    if (receiptResult.raced) {
+      // WR-1: lost the race to record this operationId's receipt -- a
+      // concurrent replay of the SAME operation already won and is the
+      // request of record.
+      return { operationId, status: 'ACKNOWLEDGED_DUPLICATE', entryId: updated.id };
+    }
 
     // Verify-fix 10.3: same broadcast the check-in path fires above.
     this.broadcast.emitReplayApplied({ clinicId: context.clinicId, domain: 'queue', entityIds: [updated.id] });
@@ -427,7 +476,14 @@ export class QueueOfflineReplayService {
     entryId: string,
     { note }: { note: string },
   ): Promise<QueueReplayOutcome> {
-    await this.recordReceipt(context, operationId, 'queue', QUEUE_STATUS_TRANSITION_ENTITY_TYPE, entryId);
+    const receiptResult = await this.recordReceipt(context, operationId, 'queue', QUEUE_STATUS_TRANSITION_ENTITY_TYPE, entryId);
+    if (receiptResult.raced) {
+      // WR-1: lost the race to record this operationId's receipt -- a
+      // concurrent replay of the SAME operation already won and already
+      // created the review task, so this request acknowledges rather than
+      // creating a second one.
+      return { operationId, status: 'ACKNOWLEDGED_DUPLICATE', entryId };
+    }
     const reviewTaskId = await this.createOperationalReviewTask(context, { operationId, entryId, note });
     // Verify-fix 10.3: D-05 review-before-overwrite -- a browser tab
     // watching this entry needs the conflict prompt, not a stale render.

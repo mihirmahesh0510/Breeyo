@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { offlineOperationEnvelopeSchema, saveDraftSchema } from '@breeyo/validators';
 import { ConflictSeverity, ResolutionState } from '@breeyo/types';
@@ -296,7 +297,13 @@ export class ConsultationOfflineReplayService {
       // A receipt is still recorded so a flapping resend of THIS operationId
       // resolves as an idempotent no-op instead of creating a second
       // conflict record for the same offline edit.
-      await this.recordReceipt(context, envelope.operationId, consultation.id);
+      const receiptResult = await this.recordReceipt(context, envelope.operationId, consultation.id);
+      if (receiptResult.raced) {
+        // WR-1: lost the race to record this operationId's receipt -- a
+        // concurrent replay of the SAME operation already won and is the
+        // request of record.
+        return { operationId: envelope.operationId, status: 'ACKNOWLEDGED_DUPLICATE', consultationId: consultation.id };
+      }
       // Verify-fix 10.3: D-05/D-06/D-08 -- a SAFETY_CRITICAL conflict is
       // exactly the case an already-open browser/mobile view must not
       // silently keep rendering stale/disputed state for.
@@ -320,7 +327,13 @@ export class ConsultationOfflineReplayService {
       await this.gateway.saveDraft(consultation.id, context.clinicId, classification.mergedPayload);
     }
 
-    await this.recordReceipt(context, envelope.operationId, consultation.id);
+    const receiptResult = await this.recordReceipt(context, envelope.operationId, consultation.id);
+    if (receiptResult.raced) {
+      // WR-1: lost the race to record this operationId's receipt -- a
+      // concurrent replay of the SAME operation already won and is the
+      // request of record.
+      return { operationId: envelope.operationId, status: 'ACKNOWLEDGED_DUPLICATE', consultationId: consultation.id };
+    }
     // Verify-fix 10.3: applied even for the true-no-op branch above (no
     // safe-merge fields) -- the replay was still processed and acknowledged,
     // matching `emitReplayApplied`'s "affected views should refresh" intent.
@@ -372,7 +385,13 @@ export class ConsultationOfflineReplayService {
       });
     }
 
-    await this.recordReceipt(context, envelope.operationId, consultation.id);
+    const receiptResult = await this.recordReceipt(context, envelope.operationId, consultation.id);
+    if (receiptResult.raced) {
+      // WR-1: lost the race to record this operationId's receipt -- a
+      // concurrent replay of the SAME operation already won and is the
+      // request of record.
+      return { operationId: envelope.operationId, status: 'ACKNOWLEDGED_DUPLICATE', consultationId: consultation.id };
+    }
     return {
       operationId: envelope.operationId,
       status: 'APPLIED',
@@ -387,18 +406,47 @@ export class ConsultationOfflineReplayService {
     context: ConsultationOfflineReplayContext,
     operationId: string,
     consultationId: string,
-  ): Promise<void> {
-    await this.replayReceipts.create({
-      data: {
-        clinicId: context.clinicId,
-        deviceId: context.deviceId,
-        operationId,
-        userId: context.userId,
-        domain: EMR_SYNC_DOMAIN,
-        entityType: CONSULTATION_DRAFT_ENTITY_TYPE,
-        entityId: consultationId,
-      },
-    });
+  ): Promise<{ raced: boolean }> {
+    try {
+      await this.replayReceipts.create({
+        data: {
+          clinicId: context.clinicId,
+          deviceId: context.deviceId,
+          operationId,
+          userId: context.userId,
+          domain: EMR_SYNC_DOMAIN,
+          entityType: CONSULTATION_DRAFT_ENTITY_TYPE,
+          entityId: consultationId,
+        },
+      });
+      return { raced: false };
+    } catch (err) {
+      // WR-1: the `findUnique` in `replayConsultationDraft` and this
+      // `create` are not transactional, so a genuinely concurrent duplicate
+      // replay of the same operationId can both see no existing receipt and
+      // both reach here (both after already running their own mutation
+      // above). The `[clinicId, deviceId, operationId]` unique constraint
+      // lets exactly one of them win; the loser hits P2002. Matching
+      // `replayIngest.service.ts`'s "Verify-fix 10.9" pattern: treat that as
+      // "already acknowledged by the request that won the race" and let the
+      // caller return an idempotent-duplicate outcome instead of this
+      // surfacing as an unhandled 500.
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        const racedReceipt = await this.replayReceipts.findUnique({
+          where: {
+            clinicId_deviceId_operationId: {
+              clinicId: context.clinicId,
+              deviceId: context.deviceId,
+              operationId,
+            },
+          },
+        });
+        if (racedReceipt) {
+          return { raced: true };
+        }
+      }
+      throw err;
+    }
   }
 
   private async createConflictRecord(

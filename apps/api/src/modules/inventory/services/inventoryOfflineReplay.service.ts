@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { dispenseSchema, stockReceiptSchema, stockAdjustmentSchema } from '@breeyo/validators';
 import { offlineOperationEnvelopeSchema } from '@breeyo/validators';
@@ -277,18 +278,47 @@ export class InventoryOfflineReplayService {
     operationId: string,
     entityType: string,
     itemId: string,
-  ): Promise<void> {
-    await this.replayReceipts.create({
-      data: {
-        clinicId: context.clinicId,
-        deviceId: context.deviceId,
-        operationId,
-        userId: context.userId,
-        domain: 'inventory',
-        entityType,
-        entityId: itemId,
-      },
-    });
+  ): Promise<{ raced: boolean }> {
+    try {
+      await this.replayReceipts.create({
+        data: {
+          clinicId: context.clinicId,
+          deviceId: context.deviceId,
+          operationId,
+          userId: context.userId,
+          domain: 'inventory',
+          entityType,
+          entityId: itemId,
+        },
+      });
+      return { raced: false };
+    } catch (err) {
+      // WR-1: the `findUnique` in `replayInventoryOperation` and this
+      // `create` are not transactional, so a genuinely concurrent duplicate
+      // replay of the same operationId can both see no existing receipt and
+      // both reach here (both after already running `run()` above, in
+      // `applyOrReview`). The `[clinicId, deviceId, operationId]` unique
+      // constraint lets exactly one of them win; the loser hits P2002.
+      // Matching `replayIngest.service.ts`'s "Verify-fix 10.9" pattern:
+      // treat that as "already acknowledged by the request that won the
+      // race" and let the caller return an idempotent-duplicate outcome
+      // instead of this surfacing as an unhandled 500.
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        const racedReceipt = await this.replayReceipts.findUnique({
+          where: {
+            clinicId_deviceId_operationId: {
+              clinicId: context.clinicId,
+              deviceId: context.deviceId,
+              operationId,
+            },
+          },
+        });
+        if (racedReceipt) {
+          return { raced: true };
+        }
+      }
+      throw err;
+    }
   }
 
   /**
@@ -311,7 +341,14 @@ export class InventoryOfflineReplayService {
   ): Promise<InventoryReplayOutcome> {
     try {
       await run();
-      await this.recordReceipt(context, operationId, entityType, itemId);
+      const receiptResult = await this.recordReceipt(context, operationId, entityType, itemId);
+      if (receiptResult.raced) {
+        // WR-1: lost the race to record this operationId's receipt -- a
+        // concurrent replay of the SAME operation already won and is the
+        // request of record, so this request acknowledges rather than
+        // reporting a second (conflicting) APPLIED outcome.
+        return { operationId, status: 'ACKNOWLEDGED_DUPLICATE', itemId };
+      }
       // Verify-fix 10.3: an open browser inventory view watching this item
       // should hear about the applied replay without waiting for its own poll.
       this.broadcast.emitReplayApplied({ clinicId: context.clinicId, domain: 'inventory', entityIds: [itemId] });
@@ -321,7 +358,10 @@ export class InventoryOfflineReplayService {
         throw error;
       }
 
-      await this.recordReceipt(context, operationId, entityType, itemId);
+      const receiptResult = await this.recordReceipt(context, operationId, entityType, itemId);
+      if (receiptResult.raced) {
+        return { operationId, status: 'ACKNOWLEDGED_DUPLICATE', itemId };
+      }
       const reviewTaskId = await this.conflictReview.createInventoryReviewTask(context, {
         operationId,
         itemId,

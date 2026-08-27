@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { Prisma } from '@prisma/client';
 import { ConflictSeverity, ReplayPriority, ResolutionState } from '@breeyo/types';
 import type { SaveDraftInput } from '@breeyo/types';
 import {
@@ -127,6 +128,31 @@ describe('ConsultationOfflineReplayService', () => {
       expect(gateway.saveDraft).not.toHaveBeenCalled();
       expect(conflictRecords.create).not.toHaveBeenCalled();
       expect(receipts.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('sync-idempotency race (WR-1)', () => {
+    it('does not let a genuine P2002 receipt-create race propagate as an unhandled error -- returns the winning request\'s ack instead', async () => {
+      // Both concurrent replays' own `findUnique` (inside
+      // `replayConsultationDraft`) see no existing receipt -- so both reach
+      // the recordReceipt call after doing their own (no-op, since baseline
+      // === draft here) diff/merge work. Only one `create` can win the
+      // `[clinicId, deviceId, operationId]` unique constraint; this
+      // request's `create` is the loser and hits P2002.
+      vi.mocked(receipts.findUnique)
+        .mockResolvedValueOnce(null) // initial existingReceipt check
+        .mockResolvedValueOnce({ operationId: 'op-1' }); // re-fetch after P2002 -- the winner's row
+      vi.mocked(receipts.create).mockRejectedValueOnce(
+        new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+          code: 'P2002',
+          clientVersion: '6.19.3',
+        }),
+      );
+
+      const result = await service.replayConsultationDraft(context, envelope());
+
+      expect(result.status).toBe('ACKNOWLEDGED_DUPLICATE');
+      expect(result.operationId).toBe('op-1');
     });
   });
 
