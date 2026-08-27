@@ -59,8 +59,8 @@
 - **File:** `apps/api/prisma/seed.ts` (`DEFAULT_ROLE_PERMISSIONS.FrontDesk`)
 - **Root cause:** `Product/prds/PRD-04-emr-clinical-records.md`'s Front Desk persona (Rekha) requires "read-only access to finalized consultation records and medical history" and PDF generation, but `FrontDesk` in `seed.ts` has never included `VIEW_EMR`/`EDIT_EMR`. Before AC-3, EMR routes had zero permission checks, so Front Desk could reach them anyway and the mismatch was harmless in practice. AC-3 now gates all EMR reads behind `VIEW_EMR`, so Front Desk is fully blocked from the EMR access PRD-04 says it needs.
 - **Decision (confirmed):** grant `FrontDesk` `VIEW_EMR` (read-only) in `DEFAULT_ROLE_PERMISSIONS.FrontDesk`, matching PRD-04. Do **not** grant `EDIT_EMR` — Front Desk must stay unable to create/edit clinical records, only read finalized ones.
-- **Fix (not yet implemented):** add `'VIEW_EMR'` to the `FrontDesk` array in `apps/api/prisma/seed.ts`. TDD: failing test asserting Front Desk can read EMR routes (e.g. `GET /pets/:petId/history`) but still gets 403 on `EDIT_EMR` routes (e.g. `POST /consultations`).
-- **Status:** decision confirmed, implementation outstanding — this is a source code + test change and is out of scope for a docs-only pass; needs a code-fix phase to execute.
+- **Fix:** added `'VIEW_EMR'` to the `FrontDesk` array in `apps/api/prisma/seed.ts`. TDD: the 6 `VIEW_EMR`-gated assertions in `apps/api/tests/emr/emr-permissions.test.ts` were flipped to expect Front Desk allowed (confirmed RED against the un-reseeded DB first), then `seed.ts` was updated and the dev DB re-seeded, confirming GREEN. `EDIT_EMR`-gated assertions were left unchanged and still pass (Front Desk stays forbidden).
+- **Status:** Fixed, TDD, independently re-verified (17/17 in `emr-permissions.test.ts`, full `@breeyo/api` suite 177/186 files clean).
 
 ---
 
@@ -82,7 +82,7 @@ Full regression suite (root aggregate + `apps/api` + `apps/mobile` + `apps/web`)
 | AC-4 | Fixed, TDD, independently re-verified | `aca3154` |
 | AC-5 | Fixed, TDD (RED confirmed before implementation) | `5ef6397` |
 | AC-6 | Fixed, TDD (RED confirmed before implementation) | `5ef6397` |
-| AC-7 | Decision confirmed (grant FrontDesk `VIEW_EMR`); implementation (seed.ts + TDD) not yet done | — |
+| AC-7 | Fixed, TDD, independently re-verified | `ce8d5fd` |
 
 Full regression (root `pnpm test` via turbo, all 8 packages) run against a clean DB: **8/8 tasks passed, zero failures.**
 - `@breeyo/api`: 177 files passed | 9 skipped, 2211 tests passed | 80 todo (2291 total). The 9 skipped files are pre-existing (`tests/inventory/*.test.ts`), unrelated to this batch.
