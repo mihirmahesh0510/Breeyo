@@ -467,24 +467,24 @@
     <h1 class="heading-font">Where the build stands</h1>
     <p>Broken down to task level — every row below is one plan file from <code>.planning/ROADMAP.md</code>, not just a phase.</p>
     <div style="display:flex;gap:8px;flex-wrap:wrap;">
-      <span class="branch-chip">breeyo/phase-07-whatsapp-communication</span>
+      <span class="branch-chip">all 10 build phases shipped · UI/UX rebrand design review in progress</span>
     </div>
   </div>
   <div class="stats">
     <div class="stat done">
-      <div class="num">55</div>
+      <div class="num">100</div>
       <div class="label">Tasks done</div>
     </div>
     <div class="stat pending">
-      <div class="num">16</div>
-      <div class="label">Pending merge</div>
+      <div class="num">12</div>
+      <div class="label">Fixes pending merge</div>
     </div>
     <div class="stat upnext">
-      <div class="num">15</div>
+      <div class="num">1</div>
       <div class="label">Up next</div>
     </div>
     <div class="stat backlog">
-      <div class="num">14</div>
+      <div class="num">0</div>
       <div class="label">Planned</div>
     </div>
   </div>
@@ -496,7 +496,7 @@
   <div class="column" data-status="done">
     <div class="column-head">
       <span class="name heading-font">Done · merged to main</span>
-      <span class="count">55 tasks</span>
+      <span class="count">100 tasks</span>
     </div>
     <div class="column-body">
 
@@ -612,6 +612,91 @@
         <div class="column-note" style="margin:0 12px 10px;">Merged to main via PR #9. Invoice detail screen + action bar exist now (<code style="background:none;border:none;padding:0;">InvoiceDetailScreen.tsx</code>, <code style="background:none;border:none;padding:0;">InvoiceActionBar.tsx</code>) — this is the surface Phase 7's <code style="background:none;border:none;padding:0;">SendTemplateLauncher</code> is ready to wire into; see P07's note.</div>
       </details>
 
+      <details class="phase-group">
+        <summary>
+          <span class="s-left"><span class="chevron">▸</span><span class="s-num">P07</span><span class="s-title">WhatsApp Communication</span></span>
+          <span class="s-right"><span class="s-progress">16/16</span></span>
+        </summary>
+        <ul class="task-list">
+          <li class="task"><span class="task-state done">✓</span><span class="task-id">07-01</span><span class="task-title">Backfill Phase 3-6 migrations + WhatsApp data model (8 models, 10 enums)</span></li>
+          <li class="task"><span class="task-state done">✓</span><span class="task-id">07-02</span><span class="task-title">Shared contracts: types, constants, socket events, schemas</span></li>
+          <li class="task"><span class="task-state done">✓</span><span class="task-id">07-03</span><span class="task-title">Mobile UI library spike — Paper v5 confirmed working (D-17)</span></li>
+          <li class="task"><span class="task-state done">✓</span><span class="task-id">07-04</span><span class="task-title">API test infra: factories, cleanup ordering, IST date module</span></li>
+          <li class="task"><span class="task-state done">✓</span><span class="task-id">07-05</span><span class="task-title">WaProvider port, capability guards, simulator adapter, registry</span></li>
+          <li class="task"><span class="task-state done">✓</span><span class="task-id">07-06</span><span class="task-title">Mobile presentational components, UI store, formatting module</span></li>
+          <li class="task"><span class="task-state done">✓</span><span class="task-id">07-07</span><span class="task-title">Cloud API adapter: Meta payload mapper, HMAC webhook</span></li>
+          <li class="task"><span class="task-state done">✓</span><span class="task-id">07-08</span><span class="task-title">Template registry, BullMQ queues, persist-then-dispatch send service</span></li>
+          <li class="task"><span class="task-state done">✓</span><span class="task-id">07-09</span><span class="task-title">Delivery-status funnel, inbound router, outbound/simulator workers</span></li>
+          <li class="task"><span class="task-state done">✓</span><span class="task-id">07-10</span><span class="task-title">Booking conversation: slot generation, auto-confirm, arbitration, D-21 pet selection</span></li>
+          <li class="task"><span class="task-state done">✓</span><span class="task-id">07-11</span><span class="task-title">Reminder scheduling: two-touch tasks, daily 08:30 IST sweep, D-28 collision suppression</span></li>
+          <li class="task"><span class="task-state done">✓</span><span class="task-id">07-12</span><span class="task-title">API read surface: inbox filters/search, thread detail</span></li>
+          <li class="task"><span class="task-state done">✓</span><span class="task-id">07-13</span><span class="task-title">API actions: preferences, simulator config, booking move/cancel (consent endpoint skipped, D-24)</span></li>
+          <li class="task"><span class="task-state done">✓</span><span class="task-id">07-14</span><span class="task-title">Mobile data layer: query keys, thread queries, socket, TemplateSendSheet</span></li>
+          <li class="task"><span class="task-state done">✓</span><span class="task-id">07-15</span><span class="task-title">Mobile inbox/thread screens, role gating</span></li>
+          <li class="task"><span class="task-state done">✓</span><span class="task-id">07-16</span><span class="task-title">Admin simulator config, send launcher</span></li>
+        </ul>
+        <div class="column-note" style="margin:0 12px 10px;">Merged to main via PR #12. 2504+ automated tests passing, 0 failures. 5 gap-fixes applied post-build (see <code style="background:none;border:none;padding:0;">07-OPEN-ITEMS.md</code>): booking messages weren't dispatched, simulator didn't auto-reply to lists, reminder sweep was wired to the wrong queue (WHA-01 would never have fired in prod), a non-retryable-failure cap was never called, and an owner-preference read endpoint was missing. Known accepted limitations: no consent-grant UI (D-24, explicit call), invalid-number "correction" can't persist a new phone number (pre-existing Phase 1/3 gap — no owner-edit endpoint anywhere in the app). <strong>Still open:</strong> WHA-01 through WHA-05 remain unticked in REQUIREMENTS.md — the 37-step human device verification (07-15 + 07-16 checkpoints) has still not been run on real hardware/WhatsApp Business API, so live delivery is unconfirmed despite the merge.</div>
+      </details>
+
+      <details class="phase-group">
+        <summary>
+          <span class="s-left"><span class="chevron">▸</span><span class="s-num">P08</span><span class="s-title">Scheduling &amp; Calendar</span></span>
+          <span class="s-right"><span class="s-progress">15/15</span></span>
+        </summary>
+        <ul class="task-list">
+          <li class="task"><span class="task-state done">✓</span><span class="task-id">08-01</span><span class="task-title">Shared scheduling contracts, EXPECTED queue status, socket events</span><span class="task-wave">W1</span></li>
+          <li class="task"><span class="task-state done">✓</span><span class="task-id">08-02</span><span class="task-title">Design-system additions, dependency manifest fix</span><span class="task-wave">W1</span></li>
+          <li class="task"><span class="task-state done">✓</span><span class="task-id">08-03</span><span class="task-title">Prisma persistence: 5 scheduling tables, migration</span><span class="task-wave">W1</span></li>
+          <li class="task"><span class="task-state done">✓</span><span class="task-id">08-04</span><span class="task-title">IST date module + queuePriorityAt queue integration</span><span class="task-wave">W2</span></li>
+          <li class="task"><span class="task-state done">✓</span><span class="task-id">08-05</span><span class="task-title">Availability engine: slot generator, template/override/blocked-period</span><span class="task-wave">W2</span></li>
+          <li class="task"><span class="task-state done">✓</span><span class="task-id">08-06</span><span class="task-title">Minimal web staff login, bearer-token API client, route guard</span><span class="task-wave">W2</span></li>
+          <li class="task"><span class="task-state done">✓</span><span class="task-id">08-07</span><span class="task-title">Appointment lifecycle: booking, recurrence, reschedule/cancel</span><span class="task-wave">W3</span></li>
+          <li class="task"><span class="task-state done">✓</span><span class="task-id">08-08</span><span class="task-title">Mobile queue board EXPECTED section, quick-action sheet</span><span class="task-wave">W3</span></li>
+          <li class="task"><span class="task-state done">✓</span><span class="task-id">08-09</span><span class="task-title">BullMQ sweep: queue handoff, no-show auto-flip, push triggers</span><span class="task-wave">W4</span></li>
+          <li class="task"><span class="task-state done">✓</span><span class="task-id">08-10</span><span class="task-title">Appointment reminders on Phase 7 pipeline, KEEP/MOVE/CANCEL</span><span class="task-wave">W5</span></li>
+          <li class="task"><span class="task-state done">✓</span><span class="task-id">08-11</span><span class="task-title">Scheduling HTTP surface, permission-guarded routes, tests</span><span class="task-wave">W6</span></li>
+          <li class="task"><span class="task-state done">✓</span><span class="task-id">08-12</span><span class="task-title">Mobile scheduling data layer, day agenda, booking sheet</span><span class="task-wave">W7</span></li>
+          <li class="task"><span class="task-state done">✓</span><span class="task-id">08-13</span><span class="task-title">Mobile availability settings, blocked-period sheet</span><span class="task-wave">W7</span></li>
+          <li class="task"><span class="task-state done">✓</span><span class="task-id">08-14</span><span class="task-title">Web 7-day week grid, first Socket.IO client, drawers</span><span class="task-wave">W7</span></li>
+          <li class="task"><span class="task-state done">✓</span><span class="task-id">08-15</span><span class="task-title">Full-suite green, validation doc, 3 human verifications</span><span class="task-wave">W8</span></li>
+        </ul>
+        <div class="column-note" style="margin:0 12px 10px;">Merged to main via <a href="https://github.com/mihirmahesh0510/Breeyo/pull/14" style="color:inherit;">PR #14</a> (2026-08-18), plus two small follow-up fixes merged via <a href="https://github.com/mihirmahesh0510/Breeyo/pull/21" style="color:inherit;">PR #21</a> (deduped future-slot test helper colliding on the same day) and <a href="https://github.com/mihirmahesh0510/Breeyo/pull/22" style="color:inherit;">PR #22</a> (CI workflow fix, unrelated to app code). D-28 through D-35 (product-review follow-ups) all implemented. Real bugs found &amp; fixed during build/gate: a booking-flow crash bug, 3 separate WhatsApp-wiring gaps, a backlog-queue push-trigger that was never wired in, a KEEP/MOVE/CANCEL reply path unreachable by real users, a D-34 advisory-lock call using the wrong Prisma raw-query method, a reschedule-series status filter gap, a web Move-Appointment duplicate-booking bug, and a slot-query <code style="background:none;border:none;padding:0;">durationMinutes</code> param that validated as a string instead of being coerced to a number. <strong>Explicit gap:</strong> SCH-05 (real device push delivery) is unticked in REQUIREMENTS.md — needs the user's own hardware verification. <strong>Pre-existing bugs disclosed, not fixed (out of scope):</strong> <code style="background:none;border:none;padding:0;">CheckInSheet.tsx</code> double-unwrap owner-lookup bug (Phase 3), <code style="background:none;border:none;padding:0;">ServiceCatalogService</code> missing <code style="background:none;border:none;padding:0;">durationMinutes</code> in its API response (Phase 4), global rate-limiter fails closed on Redis outages (Phase 1). This entire Phase 3 auth-session gap is what PR #19 (see pending column) later fixed.</div>
+      </details>
+
+      <details class="phase-group">
+        <summary>
+          <span class="s-left"><span class="chevron">▸</span><span class="s-num">P09</span><span class="s-title">Web Dashboard &amp; Owner Portal</span></span>
+          <span class="s-right"><span class="s-progress">7/7</span></span>
+        </summary>
+        <ul class="task-list">
+          <li class="task"><span class="task-state done">✓</span><span class="task-id">09-01</span><span class="task-title">Shared contracts, magic-link schema, blocking schema push</span><span class="task-wave">W1</span></li>
+          <li class="task"><span class="task-state done">✓</span><span class="task-id">09-02</span><span class="task-title">Browser access policy, dashboard shell/home, user-mgmt panel</span><span class="task-wave">W2</span></li>
+          <li class="task"><span class="task-state done">✓</span><span class="task-id">09-05</span><span class="task-title">Owner-portal token validation, scoped EMR/invoice read models</span><span class="task-wave">W2</span></li>
+          <li class="task"><span class="task-state done">✓</span><span class="task-id">09-03</span><span class="task-title">Inventory web workbench: stock/batch table, reordering</span><span class="task-wave">W3</span></li>
+          <li class="task"><span class="task-state done">✓</span><span class="task-id">09-04</span><span class="task-title">Queue board + billing web workbench, live sync</span><span class="task-wave">W3</span></li>
+          <li class="task"><span class="task-state done">✓</span><span class="task-id">09-06</span><span class="task-title">Owner-portal web UI, deep links, payment return states</span><span class="task-wave">W3</span></li>
+          <li class="task"><span class="task-state done">✓</span><span class="task-id">09-07</span><span class="task-title">Upcoming care dates API + portal UI (OWN-07)</span><span class="task-wave">W4</span></li>
+        </ul>
+        <div class="column-note" style="margin:0 12px 10px;">Merged to main via <a href="https://github.com/mihirmahesh0510/Breeyo/pull/20" style="color:inherit;">PR #20</a> (2026-08-24). 128/128 owner-portal + web-dashboard tests passing; full <code style="background:none;border:none;padding:0;">apps/api</code> regression ~1945/1953 passing (remaining failures are pre-existing Phase 8 scheduling + BullMQ webhook-worker flakes, out of scope). Two real, previously-invisible bugs found via real-DB integration tests (no mocked unit test caught either): self-service reissue required a client-supplied ID the API never gave the client a way to learn, and <code style="background:none;border:none;padding:0;">breeyo_app</code> was never granted access to the 5 new Phase 9 tables after <code style="background:none;border:none;padding:0;">db push</code> (every route touching them 500'd). A dedicated <code style="background:none;border:none;padding:0;">/breeyo-build --verify</code> pass then found 8 more issues, most seriously that no code path ever issued an owner's <em>first</em> magic link (only reissue existed) — all 9 fixed same day (D-84 decision recorded), see <code style="background:none;border:none;padding:0;">.planning/PHASE-09-VERIFY-FIX-PLAN.md</code>. <strong>Partial gap:</strong> human-verify coverage confirmed the trust banner, tab states, expired/invalid-link screens, and tel:/wa.me links in a real browser, but multi-pet switching, the combined multi-invoice checkout sheet, and the Razorpay payment return states (success/failure/interrupted) were not exercised — still open for a genuine human pass.</div>
+      </details>
+
+      <details class="phase-group">
+        <summary>
+          <span class="s-left"><span class="chevron">▸</span><span class="s-num">P10</span><span class="s-title">Offline Hardening &amp; Integration Polish</span></span>
+          <span class="s-right"><span class="s-progress">7/7</span></span>
+        </summary>
+        <ul class="task-list">
+          <li class="task"><span class="task-state done">✓</span><span class="task-id">10-01</span><span class="task-title">Shared offline-sync contracts, transactional local replay foundation, blocking schema push</span><span class="task-wave">W1</span></li>
+          <li class="task"><span class="task-state done">✓</span><span class="task-id">10-02</span><span class="task-title">Queue offline check-in/status replay, D-34 duplicate-merge, reconnect preemption</span><span class="task-wave">W2</span></li>
+          <li class="task"><span class="task-state done">✓</span><span class="task-id">10-03</span><span class="task-title">EMR offline note-taking, clinician-owned conflict resolution</span><span class="task-wave">W2</span></li>
+          <li class="task"><span class="task-state done">✓</span><span class="task-id">10-04</span><span class="task-title">Inventory offline barcode/stock actions, FIFO-safe reconciliation</span><span class="task-wave">W2</span></li>
+          <li class="task"><span class="task-state done">✓</span><span class="task-id">10-05</span><span class="task-title">Calm sync badge, failure center, retry escalation, replay broadcasts</span><span class="task-wave">W3</span></li>
+          <li class="task"><span class="task-state done">✓</span><span class="task-id">10-06</span><span class="task-title">Integration proof harnesses (offline recovery, golden path, WhatsApp-triggered flow)</span><span class="task-wave">W4</span></li>
+          <li class="task"><span class="task-state done">✓</span><span class="task-id">10-07</span><span class="task-title">Performance target verification — API p95, queue realtime (PLT-07)</span><span class="task-wave">W4</span></li>
+        </ul>
+        <div class="column-note" style="margin:0 12px 10px;">Merged to main via <a href="https://github.com/mihirmahesh0510/Breeyo/pull/23" style="color:inherit;">PR #23</a> (2026-08-27) — the final phase. 174 files changed, +21,307/−167. Two independent review passes stacked before merge: a self-run <code style="background:none;border:none;padding:0;">/breeyo-build --verify</code> found 11 integration gaps (all fixed, see <code style="background:none;border:none;padding:0;">.planning/PHASE-10-VERIFY-FIX-PLAN.md</code>) — the recurring pattern being correctly-built, individually-tested services never wired into a real screen or route (offline dispense/receive/adjust screens, the clinical conflict resolution sheet, replay broadcasts, retry/escalation routes, a conflict-resolve endpoint). The <code style="background:none;border:none;padding:0;">no-mistakes</code> gate's own review then found 9 more on top of that, most seriously that <code style="background:none;border:none;padding:0;">runReplayCycle</code> — the function driving ALL offline replay on reconnect — had zero production callers anywhere in the app (no <code style="background:none;border:none;padding:0;">NetInfo</code> listener existed at all), meaning nothing built in this phase would have actually fired on a real device; fixed with a real <code style="background:none;border:none;padding:0;">ConnectivityReplayProvider</code>, which itself then exposed a cold-launch edge case (also fixed) and a latent pending-count bug that had been unreachable until replay could actually run. Full regression green with zero failures at every level (root/API/mobile/web) after each round. <strong>Explicit gap:</strong> PLT-03's repeated disconnect/reconnect drill and PLT-07's cold-start/queue-latency confirmation both require real mid-range Android hardware (D-31) — intentionally deferred until after the UI rebrand lands, since testing screens about to be replaced would just need redoing.</div>
+      </details>
+
     </div>
   </div>
 
@@ -619,35 +704,59 @@
   <div class="column" data-status="pending">
     <div class="column-head">
       <span class="name heading-font">Built · pending merge</span>
-      <span class="count">16 tasks</span>
+      <span class="count">12 findings</span>
     </div>
-    <div class="column-note">Fully built on <code style="background:none;border:none;padding:0;">breeyo/phase-07-whatsapp-communication</code>, 5 real gap-fixes found &amp; closed during verification, blocked on human device verification before merge.</div>
+    <div class="column-note">Post-launch E2E sweep (<code style="background:none;border:none;padding:0;">Product/E2E Testing Pre Phase 8.md</code>, 21 findings) turned into fixes per owning phase, tracked in <code style="background:none;border:none;padding:0;">.planning/E2E-BUG-FIX-PLAN.md</code>. All 4 remaining PRs are through the no-mistakes gate — review/test/lint/docs green — awaiting your merge decision. (A 5th, PR #19 for Phase 1's stale-session bug, already merged 2026-08-21 — folded into that phase's Done entry above.)</div>
     <div class="column-body">
 
       <details class="phase-group" open>
         <summary>
-          <span class="s-left"><span class="chevron">▸</span><span class="s-num">P07</span><span class="s-title">WhatsApp Communication</span></span>
-          <span class="s-right"><span class="s-progress">16/16</span></span>
+          <span class="s-left"><span class="chevron">▸</span><span class="s-num">P02</span><span class="s-title">UI/UX fixes — PR #18</span></span>
+          <span class="s-right"><span class="s-progress">1/1</span></span>
         </summary>
         <ul class="task-list">
-          <li class="task"><span class="task-state pending">✓</span><span class="task-id">07-01</span><span class="task-title">Backfill Phase 3-6 migrations + WhatsApp data model (8 models, 10 enums)</span></li>
-          <li class="task"><span class="task-state pending">✓</span><span class="task-id">07-02</span><span class="task-title">Shared contracts: types, constants, socket events, schemas</span></li>
-          <li class="task"><span class="task-state pending">✓</span><span class="task-id">07-03</span><span class="task-title">Mobile UI library spike — Paper v5 confirmed working (D-17)</span></li>
-          <li class="task"><span class="task-state pending">✓</span><span class="task-id">07-04</span><span class="task-title">API test infra: factories, cleanup ordering, IST date module</span></li>
-          <li class="task"><span class="task-state pending">✓</span><span class="task-id">07-05</span><span class="task-title">WaProvider port, capability guards, simulator adapter, registry</span></li>
-          <li class="task"><span class="task-state pending">✓</span><span class="task-id">07-06</span><span class="task-title">Mobile presentational components, UI store, formatting module</span></li>
-          <li class="task"><span class="task-state pending">✓</span><span class="task-id">07-07</span><span class="task-title">Cloud API adapter: Meta payload mapper, HMAC webhook</span></li>
-          <li class="task"><span class="task-state pending">✓</span><span class="task-id">07-08</span><span class="task-title">Template registry, BullMQ queues, persist-then-dispatch send service</span></li>
-          <li class="task"><span class="task-state pending">✓</span><span class="task-id">07-09</span><span class="task-title">Delivery-status funnel, inbound router, outbound/simulator workers</span></li>
-          <li class="task"><span class="task-state pending">✓</span><span class="task-id">07-10</span><span class="task-title">Booking conversation: slot generation, auto-confirm, arbitration, D-21 pet selection</span></li>
-          <li class="task"><span class="task-state pending">✓</span><span class="task-id">07-11</span><span class="task-title">Reminder scheduling: two-touch tasks, daily 08:30 IST sweep, D-28 collision suppression</span></li>
-          <li class="task"><span class="task-state pending">✓</span><span class="task-id">07-12</span><span class="task-title">API read surface: inbox filters/search, thread detail</span></li>
-          <li class="task"><span class="task-state pending">✓</span><span class="task-id">07-13</span><span class="task-title">API actions: preferences, simulator config, booking move/cancel (consent endpoint skipped, D-24)</span></li>
-          <li class="task"><span class="task-state pending">✓</span><span class="task-id">07-14</span><span class="task-title">Mobile data layer: query keys, thread queries, socket, TemplateSendSheet</span></li>
-          <li class="task"><span class="task-state pending">✓</span><span class="task-id">07-15</span><span class="task-title">Mobile inbox/thread screens, role gating (07-15 human-verify still open)</span></li>
-          <li class="task"><span class="task-state pending">✓</span><span class="task-id">07-16</span><span class="task-title">Admin simulator config, send launcher (07-16 human-verify still open)</span></li>
+          <li class="task"><span class="task-state pending">✓</span><span class="task-id">2.1</span><span class="task-title">Shared <code style="background:none;border:none;padding:0;">BottomSheet</code> never blurred a previously-focused input, corrupting focus in Inventory's category/unit pickers</span></li>
         </ul>
-        <div class="column-note" style="margin:0 12px 10px;">2504+ automated tests passing across API/mobile/types/validators, 0 failures. 5 gap-fixes applied post-build (see <code style="background:none;border:none;padding:0;">07-OPEN-ITEMS.md</code>): booking messages weren't dispatched, simulator didn't auto-reply to lists, reminder sweep was wired to the wrong queue (WHA-01 would never have fired in prod), a non-retryable-failure cap was never called, and an owner-preference read endpoint was missing. Known accepted limitations: no consent-grant UI (D-24, explicit call), invalid-number "correction" can't persist a new phone number (no owner-edit endpoint anywhere in the app — pre-existing Phase 1/3 gap). <strong>Open:</strong> 37-step human device verification (07-15 + 07-16 checkpoints) not yet run — no device/simulator in this environment. <strong>Ready but not done:</strong> wiring <code style="background:none;border:none;padding:0;">SendTemplateLauncher</code> into P06's <code style="background:none;border:none;padding:0;">InvoiceActionBar</code> — small, low-risk, deliberately left for its own reviewed change.</div>
+      </details>
+
+      <details class="phase-group" open>
+        <summary>
+          <span class="s-left"><span class="chevron">▸</span><span class="s-num">P03</span><span class="s-title">Patient &amp; Queue fixes — PR #17</span></span>
+          <span class="s-right"><span class="s-progress">6/6</span></span>
+        </summary>
+        <ul class="task-list">
+          <li class="task"><span class="task-state pending">✓</span><span class="task-id">3.1-4</span><span class="task-title">Four broken navigation routes, one-line string fixes each</span></li>
+          <li class="task"><span class="task-state pending">✓</span><span class="task-id">3.5</span><span class="task-title">Check-in's existing-owner lookup always said "not found" — highest-impact fix in this batch</span></li>
+          <li class="task"><span class="task-state pending">✓</span><span class="task-id">3.6</span><span class="task-title">No permission checks on patient/queue routes — decided: <code style="background:none;border:none;padding:0;">/queue/call-next</code> requires MANAGE_QUEUE</span></li>
+          <li class="task"><span class="task-state pending">✓</span><span class="task-id">3.7</span><span class="task-title">Pet edit form missing fields</span></li>
+          <li class="task"><span class="task-state pending">✓</span><span class="task-id">3.9</span><span class="task-title">Type-level prop drift in route wrapper files — typecheck script added, not yet wired into CI</span></li>
+          <li class="task"><span class="task-state pending">✓</span><span class="task-id">3.10</span><span class="task-title"><code style="background:none;border:none;padding:0;">VisitReasonPicker</code> duplicate "Skip" button, cosmetic</span></li>
+        </ul>
+        <div class="column-note" style="margin:0 12px 10px;">3.8 (owner edit) deferred as net-new scope — D-45 in 03-CONTEXT.md.</div>
+      </details>
+
+      <details class="phase-group" open>
+        <summary>
+          <span class="s-left"><span class="chevron">▸</span><span class="s-num">P05</span><span class="s-title">Inventory fix — PR #15</span></span>
+          <span class="s-right"><span class="s-progress">1/1</span></span>
+        </summary>
+        <ul class="task-list">
+          <li class="task"><span class="task-state pending">✓</span><span class="task-id">5.1</span><span class="task-title">Item-form Save button wasn't gated on required-field validity</span></li>
+        </ul>
+      </details>
+
+      <details class="phase-group" open>
+        <summary>
+          <span class="s-left"><span class="chevron">▸</span><span class="s-num">P06</span><span class="s-title">Billing fixes — PR #16</span></span>
+          <span class="s-right"><span class="s-progress">4/4</span></span>
+        </summary>
+        <ul class="task-list">
+          <li class="task"><span class="task-state pending">✓</span><span class="task-id">6.1-2</span><span class="task-title">Two more hardcoded broken routes</span></li>
+          <li class="task"><span class="task-state pending">✓</span><span class="task-id">6.3</span><span class="task-title"><code style="background:none;border:none;padding:0;">InvoiceActionBar</code> showed unpermissioned money actions — decided: hide entirely</span></li>
+          <li class="task"><span class="task-state pending">✓</span><span class="task-id">6.4</span><span class="task-title">"Add Custom Service/Product" silently discarded input</span></li>
+          <li class="task"><span class="task-state pending">✓</span><span class="task-id">6.5</span><span class="task-title">Billing empty-state text overlapped the "New Invoice" FAB</span></li>
+        </ul>
+        <div class="column-note" style="margin:0 12px 10px;">6.6 (payment-links mobile UI) flagged as still-wanted, not a bug — D-61 in 06-CONTEXT.md.</div>
       </details>
 
       <details class="phase-group">
@@ -656,7 +765,7 @@
           <span class="s-right"><span class="s-progress">0/1</span></span>
         </summary>
         <ul class="task-list">
-          <li class="task"><span class="task-state"></span><span class="task-id">INV-DB</span><span class="task-title">Shared dev-DB fragility across worktrees: users/clinics dropped to 0 rows twice during Phase 05 testing; Phase 07 separately found migration-ledger drift, stale seed data, and transient deadlocks (40P01) under concurrent test runs against the same container — isolate per-worktree/session Postgres (port 5433) or confirm root cause</span><span class="task-wave flag">BLOCKER</span></li>
+          <li class="task"><span class="task-state"></span><span class="task-id">INV-DB</span><span class="task-title">Shared dev-DB fragility across worktrees: users/clinics dropped to 0 rows twice during Phase 05 testing; Phase 07 separately found migration-ledger drift, stale seed data, and transient deadlocks (40P01) under concurrent test runs against the same container — isolate per-worktree/session Postgres (port 5433) or confirm root cause. Still unresolved.</span><span class="task-wave flag">BLOCKER</span></li>
         </ul>
       </details>
 
@@ -666,34 +775,23 @@
   <!-- ================= UP NEXT ================= -->
   <div class="column" data-status="upnext">
     <div class="column-head">
-      <span class="name heading-font">Up next</span>
-      <span class="count">15 tasks</span>
+      <span class="name heading-font">Up next · in progress</span>
+      <span class="count">1 item</span>
     </div>
-    <div class="column-note info">Fully planned, no open gaps — 08-10 gates on P07 actually merging (its reminder pipeline).</div>
+    <div class="column-note info">All 10 <code style="background:none;border:none;padding:0;">.planning/ROADMAP.md</code> phases have shipped — this is net-new, post-launch scope, not yet a numbered phase.</div>
     <div class="column-body">
 
       <details class="phase-group" open>
         <summary>
-          <span class="s-left"><span class="chevron">▸</span><span class="s-num">P08</span><span class="s-title">Scheduling &amp; Calendar</span></span>
-          <span class="s-right"><span class="s-progress">0/15</span></span>
+          <span class="s-left"><span class="chevron">▸</span><span class="s-num">UI</span><span class="s-title">Product UI/UX Rebrand</span></span>
+          <span class="s-right"><span class="s-progress">design review</span></span>
         </summary>
         <ul class="task-list">
-          <li class="task"><span class="task-state"></span><span class="task-id">08-01</span><span class="task-title">Shared scheduling contracts, EXPECTED queue status, socket events</span><span class="task-wave">W1</span></li>
-          <li class="task"><span class="task-state"></span><span class="task-id">08-02</span><span class="task-title">Design-system additions, dependency manifest fix</span><span class="task-wave flag">W1 · BLOCKING</span></li>
-          <li class="task"><span class="task-state"></span><span class="task-id">08-03</span><span class="task-title">Prisma persistence: 5 scheduling tables, migration</span><span class="task-wave flag">W1 · BLOCKING</span></li>
-          <li class="task"><span class="task-state"></span><span class="task-id">08-04</span><span class="task-title">IST date module + queuePriorityAt queue integration</span><span class="task-wave">W2</span></li>
-          <li class="task"><span class="task-state"></span><span class="task-id">08-05</span><span class="task-title">Availability engine: slot generator, template/override/blocked-period</span><span class="task-wave">W2</span></li>
-          <li class="task"><span class="task-state"></span><span class="task-id">08-06</span><span class="task-title">Minimal web staff login, bearer-token API client, route guard</span><span class="task-wave">W2</span></li>
-          <li class="task"><span class="task-state"></span><span class="task-id">08-07</span><span class="task-title">Appointment lifecycle: booking, recurrence, reschedule/cancel</span><span class="task-wave">W3</span></li>
-          <li class="task"><span class="task-state"></span><span class="task-id">08-08</span><span class="task-title">Mobile queue board EXPECTED section, quick-action sheet</span><span class="task-wave">W3</span></li>
-          <li class="task"><span class="task-state"></span><span class="task-id">08-09</span><span class="task-title">BullMQ sweep: queue handoff, no-show auto-flip, push triggers</span><span class="task-wave">W4</span></li>
-          <li class="task"><span class="task-state"></span><span class="task-id">08-10</span><span class="task-title">Appointment reminders on Phase 7 pipeline, KEEP/MOVE/CANCEL</span><span class="task-wave flag">W5 · GATE (P07)</span></li>
-          <li class="task"><span class="task-state"></span><span class="task-id">08-11</span><span class="task-title">Scheduling HTTP surface, permission-guarded routes, tests</span><span class="task-wave">W6</span></li>
-          <li class="task"><span class="task-state"></span><span class="task-id">08-12</span><span class="task-title">Mobile scheduling data layer, day agenda, booking sheet</span><span class="task-wave">W7</span></li>
-          <li class="task"><span class="task-state"></span><span class="task-id">08-13</span><span class="task-title">Mobile availability settings, blocked-period sheet</span><span class="task-wave">W7</span></li>
-          <li class="task"><span class="task-state"></span><span class="task-id">08-14</span><span class="task-title">Web 7-day week grid, first Socket.IO client, drawers</span><span class="task-wave">W7</span></li>
-          <li class="task"><span class="task-state"></span><span class="task-id">08-15</span><span class="task-title">Full-suite green, validation doc, 3 human verifications</span><span class="task-wave">W8</span></li>
+          <li class="task"><span class="task-state pending">✓</span><span class="task-id">D.1</span><span class="task-title">Design briefs written for all 3 surfaces: mobile app, web dashboard, owner portal (extends existing MD3 <code style="background:none;border:none;padding:0;">@breeyo/ui</code> tokens, not a replacement)</span></li>
+          <li class="task"><span class="task-state"></span><span class="task-id">D.2</span><span class="task-title">Mockups under review — user is reviewing generated design direction now, will share for implementation shortly</span></li>
+          <li class="task"><span class="task-state"></span><span class="task-id">D.3</span><span class="task-title">Implementation against approved direction (packages/ui tokens + mobile/web/portal screens) — not started</span></li>
         </ul>
+        <div class="column-note" style="margin:0 12px 10px;">Briefs: <code style="background:none;border:none;padding:0;">Product/Design-Prompt.md</code>, <code style="background:none;border:none;padding:0;">Product/Owner-Portal-Design-Prompt.md</code>, <code style="background:none;border:none;padding:0;">Product/Vet-Web-Dashboard-Design-Prompt.md</code>; generated output in <code style="background:none;border:none;padding:0;">Product/Design Mock Ups/</code>. Phase 10's two remaining real-device checkpoints (PLT-03 disconnect/reconnect drill, PLT-07 cold-start confirmation) are intentionally deferred until this lands, so they run against final screens.</div>
       </details>
 
     </div>
@@ -703,48 +801,15 @@
   <div class="column" data-status="backlog">
     <div class="column-head">
       <span class="name heading-font">Planned · not started</span>
-      <span class="count">14 tasks</span>
+      <span class="count">0 tasks</span>
     </div>
-    <div class="column-body">
-
-      <details class="phase-group">
-        <summary>
-          <span class="s-left"><span class="chevron">▸</span><span class="s-num">P09</span><span class="s-title">Web Dashboard &amp; Owner Portal</span></span>
-          <span class="s-right"><span class="s-progress">0/7</span></span>
-        </summary>
-        <ul class="task-list">
-          <li class="task"><span class="task-state"></span><span class="task-id">09-01</span><span class="task-title">Shared contracts, magic-link schema, blocking schema push</span><span class="task-wave flag">W1 · BLOCKING</span></li>
-          <li class="task"><span class="task-state"></span><span class="task-id">09-02</span><span class="task-title">Browser access policy, dashboard shell/home, user-mgmt panel</span><span class="task-wave">W2</span></li>
-          <li class="task"><span class="task-state"></span><span class="task-id">09-05</span><span class="task-title">Owner-portal token validation, scoped EMR/invoice read models</span><span class="task-wave">W2</span></li>
-          <li class="task"><span class="task-state"></span><span class="task-id">09-03</span><span class="task-title">Inventory web workbench: stock/batch table, reordering</span><span class="task-wave">W3</span></li>
-          <li class="task"><span class="task-state"></span><span class="task-id">09-04</span><span class="task-title">Queue board + billing web workbench, live sync</span><span class="task-wave">W3</span></li>
-          <li class="task"><span class="task-state"></span><span class="task-id">09-06</span><span class="task-title">Owner-portal web UI, deep links, payment return states</span><span class="task-wave">W3</span></li>
-          <li class="task"><span class="task-state"></span><span class="task-id">09-07</span><span class="task-title">Upcoming care dates API + portal UI (OWN-07)</span><span class="task-wave">W4</span></li>
-        </ul>
-      </details>
-
-      <details class="phase-group">
-        <summary>
-          <span class="s-left"><span class="chevron">▸</span><span class="s-num">P10</span><span class="s-title">Offline Hardening &amp; Polish</span></span>
-          <span class="s-right"><span class="s-progress">0/7</span></span>
-        </summary>
-        <ul class="task-list">
-          <li class="task"><span class="task-state"></span><span class="task-id">10-01</span><span class="task-title">Shared offline-sync contracts, replay foundation, blocking schema push</span><span class="task-wave flag">W1 · BLOCKING</span></li>
-          <li class="task"><span class="task-state"></span><span class="task-id">10-02</span><span class="task-title">Queue offline check-in/status replay, reconnect preemption</span><span class="task-wave">W2</span></li>
-          <li class="task"><span class="task-state"></span><span class="task-id">10-03</span><span class="task-title">EMR offline note-taking, clinician-owned conflict resolution</span><span class="task-wave">W2</span></li>
-          <li class="task"><span class="task-state"></span><span class="task-id">10-04</span><span class="task-title">Inventory offline barcode/stock actions, FIFO-safe reconciliation</span><span class="task-wave">W2</span></li>
-          <li class="task"><span class="task-state"></span><span class="task-id">10-05</span><span class="task-title">Calm sync badge, failure center, retry escalation</span><span class="task-wave">W3</span></li>
-          <li class="task"><span class="task-state"></span><span class="task-id">10-06</span><span class="task-title">Integration proof harnesses, disconnect drills, human verification</span><span class="task-wave">W4</span></li>
-          <li class="task"><span class="task-state"></span><span class="task-id">10-07</span><span class="task-title">Performance target verification — API p95, cold start (PLT-07)</span><span class="task-wave">W4</span></li>
-        </ul>
-      </details>
-
-    </div>
+    <div class="column-note">Nothing left unscoped — all 10 phases have shipped. Rebrand implementation (D.3, Up Next) will land here once mockups are approved.</div>
+    <div class="column-body"></div>
   </div>
 
 </div>
 
 <footer>
-  <span>100 tasks across 10 phases (decomposed from <code>.planning/ROADMAP.md</code>'s plan list) plus 1 standing infra ticket. Click a phase to expand.</span>
-  <span>Last synced 2026-08-15</span>
+  <span>100/100 tasks shipped across all 10 phases (decomposed from <code>.planning/ROADMAP.md</code>'s plan list) — build complete. 12 open E2E-fix findings await merge, 1 standing infra ticket, and a post-launch UI/UX rebrand is now the active focus. Click a phase to expand.</span>
+  <span>Last synced 2026-08-27</span>
 </footer>
