@@ -12,10 +12,12 @@ const VET_ID = '00000000-0000-0000-0000-000000000020';
 const OWNER_ID = '00000000-0000-0000-0000-000000000002';
 const CREATED_BY_ID = '00000000-0000-0000-0000-000000000010';
 const APPOINTMENT_ID = '00000000-0000-0000-0000-000000000200';
+const APPOINTMENT_ID_2 = '00000000-0000-0000-0000-000000000201';
 const PET_ID_1 = '00000000-0000-0000-0000-000000000003';
 const PET_ID_2 = '00000000-0000-0000-0000-000000000004';
 const AP_ID_1 = '00000000-0000-0000-0000-000000000300';
 const AP_ID_2 = '00000000-0000-0000-0000-000000000301';
+const AP_ID_3 = '00000000-0000-0000-0000-000000000302';
 const ENTRY_ID_1 = '00000000-0000-0000-0000-000000000100';
 const ENTRY_ID_2 = '00000000-0000-0000-0000-000000000101';
 
@@ -262,6 +264,104 @@ describe('QueueHandoffService (mocked, pure branching logic)', () => {
 
       const [cutoff] = vi.mocked(appointments.findExpiredExpected).mock.calls[0];
       expect((cutoff as Date).getTime()).toBe(NOW.getTime() - NO_SHOW_GRACE_MINUTES * 60000);
+    });
+  });
+
+  describe('per-appointment error isolation (WR-4)', () => {
+    it('createExpectedEntriesForDueAppointments: a throwing appointment does not block later appointments in the batch', async () => {
+      const failingAppointment = rawAppointment();
+      const laterAppointment = rawAppointment({
+        id: APPOINTMENT_ID_2,
+        pets: [{ id: AP_ID_3, appointmentId: APPOINTMENT_ID_2, petId: PET_ID_2, queueEntryId: null }],
+      });
+      vi.mocked(appointments.findDueForQueueHandoff).mockResolvedValue([
+        failingAppointment,
+        laterAppointment,
+      ] as any);
+
+      // The first appointment's transaction blows up (e.g. a constraint
+      // violation); the second appointment's transaction is unaffected.
+      vi.mocked(prisma.$transaction)
+        .mockRejectedValueOnce(new Error('simulated per-appointment failure'))
+        .mockImplementationOnce((fn: any) => fn({}));
+
+      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const service = new QueueHandoffService(appointments, queue, appointmentService, prisma, null);
+
+      const result = await service.createExpectedEntriesForDueAppointments(NOW);
+
+      // The later appointment must still be processed and marked, even
+      // though it was ordered after the one that threw.
+      expect(appointments.markQueueEntryCreated).toHaveBeenCalledWith(
+        CLINIC_ID,
+        APPOINTMENT_ID_2,
+        NOW,
+        expect.anything(),
+      );
+      expect(appointments.markQueueEntryCreated).not.toHaveBeenCalledWith(
+        CLINIC_ID,
+        APPOINTMENT_ID,
+        NOW,
+        expect.anything(),
+      );
+      expect(result.appointmentsProcessed).toBe(1);
+      expect(result.entriesCreated).toBe(1);
+
+      // The failure must be logged with enough context to debug (which
+      // appointment/clinic), not silently swallowed.
+      expect(consoleErrorSpy).toHaveBeenCalled();
+      const loggedText = JSON.stringify(consoleErrorSpy.mock.calls);
+      expect(loggedText).toContain(APPOINTMENT_ID);
+      expect(loggedText).toContain(CLINIC_ID);
+
+      consoleErrorSpy.mockRestore();
+    });
+
+    it('autoFlipExpiredExpected: a throwing appointment does not block later appointments in the batch', async () => {
+      const failingAppointment = rawAppointment({
+        pets: [{ id: AP_ID_1, appointmentId: APPOINTMENT_ID, petId: PET_ID_1, queueEntryId: ENTRY_ID_1 }],
+      });
+      const laterAppointment = rawAppointment({
+        id: APPOINTMENT_ID_2,
+        pets: [{ id: AP_ID_3, appointmentId: APPOINTMENT_ID_2, petId: PET_ID_2, queueEntryId: ENTRY_ID_2 }],
+      });
+      vi.mocked(appointments.findExpiredExpected).mockResolvedValue([
+        failingAppointment,
+        laterAppointment,
+      ] as any);
+      vi.mocked(queue.findEntryById).mockImplementation((id: string) =>
+        Promise.resolve({ id, status: 'EXPECTED' } as any),
+      );
+      // The first appointment's entry update blows up; the second
+      // appointment's entry update is unaffected.
+      vi.mocked(queue.updateEntry)
+        .mockRejectedValueOnce(new Error('simulated per-appointment failure'))
+        .mockImplementationOnce((id: string, data: Record<string, unknown>) =>
+          Promise.resolve({ id, ...data }),
+        );
+
+      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const service = new QueueHandoffService(appointments, queue, appointmentService, prisma, null);
+
+      const result = await service.autoFlipExpiredExpected(NOW);
+
+      // The later appointment must still be flipped to NO_SHOW, even though
+      // it was ordered after the one that threw.
+      expect(appointmentService.markNoShow).toHaveBeenCalledWith(
+        expect.objectContaining({ clinicId: CLINIC_ID, appointmentId: APPOINTMENT_ID_2 }),
+      );
+      expect(appointmentService.markNoShow).not.toHaveBeenCalledWith(
+        expect.objectContaining({ appointmentId: APPOINTMENT_ID }),
+      );
+      expect(result.entriesFlipped).toBe(1);
+      expect(result.appointmentsFlipped).toBe(1);
+
+      expect(consoleErrorSpy).toHaveBeenCalled();
+      const loggedText = JSON.stringify(consoleErrorSpy.mock.calls);
+      expect(loggedText).toContain(APPOINTMENT_ID);
+      expect(loggedText).toContain(CLINIC_ID);
+
+      consoleErrorSpy.mockRestore();
     });
   });
 });
