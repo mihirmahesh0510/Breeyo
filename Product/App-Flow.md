@@ -33,7 +33,7 @@
 +------------------+--------+-----------+------------+-------------------+
 | Queue Management |   Y    |     Y     |     Y      |        -          |
 | Patient Reg.     |   Y    |     Y     |     Y      |        -          |
-| EMR / SOAP Notes |   Y    |     Y     |     -      |        -          |
+| EMR / SOAP Notes |   Y    |     Y     |  (view)    |        -          |
 | Prescriptions    |   Y    |     Y     |     -      |        -          |
 | Inventory        |   Y    |     -     |     -      |        Y          |
 | Invoicing        |   Y    |     Y     |     Y      |        -          |
