@@ -55,6 +55,14 @@ export class StockReceiptService {
         },
       });
 
+      // WR-2: this duplicates stock-movement.service.ts's `recordMovement`
+      // running-total computation rather than calling it, so it needs the
+      // same `SELECT ... FOR UPDATE` lock on the item row first -- otherwise
+      // a receipt racing a concurrent adjustment/dispense/stock-take on the
+      // same item (which does go through `recordMovement`'s lock) could
+      // still read a stale `lastMovement` and corrupt the ledger.
+      await tx.$queryRaw`SELECT id FROM inventory_items WHERE id = ${itemId}::uuid FOR UPDATE`;
+
       const lastMovement = await tx.stockMovement.findFirst({
         where: { itemId, clinicId },
         orderBy: { createdAt: 'desc' },
