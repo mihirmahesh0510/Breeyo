@@ -14,6 +14,7 @@ import { StockMovementService } from '../inventory/stock-movement.service.js';
 import { InvoiceRepository } from './invoice.repository.js';
 import { StockValidatorService } from './stock-validator.service.js';
 import { issuePaymentReceipt } from './payment.service.js';
+import { applyRefundGatewayOutcome } from './refund-gateway-outcome.js';
 import { BILLING_WEBHOOK_QUEUE, type BillingWebhookJob } from './webhook.service.js';
 
 /**
@@ -514,47 +515,30 @@ async function applyRefundOutcome(
     return null;
   }
 
-  const now = new Date();
-  const repository = buildRepository(db);
   const failureReason = asString(entity?.error_description) ?? 'The gateway reported a failure';
 
+  // The transition itself — refund row, recomputed balance, audit log — is
+  // shared with `refund-reconciliation.job.ts`'s poll-based fallback (WR-3)
+  // via `applyRefundGatewayOutcome`, so a refund completed by either channel
+  // ends up in an identical state. Only the webhook-specific bookkeeping
+  // (marking THIS event processed) stays local to this file.
   return db.$transaction(async (tx) => {
-    await tx.refund.update({
-      where: { id: refund.id },
-      data:
-        outcome === 'processed'
-          ? { status: 'processed', processedAt: now, failureReason: null }
-          : { status: 'failed', failureReason: failureReason.slice(0, 500) },
-    });
-
-    // Runs for a failure too: a refund that was optimistically counted must be
-    // taken back out of the balance, and the derivation is what does that.
-    await repository.recomputePaymentState(tx, clinicId, refund.invoiceId);
-
-    await writeBillingAuditLog(
+    const touched = await applyRefundGatewayOutcome(
+      db,
       tx,
-      outcome === 'processed'
-        ? BillingAuditEvent.REFUND_PROCESSED
-        : BillingAuditEvent.REFUND_FAILED,
-      {
-        clinicId,
-        invoiceId: refund.invoiceId,
-        metadata: {
-          razorpayRefundId,
-          amountPaise: refund.amountPaise,
-          ...(outcome === 'failed' ? { failureReason } : {}),
-        },
-      },
+      clinicId,
+      refund,
+      outcome,
+      razorpayRefundId,
+      failureReason,
     );
-
-    const touched = [await readTouch(tx, clinicId, refund.invoiceId)];
 
     await tx.webhookEvent.update({
       where: { id: webhookEventId },
-      data: { processedAt: now, processingError: null },
+      data: { processedAt: new Date(), processingError: null },
     });
 
-    return touched;
+    return [touched];
   });
 }
 
