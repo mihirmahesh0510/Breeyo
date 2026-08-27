@@ -1,0 +1,12 @@
+.centered {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  max-width: 480px;
+  margin: 0 auto;
+  padding: var(--spacing-lg);
+  text-align: center;
+  background: var(--color-background, #fffbf5);
+  color: var(--color-on-surface-variant, #5d4037);
+}
