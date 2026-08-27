@@ -10,6 +10,7 @@ import {
   Dimensions,
   TouchableOpacity,
 } from 'react-native';
+import { colors } from '@breeyo/ui';
 import { useAuth } from '../../../providers/AuthProvider';
 import { apiClient } from '../../../lib/api';
 import { HistoryItem } from './HistoryItem';
@@ -233,7 +234,7 @@ const styles = StyleSheet.create({
   },
   closeText: {
     fontSize: 14,
-    color: '#2E7D32',
+    color: colors.primary,
     fontWeight: '500',
   },
   listContent: {
@@ -259,6 +260,6 @@ const styles = StyleSheet.create({
   retryText: {
     fontSize: 14,
     fontWeight: '500',
-    color: '#2E7D32',
+    color: colors.primary,
   },
 });

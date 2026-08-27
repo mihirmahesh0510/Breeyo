@@ -2,7 +2,7 @@ import React from 'react';
 import { View, StyleSheet, Pressable } from 'react-native';
 import { Text } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { StatusBadge } from '@breeyo/ui';
+import { StatusBadge, colors } from '@breeyo/ui';
 import { SPECIES_ICONS, QUEUE_STATUS_LABELS, SyncVisibilityState, type QueueStatus } from '@breeyo/types';
 import type { QueueEntryWithPet } from '@breeyo/types';
 import type { QueueEntryWithPendingState } from '../lib/queue-offline-utils';
@@ -74,7 +74,7 @@ export function QueueCardItem({
         <MaterialCommunityIcons
           name={iconName as any}
           size={28}
-          color="#5D4037"
+          color={colors.secondary}
         />
       </View>
 
@@ -91,7 +91,7 @@ export function QueueCardItem({
             <MaterialCommunityIcons
               name="cloud-sync-outline"
               size={14}
-              color="#E65100"
+              color={colors.tertiary}
               accessibilityLabel="Waiting to sync"
               testID="queue-card-pending-sync"
             />
@@ -116,7 +116,7 @@ export function QueueCardItem({
         </Text>
         {entry.status === 'EXPECTED' ? (
           <View style={styles.expectedRow}>
-            <MaterialCommunityIcons name="clock-outline" size={16} color="#5D4037" />
+            <MaterialCommunityIcons name="clock-outline" size={16} color={colors.secondary} />
             <Text variant="bodySmall" style={styles.timestamp}>
               Expected {formatTime(entry.queuePriorityAt)}
             </Text>
@@ -204,7 +204,7 @@ const styles = StyleSheet.create({
     color: '#49454F',
   },
   ownerName: {
-    color: '#5D4037',
+    color: colors.secondary,
   },
   timestamp: {
     color: '#79747E',
@@ -219,10 +219,10 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   position: {
-    color: '#E65100',
+    color: colors.tertiary,
     fontWeight: '500',
   },
   waitTime: {
-    color: '#E65100',
+    color: colors.tertiary,
   },
 });

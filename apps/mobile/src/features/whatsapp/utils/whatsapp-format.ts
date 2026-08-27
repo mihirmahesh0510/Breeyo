@@ -1,3 +1,4 @@
+import { colors } from '@breeyo/ui';
 import { WA_INBOX_FILTER_LABELS } from '@breeyo/types';
 import type {
   WaContextType,
@@ -24,24 +25,24 @@ export type WaStatusVariant = 'queued' | 'sent' | 'delivered' | 'failed' | 'repl
  * exactly (delivered/queued/failed/needsAction/outgoingBubble/incomingBubble/background).
  */
 export const WA_COLORS = {
-  /** Primary green -- delivered/success status, outgoing bubbles, primary CTAs, active filter chip. */
-  delivered: '#2E7D32',
+  /** Primary navy -- delivered/success status, outgoing bubbles, primary CTAs, active filter chip. */
+  delivered: colors.success,
   /** Orange -- queued/pending badge, delayed delivery, needs-action dot (shares the accent with needsAction). */
-  queued: '#E65100',
+  queued: colors.tertiary,
   /** Destructive red -- failed status, invalid number, opt-out, cancel booking. */
   failed: '#BA1A1A',
   /** Orange -- unread/needs-action dot and pill (D-04). */
-  needsAction: '#E65100',
-  /** Secondary green-tinted surface for outgoing (staff/system) bubbles. */
-  outgoingBubble: '#C8E6C9',
+  needsAction: colors.tertiary,
+  /** Secondary navy-tinted surface for outgoing (staff/system) bubbles. */
+  outgoingBubble: colors.primaryContainer,
   /** Secondary surface for incoming (simulated owner) bubbles. */
   incomingBubble: '#F5F0EB',
   /** Dominant warm-white screen/thread background. */
   background: '#FFFBF5',
   /** Neutral for the in-flight "Sent" status (no dedicated UI-SPEC accent). */
-  sent: '#5D4037',
-  /** Green -- a replied thread has progressed successfully. */
-  replied: '#2E7D32',
+  sent: colors.secondary,
+  /** Navy -- a replied thread has progressed successfully. */
+  replied: colors.success,
 } as const;
 
 const STATUS_VARIANT_MAP: Record<WaDeliveryStatus, WaStatusVariant> = {
@@ -55,7 +56,7 @@ const STATUS_VARIANT_MAP: Record<WaDeliveryStatus, WaStatusVariant> = {
 
 /**
  * WHA-05: maps a delivery status to its badge variant/color key.
- * `statusToVariant('DELIVERED') === 'delivered'` (green #2E7D32),
+ * `statusToVariant('DELIVERED') === 'delivered'` (navy #1E2A6E),
  * `statusToVariant('QUEUED') === 'queued'` (orange #E65100),
  * `statusToVariant('FAILED') === 'failed'` (red #BA1A1A).
  */

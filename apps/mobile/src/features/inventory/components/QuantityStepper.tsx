@@ -3,6 +3,7 @@ import { View, TextInput as RNTextInput, Pressable, Animated, StyleSheet } from 
 import { Text } from 'react-native-paper';
 import * as Haptics from 'expo-haptics';
 import { clampQuantity } from '../lib/fifo-dispense-logic';
+import { colors } from '@breeyo/ui';
 
 /** Per UI-SPEC "Dispense form quantity stepper": 48px touch targets, one-handed operation. */
 const STEPPER_BUTTON_SIZE = 48;
@@ -155,7 +156,7 @@ const styles = StyleSheet.create({
     width: STEPPER_BUTTON_SIZE,
     height: STEPPER_BUTTON_SIZE,
     borderRadius: 8,
-    backgroundColor: '#2E7D32',
+    backgroundColor: colors.primary,
     justifyContent: 'center',
     alignItems: 'center',
   },

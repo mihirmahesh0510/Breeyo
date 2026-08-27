@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, SectionList, StyleSheet } from 'react-native';
 import { Text } from 'react-native-paper';
-import { EmptyState } from '@breeyo/ui';
+import { EmptyState, colors } from '@breeyo/ui';
 import type { PatientSearchResult, Species } from '@breeyo/types';
 import { PatientListItem } from './PatientListItem';
 
@@ -185,7 +185,7 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   highlightedText: {
-    color: '#2E7D32',
+    color: colors.primary,
     fontWeight: '700',
   },
   listContent: {

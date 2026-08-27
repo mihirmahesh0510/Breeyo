@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { View, ScrollView, StyleSheet } from 'react-native';
 import { Text, Switch, IconButton } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { Button, SkeletonLoader, EmptyState } from '@breeyo/ui';
+import { Button, SkeletonLoader, EmptyState, colors } from '@breeyo/ui';
 import { WA_ESCALATION } from '@breeyo/types';
 import type { ClinicConfigInput, WaDeliveryMode } from '@breeyo/types';
 import { ApiClientError } from '../../../lib/api';
@@ -168,7 +168,7 @@ export function WhatsAppConfigScreen() {
           Provider
         </Text>
         <View style={styles.providerRow}>
-          <MaterialCommunityIcons name="cog-outline" size={20} color="#5D4037" />
+          <MaterialCommunityIcons name="cog-outline" size={20} color={colors.secondary} />
           <Text variant="bodyLarge" style={styles.providerLabel}>
             {draft.provider === 'simulator' ? 'Simulator' : 'Cloud API'}
           </Text>
@@ -206,7 +206,7 @@ export function WhatsAppConfigScreen() {
             accessibilityRole="switch"
             accessibilityLabel="Simulated owner auto-reply"
             accessibilityState={{ disabled: updateConfig.isPending, checked: draft.autoReplyEnabled }}
-            color="#2E7D32"
+            color={colors.primary}
           />
         </View>
         <View style={styles.stepperRow}>

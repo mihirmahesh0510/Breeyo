@@ -11,8 +11,8 @@ describe('breeyoTheme', () => {
     expect(breeyoTheme).toHaveProperty('roundness');
   });
 
-  it('overrides colors.primary with Breeyo green', () => {
-    expect(breeyoTheme.colors.primary).toBe('#2E7D32');
+  it('overrides colors.primary with Breeyo navy', () => {
+    expect(breeyoTheme.colors.primary).toBe('#1E2A6E');
   });
 
   it('preserves MD3LightTheme colors not overridden', () => {

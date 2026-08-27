@@ -7,6 +7,7 @@ import type {
   Owner,
   Clinic,
 } from '@breeyo/types';
+import { colors } from '@breeyo/ui';
 
 /**
  * Builds a full clinical record PDF in HTML format with all SOAP sections,
@@ -58,7 +59,7 @@ export function buildClinicalRecordHtml(
       <tr>
         <td style="padding: 6px; border: 1px solid #ddd; font-weight: 500;">${escapeHtml(sys.system)}</td>
         <td style="padding: 6px; border: 1px solid #ddd;">
-          <span style="color: ${sys.status === 'normal' ? '#2E7D32' : '#B3261E'}; font-weight: 500;">
+          <span style="color: ${sys.status === 'normal' ? colors.success : '#B3261E'}; font-weight: 500;">
             ${sys.status === 'normal' ? 'Normal' : 'Abnormal'}
           </span>
         </td>
@@ -92,13 +93,13 @@ export function buildClinicalRecordHtml(
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { font-family: -apple-system, 'Helvetica Neue', Arial, sans-serif; color: #333; line-height: 1.4; padding: 16px; font-size: 11px; }
-    .header { text-align: center; border-bottom: 2px solid #2E7D32; padding-bottom: 12px; margin-bottom: 12px; }
+    .header { text-align: center; border-bottom: 2px solid ${colors.primary}; padding-bottom: 12px; margin-bottom: 12px; }
     .header img { max-width: 50px; max-height: 50px; margin-bottom: 4px; }
-    .clinic-name { font-size: 18px; font-weight: 700; color: #2E7D32; }
+    .clinic-name { font-size: 18px; font-weight: 700; color: ${colors.primary}; }
     .clinic-info { font-size: 10px; color: #666; }
     .doc-title { text-align: center; font-size: 14px; font-weight: 700; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 1px; }
     .section { margin-bottom: 12px; page-break-inside: avoid; }
-    .section-title { font-size: 12px; font-weight: 700; color: #2E7D32; background: #E8F5E9; padding: 4px 8px; border-left: 3px solid #2E7D32; margin-bottom: 6px; }
+    .section-title { font-size: 12px; font-weight: 700; color: ${colors.primary}; background: #E8F5E9; padding: 4px 8px; border-left: 3px solid ${colors.primary}; margin-bottom: 6px; }
     .info-row { display: flex; flex-wrap: wrap; gap: 4px; }
     .info-cell { flex: 1; min-width: 30%; padding: 4px 0; }
     .info-label { font-size: 9px; color: #999; text-transform: uppercase; }
@@ -111,7 +112,7 @@ export function buildClinicalRecordHtml(
     .vital-unit { font-size: 10px; color: #666; }
     .vital-label { font-size: 9px; color: #999; text-transform: uppercase; margin-top: 2px; }
     .soap-content { padding: 6px 0; white-space: pre-wrap; }
-    .footer { margin-top: 20px; padding-top: 12px; border-top: 2px solid #2E7D32; }
+    .footer { margin-top: 20px; padding-top: 12px; border-top: 2px solid ${colors.primary}; }
     .signature-line { margin-top: 30px; border-top: 1px solid #333; width: 200px; text-align: center; padding-top: 4px; font-size: 10px; }
   </style>
 </head>

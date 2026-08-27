@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { View, Pressable, FlatList, StyleSheet } from 'react-native';
 import { Text } from 'react-native-paper';
-import { Card } from '@breeyo/ui';
+import { Card, colors as COLORS } from '@breeyo/ui';
 import type { LowStockItem, ExpiringBatchItem } from '@breeyo/types';
 import type { AlertCounts } from '../hooks/useInventoryApi';
 
@@ -19,17 +19,6 @@ export interface AttentionCardProps {
 }
 
 type AttentionTab = 'lowStock' | 'expiringSoon' | 'expired';
-
-const COLORS = {
-  tertiary: '#E65100',
-  tertiaryContainer: '#FFE0B2',
-  onTertiaryContainer: '#BF360C',
-  error: '#BA1A1A',
-  errorContainer: '#FFDAD6',
-  onErrorContainer: '#410002',
-  onSurfaceVariant: '#49454F',
-  primaryContainer: '#C8E6C9',
-} as const;
 
 /** DD MMM YYYY formatting, matching the convention used across other feature files in this repo. */
 function formatDate(date: Date | string): string {

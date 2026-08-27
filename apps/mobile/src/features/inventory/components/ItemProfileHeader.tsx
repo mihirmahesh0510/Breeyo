@@ -4,6 +4,7 @@ import { Text } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { getCategoryIcon, getCategoryLabel, getStockLevelStatus } from '@breeyo/types';
 import type { InventoryItem } from '@breeyo/types';
+import { colors as COLORS } from '@breeyo/ui';
 
 export interface ItemProfileHeaderProps {
   item: InventoryItem;
@@ -11,16 +12,6 @@ export interface ItemProfileHeaderProps {
   latestPurchasePrice?: number | null;
   testID?: string;
 }
-
-const COLORS = {
-  primary: '#2E7D32',
-  tertiary: '#E65100',
-  tertiaryContainer: '#FFE0B2',
-  onTertiaryContainer: '#BF360C',
-  error: '#BA1A1A',
-  onSurfaceVariant: '#49454F',
-  surfaceVariant: '#F5F0EB',
-} as const;
 
 const STOCK_STATUS_COLOR: Record<string, string> = {
   healthy: COLORS.primary,

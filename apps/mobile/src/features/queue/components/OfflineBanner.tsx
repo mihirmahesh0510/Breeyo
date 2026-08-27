@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import { View, StyleSheet, Animated } from 'react-native';
 import { Text } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { colors } from '@breeyo/ui';
 import { useQueueUIStore } from '../store/queueUIStore';
 
 export function OfflineBanner() {
@@ -52,7 +53,7 @@ export function OfflineBanner() {
       ]}
       accessibilityRole="alert"
     >
-      <MaterialCommunityIcons name="wifi-off" size={16} color="#BF360C" />
+      <MaterialCommunityIcons name="wifi-off" size={16} color={colors.onTertiaryContainer} />
       {/* Plan 10-02 (D-03, D-19): check-ins and status changes made now are
           real queue work, not blocked or lost -- calm status text, not a
           "something is broken/stale" warning. */}

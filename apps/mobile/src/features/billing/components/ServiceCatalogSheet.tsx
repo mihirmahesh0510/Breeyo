@@ -3,7 +3,7 @@ import { View, Pressable, ScrollView, StyleSheet } from 'react-native';
 import { Text, TextInput } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { BottomSheet, SearchBar } from '@breeyo/ui';
+import { BottomSheet, SearchBar, colors } from '@breeyo/ui';
 import { formatPaiseINR } from '../lib/format';
 import {
   BUILDER_COPY,
@@ -33,7 +33,7 @@ const COLORS = {
   outlineVariant: '#CAC4D0',
   onSurface: '#1C1B1F',
   onSurfaceVariant: '#49454F',
-  primary: '#2E7D32',
+  primary: colors.primary,
   error: '#BA1A1A',
   disabled: '#9E9E9E',
 } as const;

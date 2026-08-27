@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Pressable, StyleSheet } from 'react-native';
 import { Text } from 'react-native-paper';
-import { Avatar, Card } from '@breeyo/ui';
+import { Avatar, Card, colors } from '@breeyo/ui';
 import { SPECIES_ICONS, type Species } from '@breeyo/types';
 import type { Pet, Owner } from '@breeyo/types';
 
@@ -184,11 +184,11 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   ownerName: {
-    color: '#2E7D32',
+    color: colors.primary,
     fontWeight: '600',
   },
   ownerChevron: {
-    color: '#2E7D32',
+    color: colors.primary,
     fontSize: 16,
   },
 });

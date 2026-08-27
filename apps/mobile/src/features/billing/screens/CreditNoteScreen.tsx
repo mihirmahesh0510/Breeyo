@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { View, ScrollView, Pressable, StyleSheet } from 'react-native';
 import { Text, TextInput, ActivityIndicator } from 'react-native-paper';
 import { useRouter, Stack } from 'expo-router';
-import { EmptyState, showToast } from '@breeyo/ui';
+import { EmptyState, showToast, colors } from '@breeyo/ui';
 import { useInvoice } from '../hooks/useInvoice';
 import { usePaymentMutations } from '../hooks/usePaymentMutations';
 import { CreditItemSelector } from '../components/CreditItemSelector';
@@ -27,9 +27,9 @@ const COLORS = {
   onSurface: '#1C1B1F',
   onSurfaceVariant: '#49454F',
   outline: '#CAC4D0',
-  primary: '#2E7D32',
-  primaryContainer: '#C8E6C9',
-  onPrimaryContainer: '#1B5E20',
+  primary: colors.primary,
+  primaryContainer: colors.primaryContainer,
+  onPrimaryContainer: colors.onPrimaryContainer,
   onPrimary: '#FFFFFF',
   error: '#BA1A1A',
 } as const;

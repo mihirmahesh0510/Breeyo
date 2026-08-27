@@ -3,6 +3,7 @@ import { View, Pressable, StyleSheet } from 'react-native';
 import { Text } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import { colors } from '@breeyo/ui';
 import { formatPaiseINR } from '../lib/format';
 import { BUILDER_COPY } from '../lib/builder-copy';
 import { lineGrossPaise } from '../lib/builder-state';
@@ -26,7 +27,7 @@ const COLORS = {
   outlineVariant: '#CAC4D0',
   onSurface: '#1C1B1F',
   onSurfaceVariant: '#49454F',
-  tertiary: '#E65100',
+  tertiary: colors.tertiary,
   error: '#BA1A1A',
 } as const;
 

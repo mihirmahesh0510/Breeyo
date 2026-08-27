@@ -3,7 +3,7 @@ import { View, ScrollView, StyleSheet } from 'react-native';
 import { Text, ActivityIndicator } from 'react-native-paper';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import * as Haptics from 'expo-haptics';
-import { Button, showToast } from '@breeyo/ui';
+import { Button, showToast, colors } from '@breeyo/ui';
 // `buildDispenseSubmission` validates with `dispenseSchema` internally (see
 // lib/fifo-dispense-logic.ts for the full pipeline: D-25 expired-batch
 // blocking, then insufficient-stock check, then dispenseSchema itself).
@@ -195,7 +195,7 @@ export function DispenseScreen() {
   if (itemQuery.isLoading && !params.itemName) {
     return (
       <View style={styles.centered} testID="dispense-screen-loading">
-        <ActivityIndicator size="large" color="#2E7D32" />
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
@@ -349,10 +349,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 4,
-    backgroundColor: '#D7CCC8',
+    backgroundColor: colors.secondaryContainer,
   },
   counterSaleBadgeText: {
-    color: '#3E2723',
+    color: colors.onSecondaryContainer,
     fontWeight: '700',
   },
   consultationCaption: {

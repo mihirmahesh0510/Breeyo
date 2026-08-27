@@ -7,7 +7,7 @@ import { GestureHandlerRootView, Pressable } from 'react-native-gesture-handler'
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { CameraView, useCameraPermissions, type BarcodeScanningResult, type CameraMountError } from 'expo-camera';
 import { EXPO_CAMERA_BARCODE_TYPES } from '@breeyo/types';
-import { BreeyoIconButton, showToast } from '@breeyo/ui';
+import { BreeyoIconButton, showToast, colors } from '@breeyo/ui';
 import { useAuth } from '../../../providers/AuthProvider';
 import { useOfflineSync } from '../hooks/useOfflineSync';
 import { useBarcodeScan } from '../hooks/useBarcodeScan';
@@ -30,9 +30,9 @@ const COLORS = {
   surface: '#FFFBF5',
   onSurface: '#1C1B1F',
   onSurfaceVariant: '#49454F',
-  tertiary: '#E65100',
-  tertiaryContainer: '#FFE0B2',
-  onTertiaryContainer: '#BF360C',
+  tertiary: colors.tertiary,
+  tertiaryContainer: colors.tertiaryContainer,
+  onTertiaryContainer: colors.onTertiaryContainer,
   overlayText: '#FFFFFF',
 } as const;
 
@@ -407,7 +407,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   settingsLink: {
-    color: '#2E7D32',
+    color: colors.primary,
     fontWeight: '600',
     textDecorationLine: 'underline',
   },

@@ -4,7 +4,7 @@ import { Text, Switch, ActivityIndicator, TextInput as PaperTextInput, HelperTex
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { createItemSchema, updateItemSchema } from '@breeyo/validators';
-import { Button, FormField, BottomSheet, BreeyoTextInput, showToast } from '@breeyo/ui';
+import { Button, FormField, BottomSheet, BreeyoTextInput, showToast, colors } from '@breeyo/ui';
 import type { BarcodeFormat, BarcodeConflict } from '@breeyo/types';
 import { getHsnSuggestions, type VetHsnCodeEntry } from '@breeyo/types';
 import { useAuth } from '../../../providers/AuthProvider';
@@ -257,7 +257,7 @@ export function ItemFormScreen() {
   if (isEditMode && existingItemQuery.isLoading) {
     return (
       <View style={styles.centered} testID="item-form-loading">
-        <ActivityIndicator size="large" color="#2E7D32" />
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
@@ -690,13 +690,13 @@ const styles = StyleSheet.create({
     marginTop: 8,
     padding: 8,
     borderRadius: 8,
-    backgroundColor: '#FFE0B2',
+    backgroundColor: colors.tertiaryContainer,
   },
   conflictText: {
-    color: '#BF360C',
+    color: colors.onTertiaryContainer,
   },
   viewItemLink: {
-    color: '#2E7D32',
+    color: colors.primary,
     fontWeight: '600',
     marginTop: 4,
   },

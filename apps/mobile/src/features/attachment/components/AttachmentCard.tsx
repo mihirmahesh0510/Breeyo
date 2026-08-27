@@ -10,6 +10,7 @@ import {
   Pressable,
 } from 'react-native';
 import type { ConsultationAttachment } from '@breeyo/types';
+import { colors } from '@breeyo/ui';
 
 type UploadStatus = 'uploading' | 'uploaded' | 'error';
 
@@ -218,7 +219,7 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     height: 3,
-    backgroundColor: '#2E7D32',
+    backgroundColor: colors.primary,
   },
   progressText: {
     fontSize: 14,

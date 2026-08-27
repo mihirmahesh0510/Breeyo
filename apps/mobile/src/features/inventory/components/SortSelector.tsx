@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { View, Pressable, StyleSheet } from 'react-native';
 import { Text } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { BottomSheet } from '@breeyo/ui';
+import { BottomSheet, colors } from '@breeyo/ui';
 import type { InventorySortOption } from '../hooks/useInventoryApi';
 
 export interface SortOption {
@@ -75,7 +75,7 @@ export function SortSelector({ selectedSort, onSortChange, testID }: SortSelecto
               {option.label}
             </Text>
             {option.value === selectedSort && (
-              <MaterialCommunityIcons name="check" size={20} color="#2E7D32" />
+              <MaterialCommunityIcons name="check" size={20} color={colors.primary} />
             )}
           </Pressable>
         ))}
@@ -105,7 +105,7 @@ const styles = StyleSheet.create({
     color: '#1C1B1F',
   },
   optionSelected: {
-    color: '#2E7D32',
+    color: colors.primary,
     fontWeight: '600',
   },
 });

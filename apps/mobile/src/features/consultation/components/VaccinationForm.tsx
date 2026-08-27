@@ -10,6 +10,7 @@ import {
   VACCINATION_INTERVALS,
   calculateNextDueDate,
 } from '@breeyo/types';
+import { colors } from '@breeyo/ui';
 
 interface VaccinationFormProps {
   species: string;
@@ -281,7 +282,7 @@ const styles = StyleSheet.create({
   },
   autoCalculated: {
     fontSize: 12,
-    color: '#2E7D32',
+    color: colors.primary,
     fontStyle: 'italic',
     marginBottom: 4,
   },
@@ -306,13 +307,13 @@ const styles = StyleSheet.create({
   certificateButton: {
     marginTop: 8,
     borderWidth: 1,
-    borderColor: '#2E7D32',
+    borderColor: colors.primary,
     borderRadius: 20,
     paddingVertical: 10,
     alignItems: 'center',
   },
   certificateButtonText: {
-    color: '#2E7D32',
+    color: colors.primary,
     fontSize: 14,
     fontWeight: '500',
   },

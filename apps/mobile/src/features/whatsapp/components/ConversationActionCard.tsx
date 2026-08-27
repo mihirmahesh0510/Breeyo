@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Pressable, StyleSheet } from 'react-native';
 import { Text, ActivityIndicator } from 'react-native-paper';
+import { colors } from '@breeyo/ui';
 import { WA_COLORS } from '../utils/whatsapp-format';
 
 /** UI-SPEC Component Inventory: the six ConversationActionCard variants. */
@@ -103,7 +104,7 @@ const styles = StyleSheet.create({
     backgroundColor: WA_COLORS.background,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#D7CCC8',
+    borderColor: colors.secondaryContainer,
     padding: 16,
     gap: 8,
   },
@@ -121,7 +122,7 @@ const styles = StyleSheet.create({
   helperText: {
     fontSize: 12,
     lineHeight: 16,
-    color: '#5D4037',
+    color: colors.secondary,
   },
   actionsRow: {
     flexDirection: 'row',
@@ -148,7 +149,7 @@ const styles = StyleSheet.create({
   secondaryButton: {
     backgroundColor: '#FFFBF5',
     borderWidth: 1,
-    borderColor: '#D7CCC8',
+    borderColor: colors.secondaryContainer,
   },
   buttonText: {
     fontSize: 14,
@@ -163,6 +164,6 @@ const styles = StyleSheet.create({
   secondaryButtonText: {
     fontSize: 14,
     fontWeight: '500',
-    color: '#5D4037',
+    color: colors.secondary,
   },
 });

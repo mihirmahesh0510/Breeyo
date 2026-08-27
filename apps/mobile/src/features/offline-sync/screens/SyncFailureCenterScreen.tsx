@@ -1,6 +1,7 @@
 import React, { useCallback, useState } from 'react';
 import { ScrollView, View, Pressable, StyleSheet } from 'react-native';
 import { Text, Button, Divider } from 'react-native-paper';
+import { colors } from '@breeyo/ui';
 import { ConflictSeverity } from '@breeyo/types';
 import type { SaveDraftInput } from '@breeyo/types';
 import { groupFailureCenterItems, isClinicalConflictItem, resolveItemPressAction, type FailureCenterItem } from '../lib/sync-status';
@@ -242,7 +243,7 @@ const styles = StyleSheet.create({
   },
   owner: {
     fontSize: 12,
-    color: '#5D4037',
+    color: colors.secondary,
   },
   suggestion: {
     fontSize: 12,

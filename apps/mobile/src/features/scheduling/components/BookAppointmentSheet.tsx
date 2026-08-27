@@ -3,7 +3,7 @@ import { View, FlatList, ScrollView, StyleSheet, Pressable } from 'react-native'
 import { Text, TextInput, ActivityIndicator } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { BottomSheet, Button, AccordionItem, showToast } from '@breeyo/ui';
+import { BottomSheet, Button, AccordionItem, colors, showToast } from '@breeyo/ui';
 import {
   SPECIES_ICONS,
   BOOKING_HORIZON_DAYS,
@@ -319,10 +319,10 @@ export function BookAppointmentSheet({
           <MaterialCommunityIcons
             name={selected ? 'checkbox-marked' : 'checkbox-blank-outline'}
             size={22}
-            color={selected ? '#2E7D32' : '#79747E'}
+            color={selected ? colors.primary : '#79747E'}
           />
           <View style={styles.petIcon}>
-            <MaterialCommunityIcons name={iconName as any} size={20} color="#5D4037" />
+            <MaterialCommunityIcons name={iconName as any} size={20} color={colors.secondary} />
           </View>
           <Text variant="bodyLarge" style={styles.petName}>
             {item.name}
@@ -409,7 +409,7 @@ export function BookAppointmentSheet({
                   <Text variant="bodyLarge" style={styles.serviceName}>
                     {service.name}
                   </Text>
-                  {selected ? <MaterialCommunityIcons name="check" size={20} color="#2E7D32" /> : null}
+                  {selected ? <MaterialCommunityIcons name="check" size={20} color={colors.primary} /> : null}
                 </Pressable>
               );
             })}
@@ -508,7 +508,7 @@ export function BookAppointmentSheet({
                       accessibilityLabel={slot.isDoubleBooked ? `${label}, already booked` : label}
                     >
                       {slot.isDoubleBooked ? (
-                        <MaterialCommunityIcons name="alert-circle-outline" size={12} color="#E65100" />
+                        <MaterialCommunityIcons name="alert-circle-outline" size={12} color={colors.warning} />
                       ) : null}
                       <Text variant="bodySmall" style={slot.isDoubleBooked ? styles.slotChipTakenText : styles.slotChipText}>
                         {label}
@@ -536,7 +536,7 @@ export function BookAppointmentSheet({
         {/* Double-booking warning (D-14): never a blocking modal, never a hard block */}
         {showDoubleBookWarning && selectedSlot ? (
           <View style={styles.warningStrip}>
-            <MaterialCommunityIcons name="alert-circle-outline" size={16} color="#E65100" />
+            <MaterialCommunityIcons name="alert-circle-outline" size={16} color={colors.warning} />
             <Text variant="bodySmall" style={styles.warningText}>
               Dr. {selectedVetName} already has {primaryPetName} at {formatSlotTime(selectedSlot.startMinutes)}. You can still book this slot.
             </Text>
@@ -657,7 +657,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   instructions: {
-    color: '#2E7D32',
+    color: colors.primary,
     fontWeight: '500',
     marginBottom: 8,
   },
@@ -715,14 +715,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   vetChipSelected: {
-    backgroundColor: '#C8E6C9',
-    borderColor: '#2E7D32',
+    backgroundColor: colors.primaryContainer,
+    borderColor: colors.primary,
   },
   vetChipText: {
     color: '#1C1B1F',
   },
   vetChipTextSelected: {
-    color: '#1B5E20',
+    color: colors.onPrimaryContainer,
   },
   dateChip: {
     minHeight: 44,
@@ -736,8 +736,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   dateChipSelected: {
-    backgroundColor: '#C8E6C9',
-    borderColor: '#2E7D32',
+    backgroundColor: colors.primaryContainer,
+    borderColor: colors.primary,
   },
   dateChipDisabled: {
     opacity: 0.4,
@@ -746,7 +746,7 @@ const styles = StyleSheet.create({
     color: '#1C1B1F',
   },
   dateChipTextSelected: {
-    color: '#1B5E20',
+    color: colors.onPrimaryContainer,
   },
   dateChipTextDisabled: {
     color: '#79747E',
@@ -772,7 +772,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFBF5',
   },
   slotChipSelected: {
-    borderColor: '#2E7D32',
+    borderColor: colors.primary,
     borderWidth: 2,
   },
   slotChipTaken: {
@@ -801,11 +801,11 @@ const styles = StyleSheet.create({
     marginTop: 16,
     padding: 12,
     borderRadius: 12,
-    backgroundColor: '#FFE0B2',
+    backgroundColor: colors.tertiaryContainer,
     gap: 8,
   },
   warningText: {
-    color: '#BF360C',
+    color: colors.onTertiaryContainer,
   },
   warningButtons: {
     flexDirection: 'row',

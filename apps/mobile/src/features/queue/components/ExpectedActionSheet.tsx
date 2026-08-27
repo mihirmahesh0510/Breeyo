@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, StyleSheet } from 'react-native';
 import { Text, Button } from 'react-native-paper';
-import { BottomSheet } from '@breeyo/ui';
+import { BottomSheet, colors } from '@breeyo/ui';
 import type { QueueEntryWithPet } from '@breeyo/types';
 
 interface ExpectedActionSheetProps {
@@ -84,7 +84,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   expectedTime: {
-    color: '#5D4037',
+    color: colors.secondary,
     fontWeight: '500',
   },
   ownerName: {

@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, FlatList, StyleSheet } from 'react-native';
 import { Text } from 'react-native-paper';
-import { Card, StatusBadge, EmptyState } from '@breeyo/ui';
+import { Card, StatusBadge, EmptyState, colors } from '@breeyo/ui';
 import type { StatusVariant } from '@breeyo/ui';
 import type { Visit } from '../hooks/usePatientProfile';
 
@@ -133,7 +133,7 @@ const styles = StyleSheet.create({
     width: 10,
     height: 10,
     borderRadius: 5,
-    backgroundColor: '#2E7D32',
+    backgroundColor: colors.primary,
     marginTop: 16,
   },
   timelineLine: {

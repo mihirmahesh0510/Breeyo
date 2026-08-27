@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
 import type { VisitType } from '@breeyo/types';
+import { colors } from '@breeyo/ui';
 
 interface VisitTypeSelectorProps {
   value: VisitType;
@@ -53,7 +54,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFBF5',
   },
   segmentSelected: {
-    backgroundColor: '#C8E6C9',
+    backgroundColor: colors.primaryContainer,
   },
   label: {
     fontSize: 13,
@@ -61,7 +62,7 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   labelSelected: {
-    color: '#1B5E20',
+    color: colors.onPrimaryContainer,
     fontWeight: '600',
   },
 });

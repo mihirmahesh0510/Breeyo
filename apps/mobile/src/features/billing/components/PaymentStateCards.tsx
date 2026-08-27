@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import { View, Animated, Easing, Pressable, StyleSheet, ActivityIndicator } from 'react-native';
 import { Text } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { colors as COLORS } from '@breeyo/ui';
 import { PAYMENT_COLLECTION_COPY } from '../lib/payment-collection';
 
 /**
@@ -18,19 +19,6 @@ import { PAYMENT_COLLECTION_COPY } from '../lib/payment-collection';
  * 06-UI-SPEC — a literal typed into this file would be a string no test can
  * reach, since `apps/mobile` cannot render a React Native component under test.
  */
-
-const COLORS = {
-  primary: '#2E7D32',
-  onPrimary: '#FFFFFF',
-  primaryContainer: '#C8E6C9',
-  onPrimaryContainer: '#1B5E20',
-  error: '#BA1A1A',
-  errorContainer: '#FFDAD6',
-  onErrorContainer: '#410002',
-  onSurface: '#1C1B1F',
-  onSurfaceVariant: '#49454F',
-  outline: '#79747E',
-} as const;
 
 // ─── Pending ────────────────────────────────────────────────────────────────
 

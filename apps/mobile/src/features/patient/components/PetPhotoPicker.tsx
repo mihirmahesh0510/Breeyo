@@ -11,6 +11,7 @@ import {
 import { Text } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import { colors as COLORS } from '@breeyo/ui';
 
 // --- Props ---
 
@@ -24,18 +25,6 @@ export interface PetPhotoPickerProps {
 // --- Constants ---
 
 const PHOTO_SIZE = 120;
-
-const COLORS = {
-  primary: '#2E7D32',
-  background: '#FFFBF5',
-  surface: '#FFFBF5',
-  onSurface: '#1C1B1F',
-  onSurfaceVariant: '#49454F',
-  outline: '#79747E',
-  outlineVariant: '#CAC4D0',
-  error: '#BA1A1A',
-  surfaceVariant: '#F5F0EB',
-} as const;
 
 const IMAGE_OPTIONS: ImagePicker.ImagePickerOptions = {
   mediaTypes: ['images'],

@@ -2,7 +2,7 @@ import React, { useState, useCallback } from 'react';
 import { View, ScrollView, StyleSheet, RefreshControl } from 'react-native';
 import { Text, ActivityIndicator } from 'react-native-paper';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
-import { Button, EmptyState } from '@breeyo/ui';
+import { Button, EmptyState, colors } from '@breeyo/ui';
 import { usePetProfile, useUpdatePet } from '../hooks/usePatientProfile';
 import { PetProfileCard } from '../components/PetProfileCard';
 import { VisitTimeline } from '../components/VisitTimeline';
@@ -88,7 +88,7 @@ export function PatientDetailScreen() {
   if (isLoading) {
     return (
       <View style={styles.centered} testID="patient-detail-loading">
-        <ActivityIndicator size="large" color="#2E7D32" />
+        <ActivityIndicator size="large" color={colors.primary} />
         <Text variant="bodyLarge" style={styles.loadingText}>
           Loading patient...
         </Text>
@@ -144,7 +144,7 @@ export function PatientDetailScreen() {
           <RefreshControl
             refreshing={isFetching && !isLoading}
             onRefresh={refetch}
-            tintColor="#2E7D32"
+            tintColor={colors.primary}
           />
         }
         testID="patient-detail-screen"

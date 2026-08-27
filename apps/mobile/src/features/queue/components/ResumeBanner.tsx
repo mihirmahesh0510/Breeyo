@@ -8,6 +8,7 @@ import {
   StyleSheet,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { colors } from '@breeyo/ui';
 import { useAuth } from '../../../providers/AuthProvider';
 import { apiClient } from '../../../lib/api';
 import { navigateToConsultation } from '../../../navigation/consultation-navigator';
@@ -150,7 +151,7 @@ export function ResumeBanner() {
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: '#C8E6C9',
+    backgroundColor: colors.primaryContainer,
     paddingHorizontal: 16,
     paddingVertical: 12,
     marginHorizontal: 16,
@@ -159,7 +160,7 @@ const styles = StyleSheet.create({
   },
   text: {
     fontSize: 14,
-    color: '#1B5E20',
+    color: colors.onPrimaryContainer,
     lineHeight: 20,
   },
   tapText: {
@@ -175,7 +176,7 @@ const styles = StyleSheet.create({
   },
   orphanedText: {
     fontSize: 14,
-    color: '#E65100',
+    color: colors.warning,
     lineHeight: 20,
     marginBottom: 8,
   },
@@ -184,7 +185,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   resumeButtonSmall: {
-    backgroundColor: '#2E7D32',
+    backgroundColor: colors.primary,
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 16,

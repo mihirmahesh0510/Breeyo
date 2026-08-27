@@ -1,6 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { colors } from '@breeyo/ui';
 import type { PrescriptionItem } from '@breeyo/types';
 
 interface MedicationCardProps {
@@ -199,7 +200,7 @@ const styles = StyleSheet.create({
   },
   formulationBadgeText: {
     fontSize: 11,
-    color: '#5D4037',
+    color: colors.secondary,
     textTransform: 'capitalize',
   },
   dosageSummary: {
@@ -228,10 +229,10 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   dispensedText: {
-    color: '#2E7D32',
+    color: colors.success,
   },
   prescribedText: {
-    color: '#E65100',
+    color: colors.tertiary,
   },
   ownerPreview: {
     fontSize: 12,

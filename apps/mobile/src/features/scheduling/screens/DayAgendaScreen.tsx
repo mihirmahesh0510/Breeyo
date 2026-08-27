@@ -3,7 +3,7 @@ import { View, StyleSheet, Alert, SectionList } from 'react-native';
 import { Text, FAB, ActivityIndicator } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { EmptyState, SkeletonLoader, showToast, BreeyoIconButton } from '@breeyo/ui';
+import { EmptyState, SkeletonLoader, showToast, BreeyoIconButton, colors } from '@breeyo/ui';
 import { AppointmentStatus, formatMinutesRange } from '@breeyo/types';
 import type { AppointmentWithDetails } from '@breeyo/types';
 import { useSchedule, useResolvedAvailability, useClinicVets } from '../hooks/useSchedule';
@@ -224,7 +224,7 @@ export function DayAgendaScreen() {
 
       {isOffline ? (
         <View style={styles.offlineBanner} accessibilityRole="alert">
-          <MaterialCommunityIcons name="wifi-off" size={16} color="#BF360C" />
+          <MaterialCommunityIcons name="wifi-off" size={16} color={colors.onTertiaryContainer} />
           <Text variant="bodySmall" style={styles.offlineBannerText}>
             You are offline. Schedule may be outdated.
           </Text>
@@ -387,7 +387,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     right: 16,
     bottom: 16,
-    backgroundColor: '#2E7D32',
+    backgroundColor: colors.primary,
     borderRadius: 16,
   },
   fabDisabled: {

@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Pressable, ScrollView, StyleSheet } from 'react-native';
 import { Text } from 'react-native-paper';
-import { SkeletonLoader } from '@breeyo/ui';
+import { SkeletonLoader, colors as COLORS } from '@breeyo/ui';
 import type { BillingDashboardSummary } from '@breeyo/types';
 import { buildSummaryCards, type SummaryCardKey } from '../lib/dashboard-state';
 
@@ -11,14 +11,6 @@ export interface BillingSummaryHeaderProps {
   onCardPress: (card: SummaryCardKey) => void;
   testID?: string;
 }
-
-const COLORS = {
-  surfaceVariant: '#F5F0EB',
-  onSurfaceVariant: '#49454F',
-  onSurface: '#1C1B1F',
-  /** UI-SPEC accent: "Unpaid Total" and "Overdue" values when above zero. */
-  tertiary: '#E65100',
-} as const;
 
 /**
  * Accessibility hints, keyed by the exact 06-UI-SPEC.md card label.

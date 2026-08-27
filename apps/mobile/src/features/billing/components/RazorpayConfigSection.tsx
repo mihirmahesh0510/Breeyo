@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, TextInput as RNTextInput, StyleSheet } from 'react-native';
 import { Text, Switch, Button } from 'react-native-paper';
+import { colors } from '@breeyo/ui';
 import {
   BILLING_SETTINGS_COPY,
   emptyCredentialToUndefined,
@@ -9,13 +10,13 @@ import {
 
 const COLORS = {
   surface: '#FFFBF5',
-  primary: '#2E7D32',
-  tertiary: '#E65100',
+  primary: colors.primary,
+  tertiary: colors.tertiary,
   onSurface: '#1C1B1F',
   onSurfaceVariant: '#49454F',
   outline: '#CAC4D0',
   positiveBg: '#E8F5E9',
-  warningBg: '#FFE0B2',
+  warningBg: colors.tertiaryContainer,
 } as const;
 
 export interface RazorpayConfigSectionProps {

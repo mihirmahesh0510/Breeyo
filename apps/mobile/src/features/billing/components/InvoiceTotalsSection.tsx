@@ -1,6 +1,7 @@
 import React, { useRef } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { Text } from 'react-native-paper';
+import { colors as COLORS } from '@breeyo/ui';
 import type { TaxBreakdown } from '@breeyo/types';
 import { formatPaiseINR } from '../lib/format';
 import { BUILDER_COPY, gstRowsFor, showRoundOffRow } from '../lib/builder-copy';
@@ -28,16 +29,6 @@ export interface InvoiceTotalsSectionProps {
   isLoading?: boolean;
   testID?: string;
 }
-
-const COLORS = {
-  surfaceVariant: '#F5F0EB',
-  onSurface: '#1C1B1F',
-  onSurfaceVariant: '#49454F',
-  /** tertiary — the spec's discount indicator colour. */
-  tertiary: '#E65100',
-  /** primary — the grand total, the one figure the front desk acts on. */
-  primary: '#2E7D32',
-} as const;
 
 /**
  * The totals block. **It performs no arithmetic.**

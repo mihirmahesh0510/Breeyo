@@ -2,18 +2,11 @@ import React from 'react';
 import { View, StyleSheet } from 'react-native';
 import { Text } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { Button, Card } from '@breeyo/ui';
+import { Button, Card, colors as COLORS } from '@breeyo/ui';
 import { getStockLevelStatus } from '@breeyo/types';
 import type { ScanResultItemView } from '../hooks/useBarcodeScan';
 
 // --- Constants ---
-
-const COLORS = {
-  primary: '#2E7D32',
-  tertiary: '#E65100',
-  error: '#BA1A1A',
-  onSurfaceVariant: '#49454F',
-} as const;
 
 const STOCK_STATUS_COLOR: Record<string, string> = {
   healthy: COLORS.primary,

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { View, Pressable, StyleSheet } from 'react-native';
 import { Text } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { colors as COLORS } from '@breeyo/ui';
 import type { DiscountType } from '@breeyo/types';
 import { BUILDER_COPY } from '../lib/builder-copy';
 import { LineItemDiscountInput } from './LineItemDiscountInput';
@@ -16,11 +17,6 @@ export interface InvoiceDiscountRowProps {
   disabled?: boolean;
   testID?: string;
 }
-
-const COLORS = {
-  onSurfaceVariant: '#49454F',
-  tertiary: '#E65100',
-} as const;
 
 /**
  * The invoice-level discount (D-07), hidden behind `Add Invoice Discount` until

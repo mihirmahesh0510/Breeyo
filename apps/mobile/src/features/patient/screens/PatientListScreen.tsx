@@ -2,7 +2,7 @@ import React, { useCallback, useState } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { Text, FAB, ActivityIndicator } from 'react-native-paper';
 import { useRouter } from 'expo-router';
-import { SearchBar } from '@breeyo/ui';
+import { SearchBar, colors } from '@breeyo/ui';
 import { usePatientSearch } from '../hooks/usePatientSearch';
 import { PatientSearchResults } from '../components/PatientSearchResults';
 import { RecentPatientsList } from '../components/RecentPatientsList';
@@ -59,7 +59,7 @@ export function PatientListScreen() {
       {/* Search loading indicator */}
       {isSearching && (
         <View style={styles.searchingIndicator}>
-          <ActivityIndicator size="small" color="#2E7D32" />
+          <ActivityIndicator size="small" color={colors.primary} />
           <Text variant="bodySmall" style={styles.searchingText}>
             Searching...
           </Text>
@@ -135,6 +135,6 @@ const styles = StyleSheet.create({
     position: 'absolute',
     right: 16,
     bottom: 24,
-    backgroundColor: '#2E7D32',
+    backgroundColor: colors.primary,
   },
 });

@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, StyleSheet } from 'react-native';
 import { Text, Button, Divider } from 'react-native-paper';
-import { BottomSheet } from '@breeyo/ui';
+import { BottomSheet, colors } from '@breeyo/ui';
 import {
   buildFieldComparisonRows,
   isMergeSafeFieldsAvailable,
@@ -170,7 +170,7 @@ const styles = StyleSheet.create({
   },
   ownerLine: {
     fontSize: 12,
-    color: '#5D4037',
+    color: colors.secondary,
     marginBottom: 12,
     fontStyle: 'italic',
   },

@@ -4,6 +4,7 @@ import { Text } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { getCategoryIcon, BARCODE_FORMATS, COMMON_VET_HSN_CODES } from '@breeyo/types';
 import type { InventoryItem, BarcodeFormat } from '@breeyo/types';
+import { colors as COLORS } from '@breeyo/ui';
 
 export interface ItemDetailsTabProps {
   item: InventoryItem;
@@ -13,14 +14,6 @@ export interface ItemDetailsTabProps {
   latestSupplier?: string | null;
   testID?: string;
 }
-
-const COLORS = {
-  onSurfaceVariant: '#49454F',
-  error: '#BA1A1A',
-  surfaceVariant: '#F5F0EB',
-  primaryContainer: '#C8E6C9',
-  onPrimaryContainer: '#1B5E20',
-} as const;
 
 function getBarcodeFormatLabel(format: BarcodeFormat): string {
   return BARCODE_FORMATS.find((f) => f.value === format)?.label ?? format;

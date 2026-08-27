@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Pressable, StyleSheet } from 'react-native';
 import { Text } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { colors } from '@breeyo/ui';
 import type { PaymentMethod } from '@breeyo/types';
 import {
   PAYMENT_COLLECTION_COPY,
@@ -17,9 +18,9 @@ export interface PaymentMethodSelectorProps {
 }
 
 const COLORS = {
-  primary: '#2E7D32',
-  primaryContainer: '#C8E6C9',
-  onPrimaryContainer: '#1B5E20',
+  primary: colors.primary,
+  primaryContainer: colors.primaryContainer,
+  onPrimaryContainer: colors.onPrimaryContainer,
   onSurface: '#1C1B1F',
   onSurfaceVariant: '#49454F',
   outline: '#CAC4D0',

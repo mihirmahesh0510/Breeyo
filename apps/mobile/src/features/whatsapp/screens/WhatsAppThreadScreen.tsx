@@ -3,7 +3,7 @@ import { View, FlatList, StyleSheet, BackHandler, Linking, Pressable } from 'rea
 import { Text, TextInput, Button, ActivityIndicator } from 'react-native-paper';
 import { Stack } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
-import { SkeletonLoader, EmptyState, BottomSheet } from '@breeyo/ui';
+import { SkeletonLoader, EmptyState, BottomSheet, colors } from '@breeyo/ui';
 import type { WaSlotOption, WhatsAppMessageView } from '@breeyo/types';
 import { apiClient } from '../../../lib/api';
 import { useAuth } from '../../../providers/AuthProvider';
@@ -431,7 +431,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 16,
     fontWeight: '500',
-    color: '#5D4037',
+    color: colors.secondary,
   },
   needsActionPill: {
     backgroundColor: 'rgba(230, 81, 0, 0.12)',
@@ -500,6 +500,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: 8,
     borderBottomWidth: 1,
-    borderBottomColor: '#D7CCC8',
+    borderBottomColor: colors.secondaryContainer,
   },
 });

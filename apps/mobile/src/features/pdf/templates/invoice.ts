@@ -5,6 +5,7 @@ import type {
   InvoiceLineItem,
 } from '@breeyo/types';
 import { B2C_ADDRESS_REQUIRED_ABOVE_PAISE } from '@breeyo/types';
+import { colors } from '@breeyo/ui';
 import { formatPaiseINR, invoiceStatusLabel } from '../../billing/lib/format';
 
 /**
@@ -90,27 +91,27 @@ export function buildInvoiceHtml(
     @page { size: A4 portrait; margin: 12mm; }
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { font-family: -apple-system, 'Helvetica Neue', Arial, sans-serif; color: #333; line-height: 1.5; padding: 20px; }
-    .header { text-align: center; border-bottom: 2px solid #2E7D32; padding-bottom: 16px; margin-bottom: 16px; }
+    .header { text-align: center; border-bottom: 2px solid ${colors.primary}; padding-bottom: 16px; margin-bottom: 16px; }
     .header img { max-width: 60px; max-height: 60px; margin-bottom: 8px; }
-    .clinic-name { font-size: 20px; font-weight: 700; color: #2E7D32; }
+    .clinic-name { font-size: 20px; font-weight: 700; color: ${colors.primary}; }
     .clinic-info { font-size: 12px; color: #666; margin-top: 4px; }
-    .doc-heading { text-align: center; font-size: 16px; font-weight: 700; color: #2E7D32; letter-spacing: 0.5px; margin-bottom: 12px; }
+    .doc-heading { text-align: center; font-size: 16px; font-weight: 700; color: ${colors.primary}; letter-spacing: 0.5px; margin-bottom: 12px; }
     .section { margin-bottom: 16px; }
-    .section-title { font-size: 14px; font-weight: 600; color: #2E7D32; border-bottom: 1px solid #E8F5E9; padding-bottom: 4px; margin-bottom: 8px; }
+    .section-title { font-size: 14px; font-weight: 600; color: ${colors.primary}; border-bottom: 1px solid #E8F5E9; padding-bottom: 4px; margin-bottom: 8px; }
     .info-grid { display: flex; flex-wrap: wrap; gap: 8px; }
     .info-item { flex: 1; min-width: 45%; }
     .info-label { font-size: 11px; color: #999; text-transform: uppercase; }
     .info-value { font-size: 13px; color: #333; }
     table { width: 100%; border-collapse: collapse; margin-top: 8px; }
-    th { background-color: #E8F5E9; padding: 8px; text-align: left; font-size: 12px; font-weight: 600; color: #2E7D32; }
+    th { background-color: #E8F5E9; padding: 8px; text-align: left; font-size: 12px; font-weight: 600; color: ${colors.primary}; }
     td { font-size: 12px; padding: 8px; border-bottom: 1px solid #eee; }
     .num { text-align: right; }
     .totals { width: 60%; margin-left: auto; margin-top: 12px; }
     .totals td { font-size: 12px; padding: 4px 8px; border-bottom: none; }
-    .totals .grand td { font-size: 14px; font-weight: 700; color: #2E7D32; border-top: 2px solid #2E7D32; padding-top: 8px; }
+    .totals .grand td { font-size: 14px; font-weight: 700; color: ${colors.primary}; border-top: 2px solid ${colors.primary}; padding-top: 8px; }
     .totals .disclosure td { font-size: 10px; color: #999; }
-    .status { display: inline-block; font-size: 11px; font-weight: 600; letter-spacing: 0.5px; padding: 4px 10px; border-radius: 4px; background: #E8F5E9; color: #1B5E20; }
-    .notice { font-size: 11px; color: #E65100; margin-top: 4px; }
+    .status { display: inline-block; font-size: 11px; font-weight: 600; letter-spacing: 0.5px; padding: 4px 10px; border-radius: 4px; background: #E8F5E9; color: ${colors.onPrimaryContainer}; }
+    .notice { font-size: 11px; color: ${colors.warning}; margin-top: 4px; }
     .signature { margin-top: 32px; text-align: right; }
     .signature-line { display: inline-block; width: 200px; border-top: 1px solid #333; padding-top: 4px; font-size: 11px; color: #666; text-align: center; }
     .footer { margin-top: 20px; padding-top: 12px; border-top: 1px solid #eee; font-size: 11px; color: #999; }

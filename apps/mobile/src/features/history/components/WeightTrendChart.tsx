@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import Svg, { Polyline, Circle, Line, Text as SvgText } from 'react-native-svg';
+import { colors } from '@breeyo/ui';
 
 interface WeightDataPoint {
   date: Date;
@@ -181,7 +182,7 @@ export function WeightTrendChart({ data, isLoading }: WeightTrendChartProps) {
           <Polyline
             points={polylinePoints}
             fill="none"
-            stroke="#2E7D32"
+            stroke={colors.primary}
             strokeWidth={2}
             strokeLinejoin="round"
             strokeLinecap="round"
@@ -195,7 +196,7 @@ export function WeightTrendChart({ data, isLoading }: WeightTrendChartProps) {
               cy={p.y}
               r={4}
               fill="#FFFBF5"
-              stroke="#2E7D32"
+              stroke={colors.primary}
               strokeWidth={2}
             />
           ))}
@@ -280,7 +281,7 @@ const styles = StyleSheet.create({
   dataPointWeight: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#2E7D32',
+    color: colors.primary,
   },
   currentWeight: {
     position: 'absolute',
@@ -295,6 +296,6 @@ const styles = StyleSheet.create({
   currentWeightValue: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#2E7D32',
+    color: colors.primary,
   },
 });

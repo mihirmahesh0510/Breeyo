@@ -1,9 +1,9 @@
 export const colors = {
-  // Primary
-  primary: '#2E7D32',
+  // Primary (navy brand identity)
+  primary: '#1E2A6E',
   onPrimary: '#FFFFFF',
-  primaryContainer: '#C8E6C9',
-  onPrimaryContainer: '#1B5E20',
+  primaryContainer: '#DCE4FA',
+  onPrimaryContainer: '#1E2A6E',
   // Secondary
   secondary: '#5D4037',
   onSecondary: '#FFFFFF',
@@ -32,6 +32,8 @@ export const colors = {
   onError: '#FFFFFF',
   errorContainer: '#FFDAD6',
   onErrorContainer: '#410002',
-  success: '#2E7D32',
+  // success is intentionally aliased to primary (navy) per brand decision --
+  // no separate green "success" hue.
+  success: '#1E2A6E',
   warning: '#E65100',
 } as const;

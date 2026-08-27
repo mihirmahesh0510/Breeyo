@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
+import { colors } from '@breeyo/ui';
 
 interface QuickPickChipsProps {
   chips: string[];
@@ -54,15 +55,15 @@ const styles = StyleSheet.create({
     borderColor: '#CAC4D0',
   },
   chipSelected: {
-    backgroundColor: '#C8E6C9',
-    borderColor: '#2E7D32',
+    backgroundColor: colors.primaryContainer,
+    borderColor: colors.primary,
   },
   chipText: {
     fontSize: 13,
     color: '#49454F',
   },
   chipTextSelected: {
-    color: '#1B5E20',
+    color: colors.onPrimaryContainer,
     fontWeight: '500',
   },
 });

@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { View, StyleSheet, Alert } from 'react-native';
 import { Text, Chip, Button, TextInput } from 'react-native-paper';
-import { BottomSheet, showToast } from '@breeyo/ui';
+import { BottomSheet, colors, showToast } from '@breeyo/ui';
 import { BlockedPeriodReason, BLOCKED_PERIOD_REASON_LABELS, formatMinutesRange } from '@breeyo/types';
 import { useCreateBlockedPeriod, useDeleteBlockedPeriod } from '../hooks/useAvailability';
 import { toBlockedPeriodPayload } from '../lib/availability-form';
@@ -196,7 +196,7 @@ export function BlockedPeriodSheet({ visible, onDismiss, vetId, date }: BlockedP
         onPress={handleConfirm}
         disabled={!canSubmit}
         loading={createBlockedPeriod.isPending}
-        buttonColor="#2E7D32"
+        buttonColor={colors.primary}
         style={styles.confirmButton}
       >
         Block Time

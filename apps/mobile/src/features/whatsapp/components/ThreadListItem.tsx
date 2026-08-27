@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Pressable, StyleSheet } from 'react-native';
 import { Text } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { colors } from '@breeyo/ui';
 import type { WhatsAppThreadSummary } from '@breeyo/types';
 import { contextTypeLabel, formatThreadTimestamp, truncatePreview, WA_COLORS } from '../utils/whatsapp-format';
 
@@ -127,7 +128,7 @@ const styles = StyleSheet.create({
   mobile: {
     fontSize: 12,
     lineHeight: 16,
-    color: '#5D4037',
+    color: colors.secondary,
   },
   previewRow: {
     flexDirection: 'row',
@@ -137,7 +138,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 16,
     fontWeight: '500',
-    color: '#5D4037',
+    color: colors.secondary,
   },
   preview: {
     fontSize: 12,

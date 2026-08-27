@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { colors } from '@breeyo/ui';
 import type { DosageWarning } from '@breeyo/types';
 
 interface DosageWarningBannerProps {
@@ -17,7 +18,7 @@ export function DosageWarningBanner({ warning }: DosageWarningBannerProps) {
       <MaterialCommunityIcons
         name="alert-outline"
         size={20}
-        color="#E65100"
+        color={colors.warning}
         style={styles.icon}
       />
       <View style={styles.textContainer}>
@@ -34,7 +35,7 @@ const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    backgroundColor: '#FFE0B2',
+    backgroundColor: colors.tertiaryContainer,
     borderRadius: 8,
     padding: 12,
     marginBottom: 16,
@@ -50,12 +51,12 @@ const styles = StyleSheet.create({
   message: {
     fontSize: 13,
     fontWeight: '500',
-    color: '#E65100',
+    color: colors.warning,
     lineHeight: 18,
   },
   subText: {
     fontSize: 12,
-    color: '#BF360C',
+    color: colors.onTertiaryContainer,
     lineHeight: 16,
   },
 });

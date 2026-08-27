@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, StyleSheet } from 'react-native';
+import { colors } from '@breeyo/ui';
 
 /**
  * A 2px `primary` rule with an 8px dot, positioned by the caller (via
@@ -31,12 +32,12 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#2E7D32',
+    backgroundColor: colors.primary,
   },
   line: {
     flex: 1,
     height: 2,
-    backgroundColor: '#2E7D32',
+    backgroundColor: colors.primary,
     marginLeft: 4,
   },
 });

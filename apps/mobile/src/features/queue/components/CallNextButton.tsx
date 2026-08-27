@@ -1,6 +1,7 @@
 import React from 'react';
 import { StyleSheet } from 'react-native';
 import { Button, ActivityIndicator } from 'react-native-paper';
+import { colors } from '@breeyo/ui';
 
 interface CallNextButtonProps {
   onPress: () => void;
@@ -17,7 +18,7 @@ export function CallNextButton({ onPress, loading, disabled }: CallNextButtonPro
       loading={loading}
       icon="arrow-right-circle"
       style={styles.button}
-      buttonColor="#2E7D32"
+      buttonColor={colors.primary}
       textColor="#FFFFFF"
       contentStyle={styles.content}
       accessibilityLabel="Call next patient"

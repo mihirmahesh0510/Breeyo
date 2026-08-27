@@ -116,12 +116,12 @@ describe('invoiceStatusColors', () => {
       text: '#49454F',
     });
     expect(invoiceStatusColors('PAID')).toMatchObject({
-      background: '#C8E6C9',
-      text: '#1B5E20',
+      background: '#DCE4FA',
+      text: '#1E2A6E',
     });
     expect(invoiceStatusColors('PARTIALLY_PAID')).toMatchObject({
-      background: '#C8E6C9',
-      text: '#1B5E20',
+      background: '#DCE4FA',
+      text: '#1E2A6E',
     });
     expect(invoiceStatusColors('OVERDUE')).toMatchObject({
       background: '#FFE0B2',

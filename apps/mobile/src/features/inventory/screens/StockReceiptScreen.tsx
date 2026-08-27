@@ -3,7 +3,7 @@ import { View, ScrollView, StyleSheet } from 'react-native';
 import { Text, ActivityIndicator } from 'react-native-paper';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import * as Haptics from 'expo-haptics';
-import { Button, showToast } from '@breeyo/ui';
+import { Button, showToast, colors } from '@breeyo/ui';
 import { useAuth } from '../../../providers/AuthProvider';
 import { useInventoryItem, useReceiveStock } from '../hooks/useInventoryApi';
 import { useOfflineStockActions } from '../hooks/useOfflineStockActions';
@@ -107,7 +107,7 @@ export function StockReceiptScreen() {
   if (itemQuery.isLoading && !params.itemName) {
     return (
       <View style={styles.centered} testID="stock-receipt-loading">
-        <ActivityIndicator size="large" color="#2E7D32" />
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }

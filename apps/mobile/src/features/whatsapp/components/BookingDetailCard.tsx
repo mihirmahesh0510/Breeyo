@@ -2,7 +2,7 @@ import React, { useCallback, useState } from 'react';
 import { View, StyleSheet, Pressable } from 'react-native';
 import { Text, TextInput, Button, ActivityIndicator } from 'react-native-paper';
 import { useQuery } from '@tanstack/react-query';
-import { BottomSheet } from '@breeyo/ui';
+import { BottomSheet, colors } from '@breeyo/ui';
 import type { WaBookingState, WaSlotOption } from '@breeyo/types';
 import { apiClient, ApiClientError } from '../../../lib/api';
 import { useAuth } from '../../../providers/AuthProvider';
@@ -332,7 +332,7 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   label: {
-    color: '#5D4037',
+    color: colors.secondary,
   },
   timestampText: {
     color: '#49454F',

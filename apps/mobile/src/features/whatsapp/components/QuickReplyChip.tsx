@@ -1,6 +1,7 @@
 import React from 'react';
 import { Pressable, StyleSheet } from 'react-native';
 import { Text, ActivityIndicator } from 'react-native-paper';
+import { colors } from '@breeyo/ui';
 import { WA_CAPABILITY_LIMITS } from '@breeyo/types';
 
 /**
@@ -41,7 +42,7 @@ export function QuickReplyChip({ label, payload, disabled, loading, onPress }: Q
       hitSlop={8}
     >
       {loading ? (
-        <ActivityIndicator size="small" color={isDisabled ? '#D7CCC8' : '#2E7D32'} />
+        <ActivityIndicator size="small" color={isDisabled ? colors.secondaryContainer : colors.primary} />
       ) : (
         <Text style={styles.label} numberOfLines={1}>
           {truncateChipLabel(label)}
@@ -59,18 +60,18 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: 22,
     borderWidth: 1,
-    borderColor: '#2E7D32',
+    borderColor: colors.primary,
     backgroundColor: '#FFFBF5',
     alignItems: 'center',
     justifyContent: 'center',
   },
   chipDisabled: {
     opacity: 0.5,
-    borderColor: '#D7CCC8',
+    borderColor: colors.secondaryContainer,
   },
   label: {
     fontSize: 14,
     fontWeight: '500',
-    color: '#2E7D32',
+    color: colors.primary,
   },
 });

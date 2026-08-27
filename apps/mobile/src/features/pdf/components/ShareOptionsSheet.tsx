@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import type { VisitType } from '@breeyo/types';
+import { colors } from '@breeyo/ui';
 import { useGeneratePdf } from '../hooks/useGeneratePdf';
 
 interface ShareOptionsSheetProps {
@@ -117,7 +118,7 @@ export function ShareOptionsSheet({
 
           {isGenerating ? (
             <View style={styles.generatingContainer}>
-              <ActivityIndicator size="large" color="#2E7D32" />
+              <ActivityIndicator size="large" color={colors.primary} />
               <Text style={styles.generatingText}>Generating PDF...</Text>
             </View>
           ) : (
@@ -207,7 +208,7 @@ const styles = StyleSheet.create({
   optionIconText: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#2E7D32',
+    color: colors.primary,
   },
   optionContent: {
     flex: 1,
@@ -341,7 +342,7 @@ export function BillingShareOptionsSheet({
 
           {isGenerating ? (
             <View style={styles.generatingContainer}>
-              <ActivityIndicator size="large" color="#2E7D32" />
+              <ActivityIndicator size="large" color={colors.primary} />
               <Text style={styles.generatingText}>Generating PDF...</Text>
             </View>
           ) : (

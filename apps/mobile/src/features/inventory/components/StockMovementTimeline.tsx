@@ -2,7 +2,7 @@ import React from 'react';
 import { View, FlatList, Pressable, StyleSheet } from 'react-native';
 import { Text, ActivityIndicator } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { EmptyState } from '@breeyo/ui';
+import { EmptyState, colors as COLORS } from '@breeyo/ui';
 import { STOCK_MOVEMENT_TYPES } from '@breeyo/types';
 import type { StockMovement, MovementType } from '@breeyo/types';
 
@@ -15,14 +15,6 @@ export interface StockMovementTimelineProps {
   hasMore: boolean;
   testID?: string;
 }
-
-const COLORS = {
-  primary: '#2E7D32',
-  error: '#BA1A1A',
-  onSurfaceVariant: '#49454F',
-  secondaryContainer: '#D7CCC8',
-  onSecondaryContainer: '#3E2723',
-} as const;
 
 const MOVEMENT_COLOR_MAP: Record<string, string> = {
   primary: COLORS.primary,

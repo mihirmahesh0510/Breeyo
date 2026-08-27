@@ -2,6 +2,7 @@ import React from 'react';
 import { View, StyleSheet } from 'react-native';
 import { Text } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { colors as COLORS } from '@breeyo/ui';
 import type { OwnerWithPets } from '@breeyo/types';
 
 // --- Props ---
@@ -12,20 +13,6 @@ export interface ExistingOwnerCardProps {
   onViewProfile: () => void;
   testID?: string;
 }
-
-// --- Constants ---
-
-const COLORS = {
-  primary: '#2E7D32',
-  onPrimary: '#FFFFFF',
-  primaryContainer: '#C8E6C9',
-  onPrimaryContainer: '#1B5E20',
-  onSurface: '#1C1B1F',
-  onSurfaceVariant: '#49454F',
-  outline: '#79747E',
-  surfaceVariant: '#F5F0EB',
-  tertiary: '#E65100',
-} as const;
 
 // --- Helpers ---
 

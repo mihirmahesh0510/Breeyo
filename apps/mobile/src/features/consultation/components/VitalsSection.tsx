@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, TextInput, StyleSheet } from 'react-native';
 import type { VitalsData } from '@breeyo/types';
 import { VITALS_NORMAL_RANGES, checkVitalRange } from '@breeyo/types';
+import { colors } from '@breeyo/ui';
 
 interface VitalsSectionProps {
   vitals: VitalsData;
@@ -25,8 +26,8 @@ const VITAL_FIELDS: VitalFieldConfig[] = [
 ];
 
 const STATUS_COLORS = {
-  normal: '#2E7D32',
-  slightlyAbnormal: '#E65100',
+  normal: colors.success,
+  slightlyAbnormal: colors.warning,
   criticallyAbnormal: '#BA1A1A',
 } as const;
 

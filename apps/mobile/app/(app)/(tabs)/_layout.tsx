@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Pressable, StyleSheet } from 'react-native';
 import { Tabs, useRouter } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { colors } from '@breeyo/ui';
 import { useWhatsAppScreenAccess } from '../../../src/features/whatsapp/components/WhatsAppAccessGate';
 
 /**
@@ -41,7 +42,7 @@ export default function TabsLayout() {
       <Tabs
         screenOptions={{
           headerShown: false,
-          tabBarActiveTintColor: '#2E7D32',
+          tabBarActiveTintColor: colors.primary,
           tabBarInactiveTintColor: '#79747E',
           tabBarStyle: {
             backgroundColor: '#FFFBF5',
@@ -116,7 +117,7 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: '#2E7D32',
+    backgroundColor: colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
     elevation: 4,

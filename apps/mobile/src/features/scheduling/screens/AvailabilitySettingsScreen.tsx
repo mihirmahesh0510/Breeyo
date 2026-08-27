@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { View, StyleSheet, ScrollView, Switch, TextInput, Alert } from 'react-native';
 import { Text, Chip, Button, ActivityIndicator } from 'react-native-paper';
-import { showToast, SkeletonLoader, EmptyState } from '@breeyo/ui';
+import { showToast, SkeletonLoader, EmptyState, colors } from '@breeyo/ui';
 import {
   BlockedPeriodReason,
   BLOCKED_PERIOD_REASON_LABELS,
@@ -406,7 +406,7 @@ export function AvailabilitySettingsScreen({ vetId: vetIdParam }: AvailabilitySe
                 mode="contained"
                 onPress={handleSaveWeeklyHours}
                 loading={saveTemplate.isPending}
-                buttonColor="#2E7D32"
+                buttonColor={colors.primary}
               >
                 Save Weekly Hours
               </Button>
@@ -471,7 +471,7 @@ export function AvailabilitySettingsScreen({ vetId: vetIdParam }: AvailabilitySe
             mode="contained"
             onPress={handleSaveOverride}
             loading={saveOverride.isPending}
-            buttonColor="#2E7D32"
+            buttonColor={colors.primary}
             style={styles.saveOverrideButton}
           >
             Save Date Override

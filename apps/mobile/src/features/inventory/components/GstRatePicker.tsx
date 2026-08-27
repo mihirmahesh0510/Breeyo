@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Pressable, StyleSheet } from 'react-native';
 import { Text } from 'react-native-paper';
 import { GST_RATE_SLABS } from '@breeyo/types';
+import { colors } from '@breeyo/ui';
 
 export interface GstRatePickerProps {
   value: number | null;
@@ -11,9 +12,9 @@ export interface GstRatePickerProps {
 }
 
 const COLORS = {
-  primaryContainer: '#C8E6C9',
+  primaryContainer: colors.primaryContainer,
   surfaceVariant: '#F5F0EB',
-  onPrimaryContainer: '#1B5E20',
+  onPrimaryContainer: colors.onPrimaryContainer,
   onSurfaceVariant: '#49454F',
   labelColor: '#1C1B1F',
 } as const;

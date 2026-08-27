@@ -1,5 +1,6 @@
 import React, { useCallback } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity } from 'react-native';
+import { colors } from '@breeyo/ui';
 import type { ConsultationSummary, VisitType } from '@breeyo/types';
 
 interface MedicalTimelineProps {
@@ -9,8 +10,8 @@ interface MedicalTimelineProps {
 }
 
 const VISIT_TYPE_COLORS: Record<VisitType, { bg: string; text: string; dot: string }> = {
-  general: { bg: '#E8F5E9', text: '#2E7D32', dot: '#2E7D32' },
-  surgery: { bg: '#FFF3E0', text: '#E65100', dot: '#E65100' },
+  general: { bg: '#E8F5E9', text: colors.primary, dot: colors.primary },
+  surgery: { bg: '#FFF3E0', text: colors.tertiary, dot: colors.tertiary },
   vaccination: { bg: '#E3F2FD', text: '#1565C0', dot: '#1565C0' },
 };
 
@@ -32,14 +33,14 @@ function TimelineCard({
   onPress?: () => void;
   isLast: boolean;
 }) {
-  const colors =
+  const visitColors =
     VISIT_TYPE_COLORS[consultation.visitType] || VISIT_TYPE_COLORS.general;
 
   return (
     <View style={styles.itemContainer}>
       {/* Timeline Line */}
       <View style={styles.timelineColumn}>
-        <View style={[styles.dot, { backgroundColor: colors.dot }]} />
+        <View style={[styles.dot, { backgroundColor: visitColors.dot }]} />
         {!isLast ? <View style={styles.line} /> : null}
       </View>
 
@@ -53,8 +54,8 @@ function TimelineCard({
           <Text style={styles.dateText}>
             {formatDate(consultation.startedAt)}
           </Text>
-          <View style={[styles.badge, { backgroundColor: colors.bg }]}>
-            <Text style={[styles.badgeText, { color: colors.text }]}>
+          <View style={[styles.badge, { backgroundColor: visitColors.bg }]}>
+            <Text style={[styles.badgeText, { color: visitColors.text }]}>
               {consultation.visitType}
             </Text>
           </View>
@@ -218,7 +219,7 @@ const styles = StyleSheet.create({
   rxCount: {
     fontSize: 12,
     fontWeight: '500',
-    color: '#2E7D32',
+    color: colors.primary,
   },
   emptyContainer: {
     paddingVertical: 32,

@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { Text, TextInput, Button } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { BottomSheet } from '@breeyo/ui';
+import { BottomSheet, colors } from '@breeyo/ui';
 import type { WaNumberStatus } from '@breeyo/types';
 import { useSetOwnerPreference } from '../hooks/useOwnerPreference';
 import { WA_COLORS } from '../utils/whatsapp-format';
@@ -374,7 +374,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   sectionLabel: {
-    color: '#5D4037',
+    color: colors.secondary,
   },
   warningRow: {
     flexDirection: 'row',

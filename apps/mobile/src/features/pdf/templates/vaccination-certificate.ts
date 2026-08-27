@@ -1,4 +1,5 @@
 import type { Clinic, Pet, Owner } from '@breeyo/types';
+import { colors } from '@breeyo/ui';
 
 /**
  * Certificate data from the API endpoint:
@@ -66,18 +67,18 @@ export function buildVaccinationCertificateHtml(
     body { font-family: -apple-system, 'Helvetica Neue', Arial, sans-serif; color: #333; padding: 24px; max-width: 600px; margin: 0 auto; }
     .header { text-align: center; padding-bottom: 16px; margin-bottom: 16px; }
     .header img { max-width: 60px; max-height: 60px; margin-bottom: 8px; }
-    .clinic-name { font-size: 20px; font-weight: 700; color: #2E7D32; }
+    .clinic-name { font-size: 20px; font-weight: 700; color: ${colors.primary}; }
     .clinic-info { font-size: 11px; color: #666; }
-    .certificate-title { text-align: center; font-size: 18px; font-weight: 700; color: #1C1B1F; text-transform: uppercase; letter-spacing: 2px; margin: 16px 0; border-top: 3px solid #2E7D32; border-bottom: 3px solid #2E7D32; padding: 8px 0; }
+    .certificate-title { text-align: center; font-size: 18px; font-weight: 700; color: #1C1B1F; text-transform: uppercase; letter-spacing: 2px; margin: 16px 0; border-top: 3px solid ${colors.primary}; border-bottom: 3px solid ${colors.primary}; padding: 8px 0; }
     .info-table { width: 100%; margin-bottom: 16px; }
     .info-table td { padding: 6px 8px; font-size: 12px; vertical-align: top; }
     .info-table .label { color: #666; font-weight: 500; width: 140px; }
     .info-table .value { color: #1C1B1F; font-weight: 400; }
-    .section-title { font-size: 13px; font-weight: 700; color: #2E7D32; margin: 16px 0 8px 0; padding-bottom: 4px; border-bottom: 1px solid #E8F5E9; }
-    .certification-box { background: #F5F0EB; border: 2px solid #2E7D32; border-radius: 8px; padding: 16px; margin: 20px 0; text-align: center; }
+    .section-title { font-size: 13px; font-weight: 700; color: ${colors.primary}; margin: 16px 0 8px 0; padding-bottom: 4px; border-bottom: 1px solid #E8F5E9; }
+    .certification-box { background: #F5F0EB; border: 2px solid ${colors.primary}; border-radius: 8px; padding: 16px; margin: 20px 0; text-align: center; }
     .certification-text { font-size: 13px; line-height: 1.6; color: #333; }
-    .certification-text strong { color: #2E7D32; }
-    .footer { margin-top: 30px; padding-top: 16px; border-top: 2px solid #2E7D32; }
+    .certification-text strong { color: ${colors.primary}; }
+    .footer { margin-top: 30px; padding-top: 16px; border-top: 2px solid ${colors.primary}; }
     .signature-area { display: flex; justify-content: space-between; align-items: flex-end; margin-top: 40px; }
     .signature-block { text-align: center; }
     .signature-line { width: 200px; border-top: 1px solid #333; padding-top: 4px; font-size: 11px; color: #333; }

@@ -34,6 +34,7 @@
  */
 
 import type { InvoiceStatus } from '@breeyo/types';
+import { colors } from '@breeyo/ui';
 
 /** Paise per rupee. Local copy so this module has no runtime dependency. */
 const PAISE_PER_RUPEE = 100;
@@ -180,14 +181,18 @@ const STATUS_COLORS: Readonly<Record<InvoiceStatus, InvoiceStatusColors>> = {
   // surfaceVariant / onSurfaceVariant
   DRAFT: { background: '#F5F0EB', text: '#49454F' },
   // secondaryContainer / onSecondaryContainer
-  FINALIZED: { background: '#D7CCC8', text: '#3E2723' },
+  FINALIZED: { background: colors.secondaryContainer, text: colors.onSecondaryContainer },
   // secondaryContainer / onSecondaryContainer + tertiary outline (D-46)
-  UNPAID: { background: '#D7CCC8', text: '#3E2723', border: '#E65100' },
+  UNPAID: {
+    background: colors.secondaryContainer,
+    text: colors.onSecondaryContainer,
+    border: colors.tertiary,
+  },
   // primaryContainer / onPrimaryContainer
-  PARTIALLY_PAID: { background: '#C8E6C9', text: '#1B5E20' },
-  PAID: { background: '#C8E6C9', text: '#1B5E20' },
+  PARTIALLY_PAID: { background: colors.primaryContainer, text: colors.onPrimaryContainer },
+  PAID: { background: colors.primaryContainer, text: colors.onPrimaryContainer },
   // tertiaryContainer / onTertiaryContainer
-  OVERDUE: { background: '#FFE0B2', text: '#BF360C' },
+  OVERDUE: { background: colors.tertiaryContainer, text: colors.onTertiaryContainer },
   // errorContainer / onErrorContainer
   VOIDED: { background: '#FFDAD6', text: '#410002' },
 };

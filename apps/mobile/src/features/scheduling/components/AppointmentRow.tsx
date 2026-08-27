@@ -3,7 +3,7 @@ import { View, StyleSheet, Pressable } from 'react-native';
 import { Text } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Swipeable } from 'react-native-gesture-handler';
-import { StatusBadge, vetColorForId } from '@breeyo/ui';
+import { StatusBadge, colors, vetColorForId } from '@breeyo/ui';
 import type { StatusVariant } from '@breeyo/ui';
 import { AppointmentStatus } from '@breeyo/types';
 import type { AppointmentWithDetails } from '@breeyo/types';
@@ -232,7 +232,7 @@ const styles = StyleSheet.create({
     textDecorationLine: 'line-through',
   },
   ownerName: {
-    color: '#5D4037',
+    color: colors.secondary,
   },
   service: {
     color: '#49454F',
@@ -262,7 +262,7 @@ const styles = StyleSheet.create({
   },
   swipeCheckIn: {
     width: 96,
-    backgroundColor: '#2E7D32',
+    backgroundColor: colors.success,
     alignItems: 'center',
     justifyContent: 'center',
     marginVertical: 4,

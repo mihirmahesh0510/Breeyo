@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Text, Pressable, Alert, StyleSheet } from 'react-native';
+import { colors } from '@breeyo/ui';
 
 interface ConsultationLockBannerProps {
   vetName: string;
@@ -53,7 +54,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     borderBottomWidth: 1,
-    borderBottomColor: '#FFE0B2',
+    borderBottomColor: colors.tertiaryContainer,
   },
   contentRow: {
     flexDirection: 'row',
@@ -66,7 +67,7 @@ const styles = StyleSheet.create({
   },
   text: {
     fontSize: 13,
-    color: '#E65100',
+    color: colors.warning,
     flex: 1,
   },
   takeOverButton: {

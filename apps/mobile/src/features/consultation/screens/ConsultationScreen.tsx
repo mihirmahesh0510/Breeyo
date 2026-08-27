@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useAuth } from '../../../providers/AuthProvider';
+import { colors } from '@breeyo/ui';
 import { apiClient } from '../../../lib/api';
 import { useConsultationDraftStore } from '../hooks/useConsultationDraft';
 import { useAutoSave } from '../hooks/useAutoSave';
@@ -614,7 +615,7 @@ export function ConsultationScreen() {
   if (isLoading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#2E7D32" />
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
@@ -918,7 +919,7 @@ const styles = StyleSheet.create({
     paddingVertical: 24,
   },
   endButton: {
-    backgroundColor: '#2E7D32',
+    backgroundColor: colors.primary,
     paddingVertical: 14,
     borderRadius: 24,
     alignItems: 'center',

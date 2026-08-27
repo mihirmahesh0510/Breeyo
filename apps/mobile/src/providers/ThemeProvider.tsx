@@ -9,7 +9,7 @@ import { breeyoTheme } from '@breeyo/ui';
  *
  * `breeyoTheme` (packages/ui/src/theme/theme.ts) already spreads
  * `MD3LightTheme` and overrides `colors` with the Breeyo tokens (primary
- * #2E7D32, secondary #5D4037, tertiary #E65100, background/surface #FFFBF5,
+ * #1E2A6E, secondary #5D4037, tertiary #E65100, background/surface #FFFBF5,
  * error #BA1A1A) plus the MD3 font scale, so this provider reuses it instead
  * of re-typing hex values at the router root.
  *

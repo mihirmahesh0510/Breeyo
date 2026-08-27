@@ -1,7 +1,7 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import { View, Pressable, StyleSheet, FlatList } from 'react-native';
 import { Text } from 'react-native-paper';
-import { BottomSheet, BreeyoIconButton } from '@breeyo/ui';
+import { BottomSheet, BreeyoIconButton, colors } from '@breeyo/ui';
 
 const IST_TIME_ZONE = 'Asia/Kolkata';
 
@@ -160,7 +160,7 @@ const styles = StyleSheet.create({
     color: '#1C1B1F',
   },
   labelToday: {
-    color: '#2E7D32',
+    color: colors.primary,
   },
   todayChip: {
     minHeight: 32,
@@ -171,7 +171,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   todayChipText: {
-    color: '#2E7D32',
+    color: colors.primary,
   },
   pickerRow: {
     minHeight: 44,

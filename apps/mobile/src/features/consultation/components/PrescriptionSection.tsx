@@ -8,6 +8,7 @@ import {
   StyleSheet,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { colors } from '@breeyo/ui';
 import type {
   PrescriptionItem,
   DrugSearchResult,
@@ -110,7 +111,7 @@ export function PrescriptionSection({
         <MaterialCommunityIcons
           name="pill"
           size={20}
-          color="#2E7D32"
+          color={colors.primary}
         />
         <Text style={styles.headerTitle}>Prescriptions ({count})</Text>
         <MaterialCommunityIcons
@@ -149,7 +150,7 @@ export function PrescriptionSection({
             <MaterialCommunityIcons
               name="plus-circle-outline"
               size={18}
-              color="#2E7D32"
+              color={colors.primary}
             />
             <Text style={styles.addButtonText}>Add Medication</Text>
           </Pressable>
@@ -272,13 +273,13 @@ const styles = StyleSheet.create({
     marginTop: 4,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: '#2E7D32',
+    borderColor: colors.primary,
     borderStyle: 'dashed',
   },
   addButtonText: {
     fontSize: 14,
     fontWeight: '500',
-    color: '#2E7D32',
+    color: colors.primary,
   },
   notesContainer: {
     marginTop: 16,

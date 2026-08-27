@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { StyleSheet } from 'react-native';
 import { Text } from 'react-native-paper';
+import { colors } from '@breeyo/ui';
 import { PAYMENT_COLLECTION_COPY, formatCountdown } from '../lib/payment-collection';
 
 export interface PaymentLinkExpiryTimerProps {
@@ -69,7 +70,7 @@ export function PaymentLinkExpiryTimer({
 const styles = StyleSheet.create({
   caption: {
     // tertiary — the spec's colour for the expiry caption.
-    color: '#E65100',
+    color: colors.tertiary,
     textAlign: 'center',
   },
 });

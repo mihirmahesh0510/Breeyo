@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, FlatList, Pressable, StyleSheet } from 'react-native';
 import { Text } from 'react-native-paper';
-import { EmptyState } from '@breeyo/ui';
+import { EmptyState, colors as COLORS } from '@breeyo/ui';
 import type { StockBatch } from '@breeyo/types';
 import { sortBatchesByReceivedAt, isBatchExpired, formatExpiryDate } from '../lib/fifo-dispense-logic';
 
@@ -12,13 +12,6 @@ export interface BatchOverrideListProps {
   onSelect: (batchId: string) => void;
   testID?: string;
 }
-
-const COLORS = {
-  errorContainer: '#FFDAD6',
-  onErrorContainer: '#410002',
-  onSurfaceVariant: '#49454F',
-  primaryContainer: '#C8E6C9',
-} as const;
 
 /**
  * All batches for the item, sorted oldest-first (same order FIFO auto-select

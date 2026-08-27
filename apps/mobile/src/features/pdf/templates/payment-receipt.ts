@@ -4,6 +4,7 @@ import type {
   PaymentMethod,
   PaymentReceipt,
 } from '@breeyo/types';
+import { colors } from '@breeyo/ui';
 import { formatPaiseINR } from '../../billing/lib/format';
 
 /**
@@ -46,17 +47,17 @@ export function buildPaymentReceiptHtml(
     @page { size: 80mm auto; margin: 4mm; }
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { font-family: -apple-system, 'Helvetica Neue', Arial, sans-serif; color: #333; line-height: 1.4; width: 80mm; margin: 0 auto; padding: 8px; }
-    .header { text-align: center; border-bottom: 2px solid #2E7D32; padding-bottom: 8px; margin-bottom: 8px; }
+    .header { text-align: center; border-bottom: 2px solid ${colors.primary}; padding-bottom: 8px; margin-bottom: 8px; }
     .header img { max-width: 40px; max-height: 40px; margin-bottom: 4px; }
-    .clinic-name { font-size: 14px; font-weight: 700; color: #2E7D32; }
+    .clinic-name { font-size: 14px; font-weight: 700; color: ${colors.primary}; }
     .clinic-info { font-size: 9px; color: #666; }
-    .doc-heading { text-align: center; font-size: 12px; font-weight: 700; color: #2E7D32; letter-spacing: 0.5px; margin-bottom: 8px; }
+    .doc-heading { text-align: center; font-size: 12px; font-weight: 700; color: ${colors.primary}; letter-spacing: 0.5px; margin-bottom: 8px; }
     .row { display: flex; justify-content: space-between; font-size: 10px; padding: 3px 0; border-bottom: 1px dashed #eee; }
     .row .label { color: #666; }
     .row .value { color: #333; text-align: right; font-weight: 500; }
-    .amount { text-align: center; margin: 10px 0; padding: 8px 0; border-top: 1px solid #2E7D32; border-bottom: 1px solid #2E7D32; }
+    .amount { text-align: center; margin: 10px 0; padding: 8px 0; border-top: 1px solid ${colors.success}; border-bottom: 1px solid ${colors.success}; }
     .amount-label { font-size: 9px; color: #666; text-transform: uppercase; }
-    .amount-value { font-size: 18px; font-weight: 700; color: #2E7D32; }
+    .amount-value { font-size: 18px; font-weight: 700; color: ${colors.success}; }
     .footer { margin-top: 10px; text-align: center; font-size: 9px; color: #999; }
   </style>
 </head>

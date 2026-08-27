@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { View, Pressable, StyleSheet } from 'react-native';
 import { Text, TextInput } from 'react-native-paper';
+import { colors as COLORS } from '@breeyo/ui';
 import type { DiscountType } from '@breeyo/types';
 import { BUILDER_COPY } from '../lib/builder-copy';
 import { parseDiscountInput } from '../lib/builder-state';
@@ -20,15 +21,6 @@ export interface LineItemDiscountInputProps {
   disabled?: boolean;
   testID?: string;
 }
-
-const COLORS = {
-  surfaceVariant: '#F5F0EB',
-  onSurfaceVariant: '#49454F',
-  tertiary: '#E65100',
-  error: '#BA1A1A',
-  onTertiaryContainer: '#BF360C',
-  tertiaryContainer: '#FFE0B2',
-} as const;
 
 /**
  * The per-line discount entry: a `%` / `₹` toggle and a value field (D-07).

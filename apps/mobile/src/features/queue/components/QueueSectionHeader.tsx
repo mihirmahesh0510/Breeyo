@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, StyleSheet, Pressable } from 'react-native';
 import { Text } from 'react-native-paper';
+import { colors } from '@breeyo/ui';
 import type { QueueStatus } from '@breeyo/types';
 
 interface QueueSectionHeaderProps {
@@ -13,8 +14,8 @@ interface QueueSectionHeaderProps {
 }
 
 const SECTION_COLORS: Record<string, string> = {
-  IN_CONSULT: '#FFE0B2', // tertiaryContainer
-  WAITING: '#D7CCC8', // secondaryContainer
+  IN_CONSULT: colors.tertiaryContainer,
+  WAITING: colors.secondaryContainer,
   DONE: '#F5F0EB', // surfaceVariant
 };
 

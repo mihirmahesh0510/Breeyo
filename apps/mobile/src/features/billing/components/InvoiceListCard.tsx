@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Pressable, StyleSheet } from 'react-native';
 import { Text } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { colors } from '@breeyo/ui';
 import type { InvoiceListItem } from '@breeyo/types';
 import { invoiceCardFields } from '../lib/dashboard-state';
 
@@ -16,7 +17,7 @@ const COLORS = {
   outlineVariant: '#CAC4D0',
   onSurface: '#1C1B1F',
   onSurfaceVariant: '#49454F',
-  tertiary: '#E65100',
+  tertiary: colors.tertiary,
 } as const;
 
 /**

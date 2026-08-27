@@ -8,6 +8,7 @@ import {
   StyleSheet,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { colors } from '@breeyo/ui';
 import type { PrescriptionItem } from '@breeyo/types';
 import { MedicationCard } from './MedicationCard';
 
@@ -75,7 +76,7 @@ export function RepeatRxSheet({
               <MaterialCommunityIcons
                 name="history"
                 size={20}
-                color="#2E7D32"
+                color={colors.primary}
               />
               <Text style={styles.headerTitle}>Past Prescription</Text>
             </View>
@@ -218,7 +219,7 @@ const styles = StyleSheet.create({
     gap: 8,
     height: 44,
     borderRadius: 22,
-    backgroundColor: '#2E7D32',
+    backgroundColor: colors.primary,
   },
   repeatAllText: {
     fontSize: 14,

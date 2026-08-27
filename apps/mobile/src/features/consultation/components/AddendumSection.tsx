@@ -11,6 +11,7 @@ import {
 import { useAuth } from '../../../providers/AuthProvider';
 import { apiClient } from '../../../lib/api';
 import type { AddendumEntry } from '@breeyo/types';
+import { colors } from '@breeyo/ui';
 
 interface AddendumSectionProps {
   consultationId: string;
@@ -209,7 +210,7 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   saveButton: {
-    backgroundColor: '#2E7D32',
+    backgroundColor: colors.primary,
     paddingHorizontal: 20,
     paddingVertical: 10,
     borderRadius: 20,
@@ -227,13 +228,13 @@ const styles = StyleSheet.create({
   addButton: {
     marginTop: 8,
     borderWidth: 1,
-    borderColor: '#2E7D32',
+    borderColor: colors.primary,
     borderRadius: 20,
     paddingVertical: 10,
     alignItems: 'center',
   },
   addButtonText: {
-    color: '#2E7D32',
+    color: colors.primary,
     fontSize: 14,
     fontWeight: '500',
   },

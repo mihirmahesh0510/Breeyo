@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { View, StyleSheet, Alert, Pressable, ScrollView } from 'react-native';
 import { Text, ActivityIndicator } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { BottomSheet, Button, showToast } from '@breeyo/ui';
+import { BottomSheet, Button, colors, showToast } from '@breeyo/ui';
 import { AppointmentStatus, minutesToHHMM } from '@breeyo/types';
 import type { AppointmentWithDetails, SlotOption } from '@breeyo/types';
 import { useOfferableSlots } from '../hooks/useSchedule';
@@ -331,7 +331,7 @@ export function AppointmentQuickSheet({ visible, appointment, onDismiss }: Appoi
                       accessibilityLabel={slot.isDoubleBooked ? `${label}, already booked` : label}
                     >
                       {slot.isDoubleBooked ? (
-                        <MaterialCommunityIcons name="alert-circle-outline" size={12} color="#E65100" />
+                        <MaterialCommunityIcons name="alert-circle-outline" size={12} color={colors.warning} />
                       ) : null}
                       <Text variant="bodySmall" style={slot.isDoubleBooked ? styles.slotChipTakenText : styles.slotChipText}>
                         {label}
@@ -405,14 +405,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   dateChipSelected: {
-    backgroundColor: '#C8E6C9',
-    borderColor: '#2E7D32',
+    backgroundColor: colors.primaryContainer,
+    borderColor: colors.primary,
   },
   dateChipText: {
     color: '#1C1B1F',
   },
   dateChipTextSelected: {
-    color: '#1B5E20',
+    color: colors.onPrimaryContainer,
   },
   loadingRow: {
     flexDirection: 'row',
@@ -442,7 +442,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFBF5',
   },
   slotChipSelected: {
-    borderColor: '#2E7D32',
+    borderColor: colors.primary,
     borderWidth: 2,
   },
   slotChipTaken: {

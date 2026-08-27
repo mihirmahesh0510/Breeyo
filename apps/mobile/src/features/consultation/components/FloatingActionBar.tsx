@@ -1,5 +1,6 @@
 import React, { useRef, useEffect } from 'react';
 import { View, Text, Pressable, Animated, StyleSheet } from 'react-native';
+import { colors } from '@breeyo/ui';
 
 interface FloatingActionBarProps {
   onMic: () => void;
@@ -73,7 +74,7 @@ export function FloatingActionBar({
           icon={'\uD83C\uDF99'}
           label="microphone"
           onPress={onMic}
-          color={isRecording ? '#E65100' : '#49454F'}
+          color={isRecording ? colors.tertiary : '#49454F'}
           pulsing={isRecording}
         />
         <ActionIcon icon={'\uD83D\uDC8A'} label="pill" onPress={onRx} />

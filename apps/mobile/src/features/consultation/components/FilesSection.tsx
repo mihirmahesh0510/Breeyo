@@ -4,6 +4,7 @@ import { AttachmentGallery } from '../../attachment/components/AttachmentGallery
 import { AttachmentPicker } from '../../attachment/components/AttachmentPicker';
 import type { ConsultationAttachment, AttachmentFileType } from '@breeyo/types';
 import { MAX_FILES_PER_CONSULTATION } from '@breeyo/types';
+import { colors } from '@breeyo/ui';
 
 type UploadStatus = 'uploading' | 'uploaded' | 'error';
 
@@ -95,7 +96,7 @@ const styles = StyleSheet.create({
   },
   limitText: {
     fontSize: 12,
-    color: '#E65100',
+    color: colors.warning,
     fontWeight: '500',
   },
   emptyText: {
@@ -118,7 +119,7 @@ const styles = StyleSheet.create({
   addButtonText: {
     fontSize: 14,
     fontWeight: '500',
-    color: '#2E7D32',
+    color: colors.primary,
   },
   addButtonTextDisabled: {
     color: '#79747E',

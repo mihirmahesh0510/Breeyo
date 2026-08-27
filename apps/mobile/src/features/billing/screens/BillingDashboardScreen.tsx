@@ -2,7 +2,7 @@ import React, { useCallback, useMemo, useState } from 'react';
 import { View, FlatList, RefreshControl, StyleSheet } from 'react-native';
 import { FAB, Text } from 'react-native-paper';
 import { useRouter } from 'expo-router';
-import { EmptyState, SearchBar, SkeletonLoader } from '@breeyo/ui';
+import { EmptyState, SearchBar, SkeletonLoader, colors as COLORS } from '@breeyo/ui';
 import type { InvoiceListItem, InvoiceListSort } from '@breeyo/types';
 import { useBillingDashboard } from '../hooks/useBillingDashboard';
 import { useInvoices } from '../hooks/useInvoices';
@@ -87,13 +87,6 @@ export const BILLING_ROUTES = {
    * builder route already reads an optional `invoiceId` and hydrates from it.
    */
   editDraft: (invoiceId: string) => `/(app)/billing/new?invoiceId=${invoiceId}`,
-} as const;
-
-const COLORS = {
-  surface: '#FFFBF5',
-  primary: '#2E7D32',
-  onSurface: '#1C1B1F',
-  onSurfaceVariant: '#49454F',
 } as const;
 
 /**
@@ -355,7 +348,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   exceptionBanner: {
-    backgroundColor: '#FFE0B2',
+    backgroundColor: COLORS.tertiaryContainer,
     paddingHorizontal: 16,
     paddingVertical: 8,
   },

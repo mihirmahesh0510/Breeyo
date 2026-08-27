@@ -8,6 +8,7 @@ import Animated, {
   withSequence,
   withTiming,
 } from 'react-native-reanimated';
+import { colors } from '@breeyo/ui';
 
 // --- Constants ---
 
@@ -19,7 +20,7 @@ const PULSE_EASING = Easing.bezier(0.4, 0, 0.2, 1);
 const COLORS = {
   overlay: 'rgba(0, 0, 0, 0.6)',
   regionBorder: '#FFFFFF',
-  successBorder: '#2E7D32',
+  successBorder: colors.success,
   instructionText: '#FFFFFF',
 } as const;
 

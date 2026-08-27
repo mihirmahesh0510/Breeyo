@@ -13,7 +13,7 @@ describe('Design Tokens', () => {
     });
 
     it('has correct primary color', () => {
-      expect(colors.primary).toBe('#2E7D32');
+      expect(colors.primary).toBe('#1E2A6E');
     });
 
     it('has correct background color', () => {
@@ -33,7 +33,7 @@ describe('Design Tokens', () => {
     });
 
     it('has correct success color', () => {
-      expect(colors.success).toBe('#2E7D32');
+      expect(colors.success).toBe('#1E2A6E');
     });
 
     it('has correct warning color', () => {

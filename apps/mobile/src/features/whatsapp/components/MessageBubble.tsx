@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Pressable, StyleSheet } from 'react-native';
 import { Text } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { colors } from '@breeyo/ui';
 import type { WhatsAppMessageView } from '@breeyo/types';
 import {
   bubbleAccessibilityLabel,
@@ -58,7 +59,7 @@ export function MessageBubble({ message, onRetry, onCallOwner, onMarkResolved }:
             field is null, so it is gated strictly on `hasMedia`. */}
         {hasMedia && (
           <View style={styles.attachmentRow}>
-            <MaterialCommunityIcons name="paperclip" size={16} color="#5D4037" />
+            <MaterialCommunityIcons name="paperclip" size={16} color={colors.secondary} />
             <Text style={styles.attachmentName} numberOfLines={1}>
               {message.mediaFilename}
             </Text>
@@ -147,7 +148,7 @@ const styles = StyleSheet.create({
   systemBubble: {
     backgroundColor: WA_COLORS.background,
     borderWidth: 1,
-    borderColor: '#D7CCC8',
+    borderColor: colors.secondaryContainer,
     alignSelf: 'center',
   },
   contextChip: {
@@ -161,7 +162,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 16,
     fontWeight: '500',
-    color: '#5D4037',
+    color: colors.secondary,
   },
   // UI-SPEC Typography: message body is 16px/1.5 and never reduced below that.
   body: {
@@ -178,7 +179,7 @@ const styles = StyleSheet.create({
   attachmentName: {
     fontSize: 12,
     lineHeight: 16,
-    color: '#5D4037',
+    color: colors.secondary,
     flexShrink: 1,
   },
   failureText: {
@@ -216,7 +217,7 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   actionNeutral: {
-    color: '#5D4037',
+    color: colors.secondary,
     fontSize: 12,
     fontWeight: '500',
   },

@@ -10,6 +10,7 @@ import {
   Platform,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { colors } from '@breeyo/ui';
 import type {
   DrugSearchResult,
   DrugFormulation,
@@ -503,8 +504,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFBF5',
   },
   chipSelected: {
-    backgroundColor: '#2E7D32',
-    borderColor: '#2E7D32',
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
   },
   chipText: {
     fontSize: 13,
@@ -530,8 +531,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFBF5',
   },
   toggleSelected: {
-    backgroundColor: '#2E7D32',
-    borderColor: '#2E7D32',
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
   },
   toggleText: {
     fontSize: 13,
@@ -570,7 +571,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 22,
-    backgroundColor: '#2E7D32',
+    backgroundColor: colors.primary,
   },
   saveButtonDisabled: {
     backgroundColor: '#CAC4D0',

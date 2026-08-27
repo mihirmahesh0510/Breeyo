@@ -1,4 +1,5 @@
 import type { Consultation, PrescriptionItem, Pet, Owner, Clinic } from '@breeyo/types';
+import { colors } from '@breeyo/ui';
 
 /**
  * Builds an owner-friendly consultation summary PDF in HTML format.
@@ -52,21 +53,21 @@ export function buildOwnerSummaryHtml(
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { font-family: -apple-system, 'Helvetica Neue', Arial, sans-serif; color: #333; line-height: 1.5; padding: 20px; }
-    .header { text-align: center; border-bottom: 2px solid #2E7D32; padding-bottom: 16px; margin-bottom: 20px; }
+    .header { text-align: center; border-bottom: 2px solid ${colors.primary}; padding-bottom: 16px; margin-bottom: 20px; }
     .header img { max-width: 60px; max-height: 60px; margin-bottom: 8px; }
-    .clinic-name { font-size: 20px; font-weight: 700; color: #2E7D32; }
+    .clinic-name { font-size: 20px; font-weight: 700; color: ${colors.primary}; }
     .clinic-info { font-size: 12px; color: #666; margin-top: 4px; }
     .section { margin-bottom: 16px; }
-    .section-title { font-size: 14px; font-weight: 600; color: #2E7D32; border-bottom: 1px solid #E8F5E9; padding-bottom: 4px; margin-bottom: 8px; }
+    .section-title { font-size: 14px; font-weight: 600; color: ${colors.primary}; border-bottom: 1px solid #E8F5E9; padding-bottom: 4px; margin-bottom: 8px; }
     .info-grid { display: flex; flex-wrap: wrap; gap: 8px; }
     .info-item { flex: 1; min-width: 45%; }
     .info-label { font-size: 11px; color: #999; text-transform: uppercase; }
     .info-value { font-size: 13px; color: #333; }
     table { width: 100%; border-collapse: collapse; margin-top: 8px; }
-    th { background-color: #E8F5E9; padding: 8px; text-align: left; font-size: 12px; font-weight: 600; color: #2E7D32; }
+    th { background-color: #E8F5E9; padding: 8px; text-align: left; font-size: 12px; font-weight: 600; color: ${colors.primary}; }
     td { font-size: 12px; }
     .care-box { background-color: #FFF8E1; border: 1px solid #FFE082; border-radius: 8px; padding: 12px; margin-top: 8px; }
-    .care-box-title { font-size: 13px; font-weight: 600; color: #E65100; margin-bottom: 4px; }
+    .care-box-title { font-size: 13px; font-weight: 600; color: ${colors.tertiary}; margin-bottom: 4px; }
     .followup-box { background-color: #E3F2FD; border: 1px solid #90CAF9; border-radius: 8px; padding: 12px; margin-top: 8px; text-align: center; }
     .followup-date { font-size: 16px; font-weight: 700; color: #1565C0; }
     .footer { margin-top: 24px; padding-top: 12px; border-top: 1px solid #eee; text-align: center; font-size: 11px; color: #999; }

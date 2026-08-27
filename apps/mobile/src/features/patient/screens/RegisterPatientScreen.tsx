@@ -11,7 +11,7 @@ import { Text, ProgressBar, ActivityIndicator } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import type { Species, OwnerWithPets, RegisterOwnerInput, RegisterPetInput } from '@breeyo/types';
-import { showToast } from '@breeyo/ui';
+import { showToast, colors as COLORS } from '@breeyo/ui';
 
 import { useRegisterPatient, useLookupOwner, useAddPet } from '../hooks/usePatientRegister';
 import { useCheckIn } from '../../queue/hooks/useCheckIn';
@@ -43,22 +43,6 @@ interface PetFormData {
 }
 
 // --- Constants ---
-
-const COLORS = {
-  primary: '#2E7D32',
-  onPrimary: '#FFFFFF',
-  tertiary: '#E65100',
-  background: '#FFFBF5',
-  surface: '#FFFBF5',
-  onSurface: '#1C1B1F',
-  onSurfaceVariant: '#49454F',
-  outline: '#79747E',
-  outlineVariant: '#CAC4D0',
-  error: '#BA1A1A',
-  primaryContainer: '#C8E6C9',
-  surfaceVariant: '#F5F0EB',
-  success: '#2E7D32',
-} as const;
 
 const INITIAL_OWNER: OwnerFormData = {
   mobile: '',

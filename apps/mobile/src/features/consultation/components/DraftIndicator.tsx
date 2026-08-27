@@ -1,5 +1,6 @@
 import React, { useRef, useEffect } from 'react';
 import { View, Text, Animated, StyleSheet } from 'react-native';
+import { colors } from '@breeyo/ui';
 
 type DraftStatus = 'saved' | 'dirty' | 'saving' | 'error' | 'offline';
 
@@ -92,7 +93,7 @@ const styles = StyleSheet.create({
     marginRight: 6,
   },
   dirtyDot: {
-    backgroundColor: '#E65100',
+    backgroundColor: colors.warning,
   },
   text: {
     fontSize: 12,
@@ -101,7 +102,7 @@ const styles = StyleSheet.create({
     color: '#49454F',
   },
   dirtyText: {
-    color: '#E65100',
+    color: colors.warning,
   },
   savingText: {
     color: '#49454F',
@@ -110,6 +111,6 @@ const styles = StyleSheet.create({
     color: '#BA1A1A',
   },
   offlineText: {
-    color: '#5D4037',
+    color: colors.secondary,
   },
 });

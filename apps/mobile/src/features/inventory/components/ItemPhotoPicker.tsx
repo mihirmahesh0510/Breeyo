@@ -3,6 +3,7 @@ import { View, Pressable, Image, ActivityIndicator, StyleSheet } from 'react-nat
 import { Text } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useItemPhotoUpload } from '../hooks/useItemPhotoUpload';
+import { colors as COLORS } from '@breeyo/ui';
 
 export interface ItemPhotoPickerProps {
   photoUrl: string | null;
@@ -14,14 +15,6 @@ export interface ItemPhotoPickerProps {
 }
 
 const PHOTO_SIZE = 120;
-
-const COLORS = {
-  primary: '#2E7D32',
-  onSurfaceVariant: '#49454F',
-  outlineVariant: '#CAC4D0',
-  error: '#BA1A1A',
-  surfaceVariant: '#F5F0EB',
-} as const;
 
 export function ItemPhotoPicker({
   photoUrl,

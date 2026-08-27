@@ -3,7 +3,7 @@ import { View, ScrollView, StyleSheet, RefreshControl } from 'react-native';
 import { Text, ActivityIndicator } from 'react-native-paper';
 import { useRouter, Stack } from 'expo-router';
 import * as Haptics from 'expo-haptics';
-import { EmptyState, showToast } from '@breeyo/ui';
+import { EmptyState, showToast, colors } from '@breeyo/ui';
 import { useInvoice } from '../hooks/useInvoice';
 import { useInvoiceSocket } from '../hooks/useInvoiceSocket';
 import { usePaymentMutations, type VoidInvoiceResult } from '../hooks/usePaymentMutations';
@@ -40,7 +40,7 @@ const COLORS = {
   onSurface: '#1C1B1F',
   onSurfaceVariant: '#49454F',
   outline: '#CAC4D0',
-  primary: '#2E7D32',
+  primary: colors.primary,
   error: '#BA1A1A',
   errorContainer: '#FFDAD6',
   onErrorContainer: '#410002',

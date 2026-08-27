@@ -3,7 +3,7 @@ import { View, ScrollView, RefreshControl, StyleSheet } from 'react-native';
 import { Text, ActivityIndicator } from 'react-native-paper';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
-import { Button, EmptyState, SkeletonLoader } from '@breeyo/ui';
+import { Button, EmptyState, SkeletonLoader, colors } from '@breeyo/ui';
 import { useAuth } from '../../../providers/AuthProvider';
 import { useInventoryItem, useItemMovements, fetchMovementsForExport } from '../hooks/useInventoryApi';
 import { exportStockMovementsCSV } from '../services/csv-export.service';
@@ -118,7 +118,7 @@ export function InventoryItemDetailScreen() {
 
       <ScrollView
         style={styles.container}
-        refreshControl={<RefreshControl refreshing={itemQuery.isFetching} onRefresh={handleRefresh} tintColor="#2E7D32" />}
+        refreshControl={<RefreshControl refreshing={itemQuery.isFetching} onRefresh={handleRefresh} tintColor={colors.primary} />}
         testID="inventory-item-detail-screen"
       >
         <ItemProfileHeader item={item} latestPurchasePrice={latestPurchasePrice} testID="item-detail-header" />
@@ -216,13 +216,13 @@ const styles = StyleSheet.create({
     borderBottomColor: 'transparent',
   },
   tabButtonActive: {
-    borderBottomColor: '#2E7D32',
+    borderBottomColor: colors.primary,
   },
   tabButtonText: {
     color: '#49454F',
   },
   tabButtonTextActive: {
-    color: '#2E7D32',
+    color: colors.primary,
     fontWeight: '700',
   },
   tabContent: {

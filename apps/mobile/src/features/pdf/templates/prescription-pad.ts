@@ -1,4 +1,5 @@
 import type { Consultation, PrescriptionItem, Clinic, Pet, Owner } from '@breeyo/types';
+import { colors } from '@breeyo/ui';
 
 /**
  * Builds a traditional Rx prescription pad PDF in HTML format.
@@ -37,7 +38,7 @@ export function buildPrescriptionPadHtml(
               <strong>Duration:</strong> ${escapeHtml(rx.duration)}
             </div>
             ${rx.ownerInstructions ? `
-              <div style="margin-top: 4px; font-size: 12px; color: #5D4037; background: #FFF8E1; padding: 4px 8px; border-radius: 4px;">
+              <div style="margin-top: 4px; font-size: 12px; color: ${colors.secondary}; background: #FFF8E1; padding: 4px 8px; border-radius: 4px;">
                 ${escapeHtml(rx.ownerInstructions)}
               </div>
             ` : ''}
@@ -59,17 +60,17 @@ export function buildPrescriptionPadHtml(
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { font-family: -apple-system, 'Helvetica Neue', Arial, sans-serif; color: #333; padding: 20px; max-width: 600px; margin: 0 auto; }
-    .header { text-align: center; border-bottom: 3px double #2E7D32; padding-bottom: 12px; margin-bottom: 16px; }
+    .header { text-align: center; border-bottom: 3px double ${colors.primary}; padding-bottom: 12px; margin-bottom: 16px; }
     .header img { max-width: 50px; max-height: 50px; margin-bottom: 4px; }
-    .clinic-name { font-size: 18px; font-weight: 700; color: #2E7D32; }
+    .clinic-name { font-size: 18px; font-weight: 700; color: ${colors.primary}; }
     .clinic-info { font-size: 10px; color: #666; }
     .patient-info { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; padding: 8px; background: #F5F0EB; border-radius: 8px; }
     .patient-field { flex: 1; min-width: 40%; }
     .patient-label { font-size: 9px; color: #999; text-transform: uppercase; }
     .patient-value { font-size: 12px; color: #333; }
-    .rx-symbol { font-size: 32px; font-weight: 700; color: #2E7D32; font-family: serif; margin: 8px 0; }
+    .rx-symbol { font-size: 32px; font-weight: 700; color: ${colors.primary}; font-family: serif; margin: 8px 0; }
     .prescription-list { margin-bottom: 16px; }
-    .footer { margin-top: 32px; padding-top: 16px; border-top: 2px solid #2E7D32; }
+    .footer { margin-top: 32px; padding-top: 16px; border-top: 2px solid ${colors.primary}; }
     .signature-area { display: flex; justify-content: space-between; align-items: flex-end; margin-top: 40px; }
     .signature-block { text-align: center; }
     .signature-line { width: 180px; border-top: 1px solid #333; padding-top: 4px; font-size: 10px; color: #666; }
@@ -111,7 +112,7 @@ export function buildPrescriptionPadHtml(
 
   ${consultation.rxNotes ? `
   <div style="background: #FFF8E1; border: 1px solid #FFE082; border-radius: 8px; padding: 10px; margin-bottom: 16px;">
-    <div style="font-size: 11px; font-weight: 600; color: #E65100; margin-bottom: 4px;">Prescription Notes</div>
+    <div style="font-size: 11px; font-weight: 600; color: ${colors.tertiary}; margin-bottom: 4px;">Prescription Notes</div>
     <p style="font-size: 12px; white-space: pre-wrap;">${escapeHtml(consultation.rxNotes)}</p>
   </div>
   ` : ''}

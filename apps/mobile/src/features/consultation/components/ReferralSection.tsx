@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, TextInput, Pressable, StyleSheet, ScrollView } from 'react-native';
 import type { ReferralData } from '@breeyo/types';
 import { SPECIALIST_TYPES } from '@breeyo/types';
+import { colors } from '@breeyo/ui';
 
 interface ReferralSectionProps {
   data: ReferralData | null;
@@ -134,15 +135,15 @@ const styles = StyleSheet.create({
     borderColor: '#CAC4D0',
   },
   specialistChipSelected: {
-    backgroundColor: '#C8E6C9',
-    borderColor: '#2E7D32',
+    backgroundColor: colors.primaryContainer,
+    borderColor: colors.primary,
   },
   specialistText: {
     fontSize: 13,
     color: '#49454F',
   },
   specialistTextSelected: {
-    color: '#1B5E20',
+    color: colors.onPrimaryContainer,
     fontWeight: '500',
   },
   textArea: {
@@ -175,7 +176,7 @@ const styles = StyleSheet.create({
   },
   urgencyRight: {},
   urgencySelected: {
-    backgroundColor: '#C8E6C9',
+    backgroundColor: colors.primaryContainer,
   },
   urgencyUrgentSelected: {
     backgroundColor: '#FFDAD6',
@@ -186,7 +187,7 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   urgencyTextSelected: {
-    color: '#1B5E20',
+    color: colors.onPrimaryContainer,
   },
   urgencyUrgentText: {
     color: '#93000A',

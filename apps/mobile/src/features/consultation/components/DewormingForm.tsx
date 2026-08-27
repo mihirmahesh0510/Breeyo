@@ -6,6 +6,7 @@ import {
   StyleSheet,
 } from 'react-native';
 import { DEWORMING_INTERVALS } from '@breeyo/types';
+import { colors } from '@breeyo/ui';
 
 interface DewormingFormProps {
   petAgeDays: number;
@@ -153,7 +154,7 @@ const styles = StyleSheet.create({
   },
   autoCalculated: {
     fontSize: 12,
-    color: '#2E7D32',
+    color: colors.primary,
     fontStyle: 'italic',
     marginBottom: 4,
   },

@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
+import { colors } from '@breeyo/ui';
 
 interface PatientBannerProps {
   pet: {
@@ -102,14 +103,14 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   visitReasonChip: {
-    backgroundColor: '#C8E6C9',
+    backgroundColor: colors.primaryContainer,
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 16,
   },
   visitReasonText: {
     fontSize: 12,
-    color: '#1B5E20',
+    color: colors.onPrimaryContainer,
     fontWeight: '500',
   },
   warningChip: {

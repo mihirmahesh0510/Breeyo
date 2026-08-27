@@ -8,7 +8,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Text, Switch, Button as PaperButton } from 'react-native-paper';
-import { EmptyState, showToast } from '@breeyo/ui';
+import { EmptyState, showToast, colors } from '@breeyo/ui';
 import { billingSettingsSchema } from '@breeyo/validators';
 import { GSTIN_REGEX } from '@breeyo/types';
 import {
@@ -32,8 +32,8 @@ import {
 
 const COLORS = {
   surface: '#FFFBF5',
-  primary: '#2E7D32',
-  tertiary: '#E65100',
+  primary: colors.primary,
+  tertiary: colors.tertiary,
   error: '#BA1A1A',
   onSurface: '#1C1B1F',
   onSurfaceVariant: '#49454F',

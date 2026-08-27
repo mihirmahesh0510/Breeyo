@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Pressable, StyleSheet, TextInput } from 'react-native';
 import { Text } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { colors } from '@breeyo/ui';
 import { formatPaiseINR } from '../lib/format';
 import { lineGrossPaise } from '../lib/builder-state';
 import type { QuickSaleCartItem, QuickSaleShortfalls } from '../stores/quickSaleCartStore';
@@ -25,7 +26,7 @@ const COLORS = {
   onSurface: '#1C1B1F',
   onSurfaceVariant: '#49454F',
   error: '#B3261E',
-  primary: '#2E7D32',
+  primary: colors.primary,
 } as const;
 
 /**

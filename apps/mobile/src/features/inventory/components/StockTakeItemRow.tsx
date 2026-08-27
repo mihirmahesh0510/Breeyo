@@ -3,6 +3,7 @@ import { View, StyleSheet, Animated } from 'react-native';
 import { Text, TextInput as PaperTextInput } from 'react-native-paper';
 import type { StockTakeEntryState } from '../stores/stock-take.store';
 import { getDiscrepancy, getDiscrepancyStatus, formatSignedQuantity } from '../lib/stock-take-logic';
+import { colors as COLORS } from '@breeyo/ui';
 
 export interface StockTakeItemRowProps {
   entry: StockTakeEntryState;
@@ -10,18 +11,8 @@ export interface StockTakeItemRowProps {
   testID?: string;
 }
 
-const COLORS = {
-  primary: '#2E7D32',
-  primaryContainer: '#C8E6C9',
-  tertiary: '#E65100',
-  tertiaryContainer: '#FFE0B2',
-  error: '#BA1A1A',
-  errorContainer: '#FFDAD6',
-  onSurfaceVariant: '#49454F',
-} as const;
-
 const STATUS_COLOR: Record<string, string> = {
-  match: COLORS.primary,
+  match: COLORS.success,
   over: COLORS.tertiary,
   under: COLORS.error,
 };

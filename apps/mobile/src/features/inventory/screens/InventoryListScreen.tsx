@@ -3,7 +3,7 @@ import { View, FlatList, StyleSheet } from 'react-native';
 import { FAB, Text } from 'react-native-paper';
 import { useRouter } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
-import { SearchBar, EmptyState, BreeyoIconButton, SkeletonLoader } from '@breeyo/ui';
+import { SearchBar, EmptyState, BreeyoIconButton, SkeletonLoader, colors } from '@breeyo/ui';
 import { useAuth } from '../../../providers/AuthProvider';
 import {
   useInventoryItems,
@@ -231,7 +231,7 @@ const styles = StyleSheet.create({
     color: '#1C1B1F',
   },
   wantListLink: {
-    color: '#2E7D32',
+    color: colors.primary,
     paddingHorizontal: 16,
     paddingTop: 4,
     paddingBottom: 4,
@@ -266,6 +266,6 @@ const styles = StyleSheet.create({
     position: 'absolute',
     right: 16,
     bottom: 24,
-    backgroundColor: '#2E7D32',
+    backgroundColor: colors.primary,
   },
 });

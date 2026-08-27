@@ -3,7 +3,7 @@ import { View, StyleSheet, Alert } from 'react-native';
 import { Text, FAB, ActivityIndicator } from 'react-native-paper';
 import { useRouter } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
-import { showToast } from '@breeyo/ui';
+import { showToast, colors } from '@breeyo/ui';
 import { QueueStatus } from '@breeyo/types';
 import type { QueueEntryWithPet } from '@breeyo/types';
 import { useAuth } from '../../../providers/AuthProvider';
@@ -372,7 +372,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     right: 16,
     bottom: 16,
-    backgroundColor: '#2E7D32',
+    backgroundColor: colors.primary,
     borderRadius: 16,
   },
 });

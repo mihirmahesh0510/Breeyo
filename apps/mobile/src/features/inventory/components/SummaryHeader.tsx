@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Pressable, StyleSheet } from 'react-native';
 import { Text } from 'react-native-paper';
-import { SkeletonLoader } from '@breeyo/ui';
+import { SkeletonLoader, colors as COLORS } from '@breeyo/ui';
 import type { InventorySummary } from '@breeyo/types';
 
 export interface SummaryHeaderProps {
@@ -99,10 +99,6 @@ export function SummaryHeader({
     </View>
   );
 }
-
-const COLORS = {
-  tertiary: '#E65100',
-} as const;
 
 const styles = StyleSheet.create({
   row: {

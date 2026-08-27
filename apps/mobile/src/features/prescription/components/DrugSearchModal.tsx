@@ -10,6 +10,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { colors } from '@breeyo/ui';
 import { useDrugSearch } from '../../consultation/hooks/useDrugSearch';
 import type { DrugSearchResult, DrugFormulation } from '@breeyo/types';
 
@@ -34,8 +35,8 @@ const CATEGORY_COLORS: Record<string, string> = {
 };
 
 const CATEGORY_TEXT_COLORS: Record<string, string> = {
-  antibiotic: '#2E7D32',
-  nsaid: '#E65100',
+  antibiotic: colors.primary,
+  nsaid: colors.tertiary,
   antiparasitic: '#7B1FA2',
   vaccine: '#1565C0',
   antifungal: '#C62828',
@@ -232,7 +233,7 @@ export function DrugSearchModal({
           {showSearching && (
             <View style={styles.skeletonContainer}>
               <View style={styles.searchingHeader}>
-                <ActivityIndicator size="small" color="#2E7D32" />
+                <ActivityIndicator size="small" color={colors.primary} />
                 <Text style={styles.searchingText}>Searching...</Text>
               </View>
               <SkeletonRow />
@@ -273,7 +274,7 @@ export function DrugSearchModal({
                 <MaterialCommunityIcons
                   name="pencil-plus"
                   size={18}
-                  color="#2E7D32"
+                  color={colors.primary}
                 />
                 <Text style={styles.manualEntryText}>Manual Entry</Text>
               </Pressable>
@@ -427,7 +428,7 @@ const styles = StyleSheet.create({
   },
   formulationChipText: {
     fontSize: 11,
-    color: '#5D4037',
+    color: colors.secondary,
   },
   categoryBadge: {
     paddingHorizontal: 8,
@@ -464,12 +465,12 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: '#2E7D32',
+    borderColor: colors.primary,
     marginTop: 8,
   },
   manualEntryText: {
     fontSize: 14,
     fontWeight: '500',
-    color: '#2E7D32',
+    color: colors.primary,
   },
 });

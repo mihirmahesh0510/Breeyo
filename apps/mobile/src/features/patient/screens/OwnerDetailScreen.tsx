@@ -2,7 +2,7 @@ import React, { useCallback } from 'react';
 import { View, ScrollView, FlatList, StyleSheet, RefreshControl } from 'react-native';
 import { Text, ActivityIndicator, Divider } from 'react-native-paper';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
-import { Card, Button, EmptyState } from '@breeyo/ui';
+import { Card, Button, EmptyState, colors } from '@breeyo/ui';
 import type { Pet, Species } from '@breeyo/types';
 import { useOwnerDetail } from '../hooks/usePatientProfile';
 import { PatientListItem } from '../components/PatientListItem';
@@ -52,7 +52,7 @@ export function OwnerDetailScreen() {
   if (isLoading) {
     return (
       <View style={styles.centered} testID="owner-detail-loading">
-        <ActivityIndicator size="large" color="#2E7D32" />
+        <ActivityIndicator size="large" color={colors.primary} />
         <Text variant="bodyLarge" style={styles.loadingText}>
           Loading owner...
         </Text>
@@ -85,7 +85,7 @@ export function OwnerDetailScreen() {
           <RefreshControl
             refreshing={isFetching && !isLoading}
             onRefresh={refetch}
-            tintColor="#2E7D32"
+            tintColor={colors.primary}
           />
         }
         testID="owner-detail-screen"

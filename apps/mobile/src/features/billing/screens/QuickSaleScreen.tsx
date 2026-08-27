@@ -3,7 +3,7 @@ import { View, ScrollView, Pressable, StyleSheet, ActivityIndicator } from 'reac
 import { Text } from 'react-native-paper';
 import { Stack, useRouter } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { Button, SearchBar, showToast } from '@breeyo/ui';
+import { Button, SearchBar, showToast, colors } from '@breeyo/ui';
 import type { InventoryItem } from '@breeyo/types';
 import { useAuth } from '../../../providers/AuthProvider';
 import { useInventoryItems } from '../../inventory/hooks/useInventoryApi';
@@ -42,7 +42,7 @@ const COLORS = {
   onSurfaceVariant: '#49454F',
   outlineVariant: '#CAC4D0',
   disabled: '#9E9E9E',
-  primary: '#2E7D32',
+  primary: colors.primary,
 } as const;
 
 const SEARCH_MIN_CHARS = 2;

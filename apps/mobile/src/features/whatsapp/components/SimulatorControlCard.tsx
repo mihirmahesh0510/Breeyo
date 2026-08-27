@@ -2,6 +2,7 @@ import React from 'react';
 import { View, StyleSheet, Pressable } from 'react-native';
 import { Text } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { colors } from '@breeyo/ui';
 import type { WaDeliveryMode } from '@breeyo/types';
 
 /**
@@ -84,7 +85,7 @@ export function SimulatorControlCard({ value, disabled, onChange }: SimulatorCon
               <MaterialCommunityIcons
                 name={option.icon}
                 size={22}
-                color={selected ? '#2E7D32' : '#79747E'}
+                color={selected ? colors.primary : '#79747E'}
               />
               <Text
                 variant="labelMedium"
@@ -108,7 +109,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   helper: {
-    color: '#5D4037',
+    color: colors.secondary,
   },
   grid: {
     gap: 8,
@@ -117,21 +118,21 @@ const styles = StyleSheet.create({
     minHeight: 44,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#D7CCC8',
+    borderColor: colors.secondaryContainer,
     backgroundColor: '#FFFBF5',
     paddingVertical: 12,
     paddingHorizontal: 16,
     gap: 4,
   },
   optionSelected: {
-    borderColor: '#2E7D32',
-    backgroundColor: '#C8E6C9',
+    borderColor: colors.primary,
+    backgroundColor: colors.primaryContainer,
   },
   optionLabel: {
     color: '#1C1B1F',
   },
   optionLabelSelected: {
-    color: '#2E7D32',
+    color: colors.primary,
     fontWeight: '700',
   },
   optionDescription: {

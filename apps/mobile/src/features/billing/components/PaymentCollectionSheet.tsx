@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { View, Share, Switch, Pressable, StyleSheet, ActivityIndicator } from 'react-native';
 import { Text } from 'react-native-paper';
 import * as Haptics from 'expo-haptics';
-import { BottomSheet, showToast } from '@breeyo/ui';
+import { BottomSheet, showToast, colors } from '@breeyo/ui';
 import type { PaymentMethod } from '@breeyo/types';
 import { formatPaiseINR } from '../lib/format';
 import { parseRupeesToPaise } from '../lib/builder-state';
@@ -49,7 +49,7 @@ const COLORS = {
   surface: '#FFFBF5',
   onSurface: '#1C1B1F',
   onSurfaceVariant: '#49454F',
-  primary: '#2E7D32',
+  primary: colors.primary,
   onPrimary: '#FFFFFF',
   outline: '#CAC4D0',
   error: '#BA1A1A',

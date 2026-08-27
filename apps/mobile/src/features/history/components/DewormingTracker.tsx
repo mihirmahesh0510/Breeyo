@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet, FlatList } from 'react-native';
+import { colors } from '@breeyo/ui';
 import type { DewormingRecord } from '@breeyo/types';
 
 interface DewormingTrackerProps {
@@ -21,7 +22,7 @@ const STATUS_STYLES: Record<
   DewormingStatus,
   { bg: string; text: string; label: string }
 > = {
-  completed: { bg: '#E8F5E9', text: '#2E7D32', label: 'Completed' },
+  completed: { bg: '#E8F5E9', text: colors.success, label: 'Completed' },
   upcoming: { bg: '#E3F2FD', text: '#1565C0', label: 'Upcoming' },
   overdue: { bg: '#FFDAD6', text: '#B3261E', label: 'Overdue' },
 };

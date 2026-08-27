@@ -2,14 +2,7 @@ import React from 'react';
 import { View, StyleSheet } from 'react-native';
 import { Text } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { Button, Card } from '@breeyo/ui';
-
-// --- Constants ---
-
-const COLORS = {
-  onSurfaceVariant: '#49454F',
-  tertiary: '#E65100',
-} as const;
+import { Button, Card, colors as COLORS } from '@breeyo/ui';
 
 // --- Component ---
 

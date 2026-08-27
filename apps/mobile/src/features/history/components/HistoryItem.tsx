@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { colors } from '@breeyo/ui';
 import type { ConsultationSummary, VisitType } from '@breeyo/types';
 
 interface HistoryItemProps {
@@ -9,8 +10,8 @@ interface HistoryItemProps {
 }
 
 const VISIT_TYPE_COLORS: Record<VisitType, { bg: string; text: string }> = {
-  general: { bg: '#E8F5E9', text: '#2E7D32' },
-  surgery: { bg: '#FFF3E0', text: '#E65100' },
+  general: { bg: '#E8F5E9', text: colors.primary },
+  surgery: { bg: '#FFF3E0', text: colors.tertiary },
   vaccination: { bg: '#E3F2FD', text: '#1565C0' },
 };
 
@@ -174,13 +175,13 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#2E7D32',
+    borderColor: colors.primary,
     marginLeft: 8,
   },
   repeatRxText: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#2E7D32',
+    color: colors.primary,
   },
   subRow: {
     flexDirection: 'row',

@@ -3,7 +3,7 @@ import { View, FlatList, StyleSheet, Alert, Pressable } from 'react-native';
 import { Text, TextInput, Button, ActivityIndicator } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { BottomSheet } from '@breeyo/ui';
+import { BottomSheet, colors } from '@breeyo/ui';
 import { SPECIES_ICONS } from '@breeyo/types';
 import type { Pet } from '@breeyo/types';
 import { useLookupOwner } from '../../patient/hooks/usePatientRegister';
@@ -164,7 +164,7 @@ export function CheckInSheet({
           accessibilityRole="button"
         >
           <View style={styles.petIcon}>
-            <MaterialCommunityIcons name={iconName as any} size={24} color="#5D4037" />
+            <MaterialCommunityIcons name={iconName as any} size={24} color={colors.secondary} />
           </View>
           <Text variant="bodyLarge" style={styles.petName}>
             {item.name}
@@ -288,7 +288,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   instructions: {
-    color: '#2E7D32',
+    color: colors.primary,
     fontWeight: '500',
     marginBottom: 8,
   },

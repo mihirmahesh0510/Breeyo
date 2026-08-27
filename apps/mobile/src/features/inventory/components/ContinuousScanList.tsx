@@ -1,20 +1,12 @@
 import React from 'react';
 import { FlatList, StyleSheet, View } from 'react-native';
 import { Text, TextInput as PaperTextInput } from 'react-native-paper';
-import { Button } from '@breeyo/ui';
+import { Button, colors as COLORS } from '@breeyo/ui';
 import { getStockLevelStatus } from '@breeyo/types';
 import type { ScanResultItemView } from '../hooks/useBarcodeScan';
 import type { ScannerMode } from '../stores/scanner.store';
 
 // --- Constants ---
-
-const COLORS = {
-  primary: '#2E7D32',
-  tertiary: '#E65100',
-  error: '#BA1A1A',
-  onSurfaceVariant: '#49454F',
-  outlineVariant: '#CAC4D0',
-} as const;
 
 const STOCK_STATUS_COLOR: Record<string, string> = {
   healthy: COLORS.primary,

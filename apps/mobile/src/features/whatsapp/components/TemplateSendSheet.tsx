@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import { View, StyleSheet, BackHandler } from 'react-native';
 import { Text, TextInput, Button, ActivityIndicator } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { BottomSheet } from '@breeyo/ui';
+import { BottomSheet, colors } from '@breeyo/ui';
 import { WA_TEMPLATE_STAFF_NAMES, WA_TEMPLATE_CATEGORIES } from '@breeyo/types';
 import type { WaContextType, WaTemplateKey } from '@breeyo/types';
 import { useSendTemplate } from '../hooks/useSendTemplate';
@@ -308,7 +308,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   sectionLabel: {
-    color: '#5D4037',
+    color: colors.secondary,
     marginBottom: 4,
   },
   mobileText: {
@@ -350,7 +350,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   consentWarningText: {
-    color: '#5D4037',
+    color: colors.secondary,
     flex: 1,
   },
   destructiveWarningText: {

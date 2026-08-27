@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, Animated, Easing } from 'react-native';
+import { colors } from '@breeyo/ui';
 
 interface VoiceRecordingOverlayProps {
   isRecording: boolean;
@@ -136,7 +137,7 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
     marginVertical: 4,
     borderWidth: 1,
-    borderColor: '#FFE0B2',
+    borderColor: colors.tertiaryContainer,
   },
   recordingRow: {
     flexDirection: 'row',
@@ -146,19 +147,19 @@ const styles = StyleSheet.create({
     width: 10,
     height: 10,
     borderRadius: 5,
-    backgroundColor: '#E65100',
+    backgroundColor: colors.tertiary,
     marginRight: 8,
   },
   recordingText: {
     fontSize: 14,
     fontWeight: '500',
-    color: '#E65100',
+    color: colors.tertiary,
     flex: 1,
   },
   durationText: {
     fontSize: 14,
     fontWeight: '500',
-    color: '#BF360C',
+    color: colors.onTertiaryContainer,
     fontVariant: ['tabular-nums'],
   },
   transcribingText: {
@@ -172,7 +173,7 @@ const styles = StyleSheet.create({
     height: 16,
     borderRadius: 8,
     borderWidth: 2,
-    borderColor: '#E65100',
+    borderColor: colors.tertiary,
     borderTopColor: 'transparent',
   },
   interimText: {

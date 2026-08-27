@@ -2,6 +2,7 @@ import React, { useRef, useEffect } from 'react';
 import { View, Text, Pressable, TextInput, Animated, StyleSheet } from 'react-native';
 import type { BodySystemExam } from '@breeyo/types';
 import { BODY_SYSTEMS } from '@breeyo/types';
+import { colors } from '@breeyo/ui';
 
 interface BodySystemChecklistProps {
   systems: BodySystemExam[];
@@ -203,7 +204,7 @@ const styles = StyleSheet.create({
   },
   toggleRight: {},
   toggleSelected: {
-    backgroundColor: '#C8E6C9',
+    backgroundColor: colors.primaryContainer,
   },
   toggleAbnormalSelected: {
     backgroundColor: '#FFDAD6',
@@ -214,7 +215,7 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   toggleTextSelected: {
-    color: '#1B5E20',
+    color: colors.onPrimaryContainer,
   },
   toggleAbnormalText: {
     color: '#93000A',
@@ -241,8 +242,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   checkboxChecked: {
-    backgroundColor: '#2E7D32',
-    borderColor: '#2E7D32',
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
   },
   checkmark: {
     color: '#FFFFFF',

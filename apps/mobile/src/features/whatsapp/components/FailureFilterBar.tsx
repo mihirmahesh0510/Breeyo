@@ -1,6 +1,7 @@
 import React from 'react';
 import { ScrollView, Pressable, StyleSheet } from 'react-native';
 import { Text } from 'react-native-paper';
+import { colors } from '@breeyo/ui';
 import { WA_INBOX_FILTERS } from '@breeyo/types';
 import type { WaInboxFilter } from '@breeyo/types';
 import { inboxFilterLabel, WA_COLORS } from '../utils/whatsapp-format';
@@ -50,7 +51,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     borderRadius: 22,
     borderWidth: 1,
-    borderColor: '#D7CCC8',
+    borderColor: colors.secondaryContainer,
     backgroundColor: WA_COLORS.background,
     alignItems: 'center',
     justifyContent: 'center',

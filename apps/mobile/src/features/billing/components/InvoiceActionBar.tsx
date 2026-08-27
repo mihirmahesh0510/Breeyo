@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { View, Pressable, StyleSheet } from 'react-native';
 import { Text } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { colors as COLORS } from '@breeyo/ui';
 import type { InvoiceStatus } from '@breeyo/types';
 import {
   INVOICE_ACTIONS,
@@ -38,17 +39,6 @@ export interface InvoiceActionBarProps {
 
   testID?: string;
 }
-
-const COLORS = {
-  primary: '#2E7D32',
-  onPrimary: '#FFFFFF',
-  error: '#BA1A1A',
-  errorContainer: '#FFDAD6',
-  onErrorContainer: '#410002',
-  onSurface: '#1C1B1F',
-  onSurfaceVariant: '#49454F',
-  outline: '#79747E',
-} as const;
 
 const TONE_STYLES: Readonly<
   Record<InvoiceActionTone, { container: object; label: { color: string } }>

@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { colors } from '@breeyo/ui';
 import { useAuth } from '../../../providers/AuthProvider';
 import { apiClient } from '../../../lib/api';
 import type { PreventiveCareStatus, PreventiveCareStatusLevel } from '@breeyo/types';
@@ -18,8 +19,8 @@ const STATUS_COLORS: Record<
   PreventiveCareStatusLevel,
   { bg: string; text: string; label: string }
 > = {
-  upToDate: { bg: '#E8F5E9', text: '#2E7D32', label: 'Up to date' },
-  dueSoon: { bg: '#FFF3E0', text: '#E65100', label: 'Due soon' },
+  upToDate: { bg: '#E8F5E9', text: colors.success, label: 'Up to date' },
+  dueSoon: { bg: '#FFF3E0', text: colors.warning, label: 'Due soon' },
   overdue: { bg: '#FFDAD6', text: '#B3261E', label: 'Overdue' },
 };
 
@@ -34,11 +35,11 @@ function formatDate(date: Date | null): string {
 }
 
 function StatusBadge({ level }: { level: PreventiveCareStatusLevel }) {
-  const colors = STATUS_COLORS[level];
+  const statusColors = STATUS_COLORS[level];
   return (
-    <View style={[styles.statusBadge, { backgroundColor: colors.bg }]}>
-      <Text style={[styles.statusBadgeText, { color: colors.text }]}>
-        {colors.label}
+    <View style={[styles.statusBadge, { backgroundColor: statusColors.bg }]}>
+      <Text style={[styles.statusBadgeText, { color: statusColors.text }]}>
+        {statusColors.label}
       </Text>
     </View>
   );
@@ -227,7 +228,7 @@ const styles = StyleSheet.create({
   retryText: {
     fontSize: 14,
     fontWeight: '500',
-    color: '#2E7D32',
+    color: colors.primary,
     textAlign: 'center',
     marginTop: 4,
   },

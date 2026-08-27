@@ -17,6 +17,7 @@ import { useConsultationDraftStore } from '../hooks/useConsultationDraft';
 import { MedicationCard } from '../../prescription/components/MedicationCard';
 import { BODY_SYSTEMS } from '@breeyo/types';
 import type { ConsultationAttachment } from '@breeyo/types';
+import { colors } from '@breeyo/ui';
 
 // ---------- Review Card ----------
 
@@ -197,7 +198,7 @@ const sheetStyles = StyleSheet.create({
     fontWeight: '500',
   },
   saveButton: {
-    backgroundColor: '#2E7D32',
+    backgroundColor: colors.primary,
     paddingHorizontal: 24,
     paddingVertical: 10,
     borderRadius: 20,
@@ -485,7 +486,7 @@ const styles = StyleSheet.create({
   },
   warningText: {
     fontSize: 12,
-    color: '#E65100',
+    color: colors.warning,
     paddingHorizontal: 16,
     paddingBottom: 12,
   },
@@ -502,14 +503,14 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   reviewChip: {
-    backgroundColor: '#C8E6C9',
+    backgroundColor: colors.primaryContainer,
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 12,
   },
   reviewChipText: {
     fontSize: 12,
-    color: '#1B5E20',
+    color: colors.onPrimaryContainer,
     fontWeight: '500',
   },
   systemBlock: {
@@ -533,17 +534,17 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     borderRadius: 24,
     borderWidth: 1,
-    borderColor: '#2E7D32',
+    borderColor: colors.primary,
     alignItems: 'center',
   },
   editButtonText: {
-    color: '#2E7D32',
+    color: colors.primary,
     fontSize: 15,
     fontWeight: '600',
   },
   finalizeButton: {
     flex: 2,
-    backgroundColor: '#2E7D32',
+    backgroundColor: colors.primary,
     paddingVertical: 14,
     borderRadius: 24,
     alignItems: 'center',

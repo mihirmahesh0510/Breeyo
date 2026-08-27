@@ -2,17 +2,13 @@ import React from 'react';
 import { Pressable, View, StyleSheet } from 'react-native';
 import { Text } from 'react-native-paper';
 import type { WantListItem as WantListItemType } from '@breeyo/types';
+import { colors as COLORS } from '@breeyo/ui';
 
 export interface WantListItemProps {
   item: WantListItemType;
   onPress: (itemId: string) => void;
   testID?: string;
 }
-
-const COLORS = {
-  tertiary: '#E65100',
-  onSurfaceVariant: '#49454F',
-} as const;
 
 /**
  * Want-list row (D-06/D-24) -- 56px, balanced 12px padding per UI-SPEC:

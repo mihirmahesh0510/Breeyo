@@ -23,6 +23,7 @@ import type {
   AddendumEntry,
 } from '@breeyo/types';
 import { BODY_SYSTEMS } from '@breeyo/types';
+import { colors } from '@breeyo/ui';
 
 // ---------- Review Card (read-only, matching ConsultationReviewScreen pattern) ----------
 
@@ -152,7 +153,7 @@ export function ConsultationDetailScreen() {
   if (isLoading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#2E7D32" />
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
@@ -441,13 +442,13 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: '#2E7D32',
+    borderColor: colors.primary,
     marginBottom: 8,
   },
   retryButtonText: {
     fontSize: 14,
     fontWeight: '500',
-    color: '#2E7D32',
+    color: colors.primary,
   },
   backButton: {
     paddingHorizontal: 24,
@@ -503,14 +504,14 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   reviewChip: {
-    backgroundColor: '#C8E6C9',
+    backgroundColor: colors.primaryContainer,
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 12,
   },
   reviewChipText: {
     fontSize: 12,
-    color: '#1B5E20',
+    color: colors.onPrimaryContainer,
     fontWeight: '500',
   },
   systemBlock: {
@@ -528,13 +529,13 @@ const styles = StyleSheet.create({
   },
   shareButton: {
     borderWidth: 1,
-    borderColor: '#2E7D32',
+    borderColor: colors.primary,
     paddingVertical: 14,
     borderRadius: 24,
     alignItems: 'center',
   },
   shareButtonText: {
-    color: '#2E7D32',
+    color: colors.primary,
     fontSize: 15,
     fontWeight: '600',
   },

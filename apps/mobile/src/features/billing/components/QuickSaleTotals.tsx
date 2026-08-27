@@ -1,6 +1,7 @@
 import React, { useRef } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { Text } from 'react-native-paper';
+import { colors as COLORS } from '@breeyo/ui';
 import type { TaxBreakdown } from '@breeyo/types';
 import { formatPaiseINR } from '../lib/format';
 import { BUILDER_COPY, gstRowsFor, showRoundOffRow } from '../lib/builder-copy';
@@ -16,14 +17,6 @@ export interface QuickSaleTotalsProps {
   isLoading?: boolean;
   testID?: string;
 }
-
-const COLORS = {
-  surfaceVariant: '#F5F0EB',
-  onSurface: '#1C1B1F',
-  onSurfaceVariant: '#49454F',
-  /** primary — the one figure the customer is about to pay. */
-  primary: '#2E7D32',
-} as const;
 
 /**
  * The counter-sale totals block. **It performs no arithmetic.**

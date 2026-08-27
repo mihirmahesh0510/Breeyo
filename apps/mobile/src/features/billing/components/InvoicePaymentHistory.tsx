@@ -2,7 +2,7 @@ import React, { useMemo } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { Text } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { EmptyState } from '@breeyo/ui';
+import { EmptyState, colors as COLORS } from '@breeyo/ui';
 import type { Payment, Refund } from '@breeyo/types';
 import {
   INVOICE_DETAIL_COPY,
@@ -18,15 +18,6 @@ export interface InvoicePaymentHistoryProps {
   now?: Date;
   testID?: string;
 }
-
-const COLORS = {
-  outlineVariant: '#CAC4D0',
-  onSurface: '#1C1B1F',
-  onSurfaceVariant: '#49454F',
-  primary: '#2E7D32',
-  tertiary: '#E65100',
-  error: '#BA1A1A',
-} as const;
 
 /**
  * 06-UI-SPEC's "Payment Method Icon Map", verbatim.

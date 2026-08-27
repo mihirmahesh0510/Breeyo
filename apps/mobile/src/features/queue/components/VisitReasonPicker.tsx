@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { Text, Chip, Switch, Button } from 'react-native-paper';
 import { VISIT_REASONS } from '@breeyo/types';
-import { BottomSheet } from '@breeyo/ui';
+import { BottomSheet, colors } from '@breeyo/ui';
 
 interface VisitReasonPickerProps {
   visible: boolean;
@@ -70,7 +70,7 @@ export function VisitReasonPicker({
 
       <View style={styles.actions}>
         {selectedReason && (
-          <Button mode="contained" onPress={handleConfirm} buttonColor="#2E7D32">
+          <Button mode="contained" onPress={handleConfirm} buttonColor={colors.primary}>
             Continue
           </Button>
         )}

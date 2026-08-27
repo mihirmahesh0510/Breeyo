@@ -9,6 +9,7 @@ import {
   TextInput,
 } from 'react-native';
 import type { AttachmentFileType } from '@breeyo/types';
+import { colors } from '@breeyo/ui';
 
 const FILE_TYPE_OPTIONS: { value: AttachmentFileType; label: string }[] = [
   { value: 'lab_report', label: 'Lab Report' },
@@ -205,7 +206,7 @@ const styles = StyleSheet.create({
     color: '#1C1B1F',
   },
   dropdownItemTextSelected: {
-    color: '#2E7D32',
+    color: colors.primary,
     fontWeight: '500',
   },
   textInput: {
@@ -237,7 +238,7 @@ const styles = StyleSheet.create({
     color: '#79747E',
   },
   attachButton: {
-    backgroundColor: '#2E7D32',
+    backgroundColor: colors.primary,
     paddingHorizontal: 24,
     paddingVertical: 10,
     borderRadius: 20,
