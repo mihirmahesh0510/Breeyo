@@ -430,9 +430,10 @@ export class QueueOfflineReplayService {
       return { operationId, status: 'ACKNOWLEDGED_DUPLICATE' };
     }
 
+    let entry: QueueEntryRecord;
     try {
       const waitingCount = await this.gateway.countWaiting(context.clinicId, today);
-      const entry = await this.gateway.createEntry({
+      entry = await this.gateway.createEntry({
         clinicId: context.clinicId,
         petId: payload.petId,
         checkedInBy: context.userId,
@@ -447,18 +448,25 @@ export class QueueOfflineReplayService {
         // in (online) more recently but before this replay ran.
         queuePriorityAt: new Date(payload.checkedInAt),
       });
-
-      await this.finalizeReceiptEntityId(context, operationId, entry.id);
-
-      // Verify-fix 10.3: an open browser queue board watching this entity
-      // should hear about the applied replay without waiting for its own poll.
-      this.broadcast.emitReplayApplied({ clinicId: context.clinicId, domain: 'queue', entityIds: [entry.id] });
-
-      return { operationId, status: 'APPLIED', entryId: entry.id };
     } catch (error) {
+      // WR-1: `createEntry` never durably committed, so it is genuinely safe
+      // to release the reservation and let a retry of this operationId
+      // proceed as if nothing happened.
       await this.releaseReceipt(context, operationId);
       throw error;
     }
+
+    // A real queue entry now durably exists -- from here on, a thrown error
+    // must NOT release the receipt. Doing so would let a retry re-run
+    // `createEntry` above and create a second, duplicate live entry for the
+    // same offline check-in.
+    await this.finalizeReceiptEntityId(context, operationId, entry.id);
+
+    // Verify-fix 10.3: an open browser queue board watching this entity
+    // should hear about the applied replay without waiting for its own poll.
+    this.broadcast.emitReplayApplied({ clinicId: context.clinicId, domain: 'queue', entityIds: [entry.id] });
+
+    return { operationId, status: 'APPLIED', entryId: entry.id };
   }
 
   private async replayStatusTransition(

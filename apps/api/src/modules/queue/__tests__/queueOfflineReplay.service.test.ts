@@ -178,6 +178,31 @@ describe('QueueOfflineReplayService', () => {
       // creating two live queue entries for the same offline check-in.
       expect(gateway.createEntry).toHaveBeenCalledTimes(1);
     });
+
+    it('does not release the reserved receipt when a step AFTER the check-in entry was already durably created fails', async () => {
+      vi.mocked(gateway.createEntry).mockResolvedValue(makeEntry({ position: 1 }));
+      vi.mocked(receipts.update).mockRejectedValue(new Error('transient db error finalizing entityId'));
+
+      await expect(service.replayQueueOperation(context, baseEnvelope())).rejects.toThrow(
+        'transient db error finalizing entityId',
+      );
+
+      // The queue entry already exists at this point -- releasing the
+      // reservation would let a retry of this operationId call
+      // `createEntry` again and create a second, duplicate live entry.
+      expect(gateway.createEntry).toHaveBeenCalledTimes(1);
+      expect(receipts.delete).not.toHaveBeenCalled();
+    });
+
+    it('releases the reserved receipt when createEntry itself fails, so a legitimate retry is not permanently blocked', async () => {
+      vi.mocked(gateway.createEntry).mockRejectedValue(new Error('database connection lost'));
+
+      await expect(service.replayQueueOperation(context, baseEnvelope())).rejects.toThrow('database connection lost');
+
+      // The mutation never actually applied, so releasing the reservation is
+      // safe -- a retry of this operationId must be able to proceed.
+      expect(receipts.delete).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe('check-in replay preserves Phase 3 queue rules', () => {
