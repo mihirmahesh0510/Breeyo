@@ -85,8 +85,6 @@ describe('PortalReissueService — only EXPIRED links may reissue (OWN-06)', () 
         magicLinkId: OLD_LINK_ID,
         clinicId: CLINIC,
         ownerId: OWNER,
-        allowedPetIds: [],
-        allowedInvoiceIds: [],
         defaultTab: 'OVERVIEW',
         deepLinkType: null,
         deepLinkEntityId: null,
@@ -237,7 +235,7 @@ describe('PortalReissueService — atomic count-check-then-create (D-82, finding
 });
 
 describe('PortalReissueService — link rotation and lineage (D-67, OWN-04)', () => {
-  it('creates a new link carrying over scope from the old link, linked via reissuedFromLinkId', async () => {
+  it('creates a new link carrying over the legacy/vestigial allow-list snapshot from the old link, linked via reissuedFromLinkId (WR-9: no longer the enforcement mechanism — AccessScopeService derives scope live from ownerId/clinicId on every request, so the new link has exactly the same, current access as the old one regardless of what this snapshot says)', async () => {
     const db = buildDb();
     const wa = buildWhatsAppService();
     const service = new PortalReissueService(db as never, wa as never, 'https://portal.breeyo.app');

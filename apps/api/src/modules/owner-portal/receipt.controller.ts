@@ -10,9 +10,10 @@ const receiptParamsSchema = z.object({ token: z.string(), invoiceId: z.string().
  * finding 9.3). Behind `requirePortalScope` — only reached for a `READY`
  * link, exactly like every other read route in this module.
  *
- * `invoiceId` is re-checked against `request.portalScope.allowedInvoiceIds`
- * inside `PortalReceiptService` — never trusted directly off the URL
- * (T-09-14) — and an out-of-scope id collapses to the same `INVALID`
+ * `invoiceId` is re-checked (WR-9: via a LIVE `ownerId`/`clinicId` query, not
+ * a frozen allow-list) against `request.portalScope` inside
+ * `PortalReceiptService` — never trusted directly off the URL (T-09-14) —
+ * and an out-of-scope id collapses to the same `INVALID`
  * no-data envelope every other scope mismatch does, not a 404 that would
  * confirm the invoice exists under a different owner's link.
  */

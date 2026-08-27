@@ -83,9 +83,9 @@ export default async function ownerPortalRoutes(fastify: FastifyInstance) {
   const buildPortalCheckoutService = (db: TenantPrismaClient) =>
     new PortalCheckoutService(db, new AccessScopeService(), buildPaymentService(db));
   // Finding 9.3 (D-71): scoped, token-authenticated receipt access --
-  // re-checks `invoiceId` against `allowedInvoiceIds` before delegating to
-  // `PaymentService.getLatestReceiptForInvoice`, the real billing lookup,
-  // rather than a second receipt system.
+  // re-checks `invoiceId` against the owner's LIVE invoices (WR-9) before
+  // delegating to `PaymentService.getLatestReceiptForInvoice`, the real
+  // billing lookup, rather than a second receipt system.
   const buildPortalReceiptService = (db: TenantPrismaClient) =>
     new PortalReceiptService(db, new AccessScopeService(), buildPaymentService(db));
 

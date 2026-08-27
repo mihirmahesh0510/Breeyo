@@ -68,7 +68,7 @@ export class PortalCheckoutService {
   ): Promise<PortalCheckoutResult | null> {
     const uniqueIds = [...new Set(selectedInvoiceIds)];
 
-    if (!this.accessScopeService.areInvoicesInScope(scope, uniqueIds)) {
+    if (!(await this.accessScopeService.areInvoicesInScope(this.db, scope, uniqueIds))) {
       return null;
     }
 
@@ -85,8 +85,9 @@ export class PortalCheckoutService {
 
     // Belt-and-suspenders on top of the scope check above: every id must
     // actually resolve inside this clinic. A count mismatch here would mean
-    // an id that is in `allowedInvoiceIds` but no longer exists (voided/
-    // deleted) — refuse rather than checkout against a partial set.
+    // an id that was in scope a moment ago (per the live check above) but no
+    // longer exists (voided/deleted) between the check and this query — refuse
+    // rather than checkout against a partial set.
     if (invoices.length !== uniqueIds.length) {
       return null;
     }

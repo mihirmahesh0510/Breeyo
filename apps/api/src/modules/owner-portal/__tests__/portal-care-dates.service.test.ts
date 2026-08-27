@@ -35,8 +35,6 @@ function scope(overrides: Partial<OwnerPortalTokenScope> = {}): OwnerPortalToken
     magicLinkId: LINK_ID,
     clinicId: CLINIC,
     ownerId: OWNER,
-    allowedPetIds: [PET_1],
-    allowedInvoiceIds: [],
     defaultTab: 'OVERVIEW',
     deepLinkType: null,
     deepLinkEntityId: null,
@@ -45,8 +43,12 @@ function scope(overrides: Partial<OwnerPortalTokenScope> = {}): OwnerPortalToken
   };
 }
 
-function buildDb(appointment: unknown = null) {
+// WR-9: pet-scope is now a LIVE `pet.findFirst` query by (ownerId, clinicId).
+function buildDb(appointment: unknown = null, pet: unknown = { id: PET_1 }) {
   return {
+    pet: {
+      findFirst: vi.fn().mockResolvedValue(pet),
+    },
     appointment: {
       findFirst: vi.fn().mockResolvedValue(appointment),
     },
@@ -65,7 +67,7 @@ function buildVaccinationRepository(
 
 describe('PortalCareDatesService — pet-scope enforcement (OWN-06, T-09-20)', () => {
   it('returns null and never queries vaccination, deworming, or appointment data for a petId outside scope', async () => {
-    const db = buildDb();
+    const db = buildDb(null, null);
     const vaccinationRepository = buildVaccinationRepository();
     const service = new PortalCareDatesService(db as never, new AccessScopeService(), vaccinationRepository as never);
 
@@ -75,6 +77,21 @@ describe('PortalCareDatesService — pet-scope enforcement (OWN-06, T-09-20)', (
     expect(vaccinationRepository.getVaccinationRecords).not.toHaveBeenCalled();
     expect(vaccinationRepository.getLatestDeworming).not.toHaveBeenCalled();
     expect(db.appointment.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('treats a pet added to the owner AFTER the link was issued as in scope, with no reissue required (WR-9)', async () => {
+    const NEW_PET = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
+    const db = buildDb(null, { id: NEW_PET });
+    const vaccinationRepository = buildVaccinationRepository();
+    const service = new PortalCareDatesService(db as never, new AccessScopeService(), vaccinationRepository as never);
+
+    const result = await service.getCareDates(scope(), NEW_PET, NOW);
+
+    expect(result).not.toBeNull();
+    expect(db.pet.findFirst).toHaveBeenCalledWith({
+      where: { id: NEW_PET, ownerId: OWNER, clinicId: CLINIC },
+      select: { id: true },
+    });
   });
 });
 

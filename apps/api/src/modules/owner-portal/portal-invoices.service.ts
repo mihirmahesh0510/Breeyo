@@ -22,10 +22,12 @@ interface InvoiceSummaryRow {
  * can combine invoices across pets — that combination is
  * `PortalCheckoutService`'s job, not this one's.
  *
- * The query filters by BOTH `petId` and `scope.allowedInvoiceIds` — never
- * `petId` alone. A pet being in scope does not by itself imply every invoice
- * on that pet is in scope (the link's allow-list is the source of truth,
- * derived once at issuance by `AccessScopeService.deriveScope`).
+ * WR-9: the query filters by `petId` AND a LIVE `ownerId`/`clinicId`/
+ * DRAFT-exclusion check — never a frozen allow-list snapshotted once at
+ * issuance (`AccessScopeService.deriveScope` no longer produces one). A pet
+ * being in scope does not by itself imply every invoice on that pet is in
+ * scope: an invoice with no `ownerId` set, or still `DRAFT`, must still be
+ * excluded even though it shares the pet.
  */
 export class PortalInvoicesService {
   constructor(
@@ -37,12 +39,12 @@ export class PortalInvoicesService {
     scope: OwnerPortalTokenScope,
     petId: string,
   ): Promise<PortalInvoicesResult | null> {
-    if (!this.accessScopeService.isPetInScope(scope, petId)) {
+    if (!(await this.accessScopeService.isPetInScope(this.db, scope, petId))) {
       return null;
     }
 
     const invoices = (await this.db.invoice.findMany({
-      where: { petId, id: { in: scope.allowedInvoiceIds } },
+      where: { petId, ownerId: scope.ownerId, clinicId: scope.clinicId, status: { not: 'DRAFT' } },
       orderBy: { createdAt: 'desc' },
       select: {
         id: true,

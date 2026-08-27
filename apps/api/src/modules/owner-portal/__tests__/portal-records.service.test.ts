@@ -18,8 +18,6 @@ function scope(overrides: Partial<OwnerPortalTokenScope> = {}): OwnerPortalToken
     magicLinkId: LINK_ID,
     clinicId: CLINIC,
     ownerId: OWNER,
-    allowedPetIds: [PET_1],
-    allowedInvoiceIds: [],
     defaultTab: 'OVERVIEW',
     deepLinkType: null,
     deepLinkEntityId: null,
@@ -28,8 +26,13 @@ function scope(overrides: Partial<OwnerPortalTokenScope> = {}): OwnerPortalToken
   };
 }
 
-function buildDb(consultations: unknown[] = []) {
+// WR-9: pet-scope is now a LIVE `pet.findFirst` query by (ownerId, clinicId),
+// never a frozen allow-list — `buildDb` mocks that query directly.
+function buildDb(consultations: unknown[] = [], pet: unknown = { id: PET_1 }) {
   return {
+    pet: {
+      findFirst: vi.fn().mockResolvedValue(pet),
+    },
     consultation: {
       findMany: vi.fn().mockResolvedValue(consultations),
     },
@@ -38,13 +41,31 @@ function buildDb(consultations: unknown[] = []) {
 
 describe('PortalRecordsService — pet-scope enforcement (OWN-06, T-09-14)', () => {
   it('refuses to query and returns null for a petId outside the allowed scope', async () => {
-    const db = buildDb();
+    const db = buildDb([], null);
     const service = new PortalRecordsService(db as never, new AccessScopeService());
 
     const result = await service.getRecords(scope(), PET_OUT_OF_SCOPE);
 
     expect(result).toBeNull();
     expect(db.consultation.findMany).not.toHaveBeenCalled();
+  });
+
+  it('treats a pet added to the owner AFTER the link was issued as in scope, with no reissue required (WR-9)', async () => {
+    // The frozen-snapshot bug this regression-tests: pre-fix, a pet created
+    // after issuance would never appear in `scope.allowedPetIds` for the
+    // life of the link. The live query below has no such snapshot to be
+    // stale against.
+    const NEW_PET = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
+    const db = buildDb([], { id: NEW_PET });
+    const service = new PortalRecordsService(db as never, new AccessScopeService());
+
+    const result = await service.getRecords(scope(), NEW_PET);
+
+    expect(result).not.toBeNull();
+    expect(db.pet.findFirst).toHaveBeenCalledWith({
+      where: { id: NEW_PET, ownerId: OWNER, clinicId: CLINIC },
+      select: { id: true },
+    });
   });
 });
 

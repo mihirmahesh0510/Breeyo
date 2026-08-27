@@ -1,6 +1,11 @@
 // Plan 09-05 Task 1: OWN-02, D-59 — pet-scoped invoice browsing. Not part of
 // the plan's required Task 1 verify command, but the module follows the same
 // mocked-collaborator convention as its siblings for consistency.
+//
+// WR-9: pet/invoice scope is a LIVE query by (ownerId, clinicId), never a
+// frozen allow-list snapshotted at issuance — `buildDb` below mocks
+// `pet.findFirst` (for the scope check) and `invoice.findMany` (for the
+// listing itself) directly.
 import { describe, it, expect, vi } from 'vitest';
 import { AccessScopeService, type OwnerPortalTokenScope } from '../access-scope.service.js';
 import { PortalInvoicesService } from '../portal-invoices.service.js';
@@ -11,15 +16,12 @@ const LINK_ID = '33333333-3333-4333-8333-333333333333';
 const PET_1 = '44444444-4444-4444-8444-444444444444';
 const PET_OUT_OF_SCOPE = '55555555-5555-4555-8555-555555555555';
 const INVOICE_1 = '66666666-6666-4666-8666-666666666666';
-const INVOICE_OUT_OF_SCOPE = '77777777-7777-4777-8777-777777777777';
 
 function scope(overrides: Partial<OwnerPortalTokenScope> = {}): OwnerPortalTokenScope {
   return {
     magicLinkId: LINK_ID,
     clinicId: CLINIC,
     ownerId: OWNER,
-    allowedPetIds: [PET_1],
-    allowedInvoiceIds: [INVOICE_1],
     defaultTab: 'OVERVIEW',
     deepLinkType: null,
     deepLinkEntityId: null,
@@ -28,8 +30,11 @@ function scope(overrides: Partial<OwnerPortalTokenScope> = {}): OwnerPortalToken
   };
 }
 
-function buildDb(invoices: unknown[] = []) {
+function buildDb(invoices: unknown[] = [], pet: unknown = { id: PET_1 }) {
   return {
+    pet: {
+      findFirst: vi.fn().mockResolvedValue(pet),
+    },
     invoice: {
       findMany: vi.fn().mockResolvedValue(invoices),
     },
@@ -38,7 +43,7 @@ function buildDb(invoices: unknown[] = []) {
 
 describe('PortalInvoicesService — pet-scope enforcement (OWN-06)', () => {
   it('returns null and never queries for a petId outside scope', async () => {
-    const db = buildDb();
+    const db = buildDb([], null);
     const service = new PortalInvoicesService(db as never, new AccessScopeService());
 
     const result = await service.getInvoicesForPet(scope(), PET_OUT_OF_SCOPE);
@@ -47,15 +52,19 @@ describe('PortalInvoicesService — pet-scope enforcement (OWN-06)', () => {
     expect(db.invoice.findMany).not.toHaveBeenCalled();
   });
 
-  it('filters by both petId and the allowed-invoice-id allow-list, never by petId alone', async () => {
+  it('filters live by petId, ownerId, clinicId, and excludes DRAFT — never by petId alone', async () => {
     const db = buildDb([]);
     const service = new PortalInvoicesService(db as never, new AccessScopeService());
 
     await service.getInvoicesForPet(scope(), PET_1);
 
     const args = db.invoice.findMany.mock.calls[0][0];
-    expect(args.where.petId).toBe(PET_1);
-    expect(args.where.id).toEqual({ in: [INVOICE_1] });
+    expect(args.where).toEqual({
+      petId: PET_1,
+      ownerId: OWNER,
+      clinicId: CLINIC,
+      status: { not: 'DRAFT' },
+    });
   });
 });
 
@@ -89,17 +98,36 @@ describe('PortalInvoicesService — invoice summary projection (OWN-02, D-59)', 
     ]);
   });
 
-  it('never returns an invoice not present in the allow-list even if it shares the pet', async () => {
-    // Simulates the DB call already being filtered — this asserts the
-    // service does not ALSO need a redundant client-side filter to be safe,
-    // because the query itself is scoped by INVOICE_OUT_OF_SCOPE being
-    // excluded up front.
+  it('surfaces an invoice created AFTER the link was issued, with no reissue required (WR-9)', async () => {
+    // Pre-fix, this invoice would be absent from `scope.allowedInvoiceIds`
+    // (frozen at issuance) and silently dropped by the `id: { in: ... } }`
+    // filter. The live query has nothing frozen to exclude it.
+    const NEW_INVOICE = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
+    const db = buildDb([
+      {
+        id: NEW_INVOICE,
+        petId: PET_1,
+        invoiceNumber: 'INV-202608-0099',
+        status: 'UNPAID',
+        grandTotalPaise: 10000,
+        balancePaise: 10000,
+        dueDate: null,
+      },
+    ]);
+    const service = new PortalInvoicesService(db as never, new AccessScopeService());
+
+    const result = await service.getInvoicesForPet(scope(), PET_1);
+
+    expect(result?.invoices.map((invoice) => invoice.invoiceId)).toContain(NEW_INVOICE);
+  });
+
+  it('never asks the database for a DRAFT invoice', async () => {
     const db = buildDb([]);
     const service = new PortalInvoicesService(db as never, new AccessScopeService());
 
     await service.getInvoicesForPet(scope(), PET_1);
 
     const args = db.invoice.findMany.mock.calls[0][0];
-    expect(args.where.id.in).not.toContain(INVOICE_OUT_OF_SCOPE);
+    expect(args.where.status).toEqual({ not: 'DRAFT' });
   });
 });
