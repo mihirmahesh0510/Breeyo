@@ -64,6 +64,28 @@ beforeEach(async () => {
 const auth = (t: string = token) => ({ Authorization: `Bearer ${t}` });
 
 /**
+ * WR-5: `ClinicVetRosterProvider` now filters candidates by real-time
+ * availability (`VetAvailabilityTemplate`/`AvailabilityOverride`/
+ * `BlockedPeriod`), not just clinic membership + `EDIT_EMR`. This is a real
+ * Postgres integration test (no injectable "now"), so every clinician this
+ * suite expects to be escalation-eligible needs a template that covers every
+ * weekday, all day -- deterministically "on duty" regardless of what instant
+ * CI happens to run at.
+ */
+async function makeAlwaysOnDuty(vetIdToCover: string, clinicIdToCover: string): Promise<void> {
+  await prisma.vetAvailabilityTemplate.createMany({
+    data: [0, 1, 2, 3, 4, 5, 6].map((weekday) => ({
+      clinicId: clinicIdToCover,
+      vetId: vetIdToCover,
+      weekday,
+      isClosed: false,
+      openMinutes: 0,
+      closeMinutes: 1440,
+    })),
+  });
+}
+
+/**
  * A deliberately malformed operation envelope (missing `entityType`) so
  * `offlineOperationEnvelopeSchema.safeParse` rejects it and
  * `ReplayIngestService` creates a real `SyncFailureTask`
@@ -246,6 +268,7 @@ describe('POST /sync/failures/:failureTaskId/escalate (verify-fix 10.6, D-23/D-2
   it('CONFLICT (D-24): a failed guided retry on a SAFETY_CRITICAL conflict hands off to a DIFFERENT real on-duty clinician via ClinicVetRosterProvider', async () => {
     const otherVet = await createTestUser({ fullName: 'Dr Other On-Duty' });
     await createTestClinicMember(otherVet.id, clinicId, 'Clinician');
+    await makeAlwaysOnDuty(otherVet.id, clinicId);
 
     const conflictId = await createRealConflict({ resolutionOwnerUserId: vetUserId });
     expect((await retry(conflictId, 'CONFLICT')).status).toBe(200);
@@ -263,8 +286,10 @@ describe('POST /sync/failures/:failureTaskId/escalate (verify-fix 10.6, D-23/D-2
   it('CONFLICT (D-36): further escalation on an already-ESCALATED conflict hands off to yet another on-duty clinician when the first is also unreachable', async () => {
     const secondVet = await createTestUser({ fullName: 'Dr Second On-Duty' });
     await createTestClinicMember(secondVet.id, clinicId, 'Clinician');
+    await makeAlwaysOnDuty(secondVet.id, clinicId);
     const thirdVet = await createTestUser({ fullName: 'Dr Third On-Duty' });
     await createTestClinicMember(thirdVet.id, clinicId, 'Clinician');
+    await makeAlwaysOnDuty(thirdVet.id, clinicId);
 
     const conflictId = await createRealConflict({ resolutionOwnerUserId: vetUserId });
     expect((await retry(conflictId, 'CONFLICT')).status).toBe(200);

@@ -67,6 +67,28 @@ beforeEach(async () => {
 
 const auth = (t: string = token) => ({ Authorization: `Bearer ${t}` });
 
+/**
+ * WR-5: `ClinicVetRosterProvider` now filters escalation candidates by
+ * real-time availability (`VetAvailabilityTemplate`/`AvailabilityOverride`/
+ * `BlockedPeriod`), not just clinic membership + `EDIT_EMR`. This is a real
+ * Postgres integration test (no injectable "now"), so any clinician this
+ * suite expects to be escalation-eligible needs a template covering every
+ * weekday, all day -- deterministically "on duty" regardless of what instant
+ * this suite happens to run at.
+ */
+async function makeAlwaysOnDuty(vetIdToCover: string, clinicIdToCover: string): Promise<void> {
+  await prisma.vetAvailabilityTemplate.createMany({
+    data: [0, 1, 2, 3, 4, 5, 6].map((weekday) => ({
+      clinicId: clinicIdToCover,
+      vetId: vetIdToCover,
+      weekday,
+      isClosed: false,
+      openMinutes: 0,
+      closeMinutes: 1440,
+    })),
+  });
+}
+
 function envelope(overrides: {
   entityId: string;
   operationId?: string;
@@ -204,6 +226,7 @@ describe('POST /consultations/:consultationId/conflicts/:conflictId/resolve (ver
     // there must be a genuine second EDIT_EMR-holding member to hand off to.
     const otherVet = await createTestUser({ fullName: 'Dr Other On-Duty' });
     await createTestClinicMember(otherVet.id, clinicId, 'Clinician');
+    await makeAlwaysOnDuty(otherVet.id, clinicId);
 
     const { consultationId, conflictId } = await createRealConflict({
       onlineAssessment: 'Assessed in clinic: mild dehydration',
