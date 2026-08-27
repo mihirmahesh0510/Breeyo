@@ -65,7 +65,7 @@ const styles = StyleSheet.create({
   rowCancelled: { opacity: 0.5 },
   rowText: { fontSize: 14, color: '#1C1B1F' },
   rowMeta: { fontSize: 12, color: '#79747E' },
-  badge: { fontSize: 11, color: '#2E7D32', fontWeight: '600' },
+  badge: { fontSize: 11, color: '#1E2A6E', fontWeight: '600' },
   blockedBand: {
     backgroundColor: '#F5F0EB',
     borderRadius: 8,

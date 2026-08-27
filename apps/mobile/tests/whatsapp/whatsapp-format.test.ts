@@ -13,9 +13,9 @@ import {
 } from '../../src/features/whatsapp/utils/whatsapp-format';
 
 describe('statusToVariant', () => {
-  it("maps DELIVERED to 'delivered' (green #2E7D32)", () => {
+  it("maps DELIVERED to 'delivered' (navy #1E2A6E)", () => {
     expect(statusToVariant('DELIVERED')).toBe('delivered');
-    expect(WA_COLORS.delivered).toBe('#2E7D32');
+    expect(WA_COLORS.delivered).toBe('#1E2A6E');
   });
 
   it("maps QUEUED to a variant colored orange #E65100", () => {

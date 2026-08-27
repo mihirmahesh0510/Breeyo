@@ -91,8 +91,8 @@ export function NotificationList({
       borderColor: colors.outline || '#79747E',
     },
     chipActive: {
-      backgroundColor: colors.primary || '#2E7D32',
-      borderColor: colors.primary || '#2E7D32',
+      backgroundColor: colors.primary || '#1E2A6E',
+      borderColor: colors.primary || '#1E2A6E',
     },
     list: {
       flex: 1,
@@ -104,7 +104,7 @@ export function NotificationList({
       padding: 32,
     },
     markAllRead: {
-      color: colors.primary || '#2E7D32',
+      color: colors.primary || '#1E2A6E',
     },
   });
 

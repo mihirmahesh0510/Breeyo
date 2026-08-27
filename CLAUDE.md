@@ -71,7 +71,7 @@ pnpm --filter @breeyo/ui test
 
 - Atomic design: atoms > molecules > organisms
 - Design tokens in `src/theme/` (colors, spacing, typography, elevation, borderRadius, animation)
-- Primary: `#2E7D32` (green), Secondary: `#5D4037` (brown), Tertiary: `#E65100` (orange)
+- Primary: `#1E2A6E` (navy), Secondary: `#5D4037` (brown), Tertiary: `#E65100` (orange)
 - Background: `#FFFBF5` (warm white)
 - i18n via `i18next` + `react-i18next`
 - Wireframe stories in `src/wireframes/` with 4 states: empty, loading, populated, error
