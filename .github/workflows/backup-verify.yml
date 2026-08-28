@@ -40,19 +40,39 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     steps:
+      # secrets can't be referenced directly in a job/step `if:`, so check
+      # via an intermediate step output. Production RDS isn't provisioned
+      # yet -- skip cleanly instead of failing red every week until
+      # RDS_PRODUCTION_INSTANCE_ID is actually configured.
+      - name: Check production RDS is configured
+        id: check
+        env:
+          INSTANCE_ID: ${{ secrets.RDS_PRODUCTION_INSTANCE_ID }}
+        run: |
+          if [ -z "$INSTANCE_ID" ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Production RDS not provisioned yet (RDS_PRODUCTION_INSTANCE_ID not set) -- skipping verification."
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Checkout repository
+        if: steps.check.outputs.configured == 'true'
         uses: actions/checkout@v4
 
       - name: Configure AWS credentials
+        if: steps.check.outputs.configured == 'true'
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-region: ap-south-1
           role-to-assume: ${{ secrets.AWS_GITHUB_ROLE_ARN }}
 
       - name: Install jq
+        if: steps.check.outputs.configured == 'true'
         run: sudo apt-get install -y jq
 
       - name: Verify PITR on production
+        if: steps.check.outputs.configured == 'true'
         run: |
           chmod +x scripts/backup/verify-pitr.sh
           ./scripts/backup/verify-pitr.sh \

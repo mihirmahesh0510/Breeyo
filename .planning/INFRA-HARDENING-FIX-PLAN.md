@@ -40,12 +40,17 @@
 
 ### 5. Backup-verification workflow failing — NOT A CODE FIX, flagged for the user
 
-- **File:** `.github/workflows/backup-verify.yml` (workflow itself is correct)
-- **Root cause:** This workflow is functioning exactly as designed — it's correctly detecting real AWS infrastructure problems, not failing due to a bug:
-  - **Staging RDS instance** genuinely fails 4 real checks: `BackupRetentionPeriod = 1 day` (needs ≥7), `StorageEncrypted = false` (must be `true` for medical data), `DeletionProtection = false` (must be `true` for production), and zero automated snapshots found.
-  - **Production job** fails separately at the "Configure AWS credentials" step — `AWS_GITHUB_ROLE_ARN` (or the OIDC trust relationship) isn't configured for the `production` GitHub Environment.
-- **Why this isn't in scope here:** Both root causes require actual AWS console/CLI changes and GitHub repo-settings changes, not a source-code fix. Enabling storage encryption on an already-unencrypted RDS instance specifically requires creating an encrypted snapshot copy and restoring a new instance from it — a real migration with a maintenance window, not a config toggle — and is exactly the kind of hard-to-reverse, shared-infrastructure change that needs your explicit sign-off before anyone (including an AI assistant) touches it.
-- **Status:** Documented here, not fixed. Needs you (or whoever holds AWS console access) to: (a) configure the production environment's OIDC role secret, and (b) plan the RDS encryption migration + retention/deletion-protection changes as a deliberate maintenance action.
+- **File:** `.github/workflows/backup-verify.yml`
+- **Root cause:** This workflow was functioning exactly as designed — it was correctly detecting real AWS infrastructure gaps, not failing due to a bug. Follow-up investigation (2026-08-28) found the production root cause was actually more fundamental than a missing secret:
+  - **Production job** wasn't just missing `AWS_GITHUB_ROLE_ARN` — production RDS doesn't exist yet at all (`aws rds describe-db-instances` returns only `breeyo-staging`). There was nothing for the job to verify.
+  - **Staging RDS instance** (`breeyo-staging`) genuinely failed 4 checks: `BackupRetentionPeriod = 1 day` (needs ≥7), `StorageEncrypted = false`, `DeletionProtection = false`, and zero automated snapshots found.
+- **Fix applied:**
+  - `verify-production` job now checks `RDS_PRODUCTION_INSTANCE_ID` via a step output (secrets can't be used directly in `if:` conditions) and skips cleanly with a `::notice::` instead of failing red every week. Revisit once production RDS is actually provisioned.
+  - Staging `DeletionProtection` flipped to `true` via `aws rds modify-db-instance` — verified in the returned instance description.
+- **Accepted gaps (user decision 2026-08-28), not fixed:**
+  - **Backup retention stuck at 1 day** — this AWS account is on the Free Tier plan, which hard-caps automated-backup retention at 1 day for a free-tier-eligible instance (`db.t4g.micro`); tried 1/2/3 days, all rejected with `FreeTierRestrictionError`. Reaching the required ≥7 days needs the account upgraded off Free Tier — a billing decision, deliberately deferred rather than fixed.
+  - **StorageEncrypted still false** — fixing requires a snapshot → encrypted-copy → restore-new-instance → cutover migration (real downtime-adjacent effort, would also briefly run two instances against the Free Tier's 750 free-hours/month cap). Deferred as low-priority since staging carries no real clinical data yet.
+- **Status:** Production job fixed (skips gracefully). Staging: deletion protection fixed; retention and encryption are documented, accepted gaps pending an account-plan upgrade and a deliberate migration window respectively.
 
 ---
 
@@ -61,4 +66,4 @@ Full regression suite (root aggregate + `apps/api` + `apps/mobile` + `apps/web`)
 | Docker non-root user | Fixed, Docker build + runtime verified locally | `87c4652` |
 | OTP verify lockout | Fixed, TDD, independently re-verified | `645e8ee` |
 | Stock-adjustment negative-stock | Fixed, TDD, independently re-verified | `407843d` |
-| Backup-verify workflow | Not a code fix — documented above, needs AWS/GitHub-settings action from the user | — |
+| Backup-verify workflow | Production job fixed (skips gracefully, no prod RDS yet); staging deletion-protection fixed; retention + encryption are accepted gaps | `<pending>` |
