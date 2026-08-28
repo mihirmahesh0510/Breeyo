@@ -93,8 +93,10 @@ describe('POST /api/v1/auth/otp/verify', () => {
     await cleanupTestData();
     const keys = await redis.keys('otp:*');
     const rateKeys = await redis.keys('otp_rate:*');
+    const attemptKeys = await redis.keys('otp_attempts:*');
     if (keys.length > 0) await redis.del(...keys);
     if (rateKeys.length > 0) await redis.del(...rateKeys);
+    if (attemptKeys.length > 0) await redis.del(...attemptKeys);
   });
 
   it('should return 200 with tokens on correct OTP', async () => {
@@ -135,6 +137,77 @@ describe('POST /api/v1/auth/otp/verify', () => {
     expect(response.statusCode).toBe(401);
     const body = response.json();
     expect(body.error.code).toBe('OTP_INVALID');
+  });
+
+  it('should return 401 with OTP_LOCKED after 5 wrong attempts, and delete the OTP so a fresh one is required', async () => {
+    const phone = '+919876543219';
+    await createVerifiedUserWithClinic(phone);
+
+    await redis.set(`otp:${phone}`, '123456', 'EX', 300);
+
+    for (let i = 0; i < 5; i++) {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/v1/auth/otp/verify',
+        payload: { phone, otp: '999999' },
+      });
+      expect(response.statusCode).toBe(401);
+      expect(response.json().error.code).toBe('OTP_INVALID');
+    }
+
+    // 6th attempt (even with the CORRECT otp) is locked out
+    const lockedResponse = await app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/otp/verify',
+      payload: { phone, otp: '123456' },
+    });
+    expect(lockedResponse.statusCode).toBe(401);
+    expect(lockedResponse.json().error.code).toBe('OTP_LOCKED');
+
+    // The OTP itself was invalidated by the lockout -- a fresh request is required.
+    const storedOtp = await redis.get(`otp:${phone}`);
+    expect(storedOtp).toBeNull();
+  });
+
+  it('should reset the failed-attempt counter when a fresh OTP is requested', async () => {
+    const phone = '+919876543220';
+    await createVerifiedUserWithClinic(phone);
+
+    await redis.set(`otp:${phone}`, '123456', 'EX', 300);
+    for (let i = 0; i < 4; i++) {
+      await app.inject({
+        method: 'POST',
+        url: '/api/v1/auth/otp/verify',
+        payload: { phone, otp: '999999' },
+      });
+    }
+
+    // Request a fresh OTP -- this should reset the attempt counter.
+    const requestResponse = await app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/otp/request',
+      payload: { phone },
+    });
+    expect(requestResponse.statusCode).toBe(200);
+    const freshOtp = await redis.get(`otp:${phone}`);
+
+    // 4 more wrong attempts against the NEW otp should still just be OTP_INVALID,
+    // not OTP_LOCKED -- proving the earlier attempts didn't carry over.
+    for (let i = 0; i < 4; i++) {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/v1/auth/otp/verify',
+        payload: { phone, otp: '999999' },
+      });
+      expect(response.json().error.code).toBe('OTP_INVALID');
+    }
+
+    const correctResponse = await app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/otp/verify',
+      payload: { phone, otp: freshOtp },
+    });
+    expect(correctResponse.statusCode).toBe(200);
   });
 
   it('should return 401 with OTP_EXPIRED when no OTP stored', async () => {

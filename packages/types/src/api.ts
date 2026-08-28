@@ -15,6 +15,7 @@ export const AUTH_ERRORS = {
   OTP_EXPIRED: { code: 'OTP_EXPIRED', message: 'OTP expired -- tap to resend' },
   OTP_INVALID: { code: 'OTP_INVALID', message: 'Incorrect OTP -- please try again' },
   OTP_RATE_LIMITED: { code: 'OTP_RATE_LIMITED', message: 'Too many OTP requests -- try again in 5 minutes' },
+  OTP_LOCKED: { code: 'OTP_LOCKED', message: 'Too many incorrect attempts -- request a new OTP' },
   SESSION_EXPIRED: { code: 'SESSION_EXPIRED', message: 'Session expired -- please log in again' },
   TOKEN_REUSE_DETECTED: { code: 'TOKEN_REUSE_DETECTED', message: 'Session compromised -- please log in again' },
   EMAIL_NOT_VERIFIED: { code: 'EMAIL_NOT_VERIFIED', message: 'Please verify your email before logging in' },
