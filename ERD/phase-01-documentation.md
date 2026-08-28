@@ -14,7 +14,7 @@ Phase 1 builds the **identity, access control, and multi-tenancy foundation** th
 
 3. **Password Authentication** — Argon2id hashing (memory-hard, GPU-resistant). Login with email + password.
 
-4. **OTP Login** — SMS-based via MSG91 provider. 6-digit code, 5-minute expiry, rate limited to 3 OTPs per 5 minutes. Indian phone format (`+91XXXXXXXXXX`).
+4. **OTP Login** — SMS-based via MSG91 provider. 6-digit code, 5-minute expiry, rate limited to 3 OTPs per 5 minutes, verification locked out after 5 wrong attempts. Indian phone format (`+91XXXXXXXXXX`).
 
 5. **Multi-Device Sessions** — Unlimited concurrent devices. JWT access tokens (15 min TTL) + refresh tokens (30 day TTL).
 
@@ -118,6 +118,7 @@ Admin calls POST /auth/staff/invite { phone, roles }
 | One admin must always exist | Sole-admin deactivation guard (409 error) | Prevents clinic lockout |
 | Email verification before login | `isEmailVerified` check on every login | Confirms ownership of email |
 | OTP rate limited 3/5min | Redis counter per phone number | Prevents SMS abuse (cost + spam) |
+| OTP verification locked after 5 wrong attempts | Redis counter per phone number, cleared on new OTP request | Prevents brute-forcing the 6-digit code |
 | Refresh token replay = full revoke | Family-based detection revokes all tokens in chain | Security: compromised token invalidates entire session |
 | Staff cannot self-invite | `MANAGE_USERS` permission required | Admin controls clinic access |
 | Deactivation = soft block | `isActive: false`, no data deletion | Preserves audit trail, regulatory compliance |
@@ -489,7 +490,7 @@ DPDP Act compliance — tracks user consent for data processing.
 | `auth.routes.ts` | Route definitions & plugin registration |
 | `auth.schema.ts` | Zod validators & request schemas |
 | `token.service.ts` | JWT management — generation, refresh, rotation, family-based replay detection |
-| `otp.service.ts` | OTP generation, Redis storage (300s TTL), rate limiting, verification |
+| `otp.service.ts` | OTP generation, Redis storage (300s TTL), rate limiting, verification, per-phone verify-attempt lockout |
 | `email.service.ts` | Email delivery (verification, password reset) |
 | `permission.service.ts` | RBAC resolution — role defaults + per-user overrides, Redis cache (5 min TTL) |
 
@@ -667,8 +668,9 @@ Plugin registration order:
 | `TOKEN_EXPIRED` | 401 | Expired access or refresh token |
 | `TOKEN_REUSE_DETECTED` | 401 | Replay attack — entire family revoked |
 | `EMAIL_NOT_VERIFIED` | 403 | Attempt to use unverified email |
-| `OTP_RATE_LIMIT` | 429 | More than 3 OTP requests in 5 min |
+| `OTP_RATE_LIMITED` | 429 | More than 3 OTP requests in 5 min |
 | `OTP_INVALID` | 401 | Wrong or expired OTP code |
+| `OTP_LOCKED` | 401 | 5 wrong verification attempts against the current OTP |
 | `FORBIDDEN` | 403 | Missing required permission |
 | `ALREADY_ACTIVE` | 409 | Reactivating an already-active member |
 | `SOLE_ADMIN` | 409 | Deactivating the last admin |
@@ -683,7 +685,7 @@ Plugin registration order:
 |-----------|-------|---------------|
 | `auth/signup.test.ts` | Signup flow | User + clinic creation, Admin role assignment, email verification token, duplicate email rejection |
 | `auth/login.test.ts` | Login flow | Password verification, email verification required, deactivated user blocked, wrong password |
-| `auth/otp-login.test.ts` | OTP flow | OTP generation, verification, rate limiting (3/5min), expiry, wrong code |
+| `auth/otp-login.test.ts` | OTP flow | OTP generation, verification, rate limiting (3/5min), expiry, wrong code, verify lockout after 5 wrong attempts |
 | `auth/token-refresh.test.ts` | Token rotation | Refresh rotation, replay detection, family revocation, expired token |
 | `auth/logout.test.ts` | Logout | Token revocation, audit logging |
 | `auth/password-reset.test.ts` | Password reset | Reset flow, token generation, email sending, token expiry |
