@@ -21,8 +21,8 @@
 - **File:** `apps/api/Dockerfile`
 - **Root cause:** No `USER` directive anywhere in the `runner` stage — the container's entrypoint process runs as root by default, so a compromised process has full filesystem write access inside the container rather than being confined.
 - **Fix:** Added `RUN chown -R node:node /app` + `USER node` before `CMD`, using the official `node:22-alpine` image's built-in non-root `node` user (uid 1000).
-- **Verification:** Built the image locally (`docker build -f apps/api/Dockerfile .`) and confirmed the container starts and runs as `node`, not `root`, and the API responds correctly on `/health`.
-- **Commit:** *(pending — see Execution status)*
+- **Verification:** Built the image locally (`docker build -f apps/api/Dockerfile .`) and confirmed: `docker run ... id` reports `uid=1000(node)`, not root; the server starts against real Postgres+Redis and `GET /health` returns `{"status":"ok"}`.
+- **Commit:** `87c4652`
 
 ### 3. OTP verification has no per-phone attempt lockout — FIXED
 
@@ -58,7 +58,7 @@ Full regression suite (root aggregate + `apps/api` + `apps/mobile` + `apps/web`)
 | Item | Status | Commit |
 |---|---|---|
 | chromaui SHA pin | Fixed | `5289b52` |
-| Docker non-root user | Fixed, Docker build verified locally | *(pending)* |
+| Docker non-root user | Fixed, Docker build + runtime verified locally | `87c4652` |
 | OTP verify lockout | Fixed, TDD, independently re-verified | `645e8ee` |
 | Stock-adjustment negative-stock | Fixed, TDD, independently re-verified | `407843d` |
 | Backup-verify workflow | Not a code fix — documented above, needs AWS/GitHub-settings action from the user | — |
