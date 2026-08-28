@@ -43,6 +43,13 @@ export class StockAdjustmentService {
     const item = await this.prisma.inventoryItem.findFirst({ where: { id: itemId, clinicId } });
     if (!item) throw notFoundError('Inventory item not found');
 
+    // Fast-path rejection for the common (non-racing) case -- cheap enough
+    // to reject an obviously-invalid request before opening a transaction,
+    // but NOT the real enforcement: `item.currentStock` here is read outside
+    // any transaction, so two concurrent "remove" requests can both read the
+    // same pre-decrement value and both pass this check. The real guard is
+    // the post-increment check inside the transaction below, which sees the
+    // actually-committed value.
     if (parsed.type === 'remove' && item.currentStock < parsed.quantity) {
       throw validationError(
         `Cannot remove ${parsed.quantity} units — only ${item.currentStock} in stock`,
@@ -90,6 +97,20 @@ export class StockAdjustmentService {
       }
 
       const updatedItem = await tx.inventoryItem.findUniqueOrThrow({ where: { id: itemId } });
+
+      // Real enforcement: this row was just atomically updated inside this
+      // transaction (`UPDATE ... SET currentStock = currentStock + delta`),
+      // which under Postgres takes an implicit row lock for the transaction's
+      // duration -- a concurrent "remove" targeting the same item serializes
+      // behind this one and only sees the post-commit value once it proceeds.
+      // Throwing here rolls back the whole transaction (including the
+      // increment above), so a losing concurrent request never leaves the
+      // stock negative.
+      if (updatedItem.currentStock < 0) {
+        throw validationError(
+          `Cannot remove ${parsed.quantity} units — only ${updatedItem.currentStock + parsed.quantity} in stock`,
+        );
+      }
 
       return { movement, item: updatedItem };
     });

@@ -45,7 +45,10 @@ jobs:
 
       - name: Publish to Chromatic
         if: ${{ env.CHROMATIC_PROJECT_TOKEN != '' }}
-        uses: chromaui/action@latest
+        # Pinned to the commit `latest` resolved to on 2026-08-28 (v18.6.1),
+        # not the mutable `@latest` tag -- supply-chain hardening so a
+        # future upstream compromise of that tag can't silently run in CI.
+        uses: chromaui/action@69be7d88fc9479eedbe5b2861f847eb48f97cabc # v18.6.1
         with:
           projectToken: ${{ env.CHROMATIC_PROJECT_TOKEN }}
           workingDir: apps/mobile
