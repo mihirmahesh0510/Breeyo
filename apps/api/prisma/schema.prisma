@@ -1791,7 +1791,12 @@ model UserDashboardPreference {
 
 /// No-login owner magic link (D-64, D-67, OWN-04, OWN-06). Only the hashed
 /// token is persisted — `tokenHash`, never the raw token (T-09-02). Scope is
-/// explicit and pet/invoice-bounded via the allow-list JSON columns.
+/// explicit and pet/invoice-bounded, enforced by `AccessScopeService` via a
+/// LIVE query against `ownerId`/`clinicId` at request time (WR-9) — NOT via
+/// the `allowedPetIdsJson`/`allowedInvoiceIdsJson` columns below, which are
+/// vestigial (kept only as a legacy/debug snapshot of scope at issuance;
+/// still written by `portal-link-issuance.service.ts` /
+/// `portal-reissue.service.ts` but never read for access control).
 model OwnerPortalMagicLink {
   id                    String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   clinicId              String    @map("clinic_id") @db.Uuid
@@ -1800,7 +1805,9 @@ model OwnerPortalMagicLink {
   defaultTab            String    @map("default_tab") // OVERVIEW | RECORDS | INVOICES
   deepLinkType          String?   @map("deep_link_type") // OVERVIEW | INVOICE | VISIT
   deepLinkEntityId      String?   @map("deep_link_entity_id") @db.Uuid
+  /// VESTIGIAL (WR-9): legacy snapshot only, no longer read for enforcement.
   allowedPetIdsJson     Json      @default("[]") @map("allowed_pet_ids_json")
+  /// VESTIGIAL (WR-9): legacy snapshot only, no longer read for enforcement.
   allowedInvoiceIdsJson Json      @default("[]") @map("allowed_invoice_ids_json")
   issuedAt              DateTime  @default(now()) @map("issued_at")
   expiresAt             DateTime  @map("expires_at")

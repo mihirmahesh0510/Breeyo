@@ -182,6 +182,14 @@ export async function buildApp(
     // the two cron modules are not even loaded when the guard is false.
     (await import('./jobs/overdue-invoices.js')).scheduleOverdueInvoices(app.prisma, app.io);
     (await import('./jobs/expire-payment-links.js')).scheduleExpirePaymentLinks(app.prisma, app.io);
+
+    // WR-3: polls Razorpay directly for any digital refund still `pending`
+    // past its staleness window, in case the `refund.processed`/`refund.failed`
+    // webhook that would normally complete it was never delivered.
+    (await import('./jobs/refund-reconciliation.job.js')).scheduleRefundReconciliation(
+      app.prisma,
+      app.io,
+    );
   }
 
   return app;

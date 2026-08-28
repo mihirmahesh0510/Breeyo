@@ -19,6 +19,10 @@ interface OldLinkRow {
   clinicId: string;
   ownerId: string;
   defaultTab: string;
+  // WR-9: vestigial — carried forward below only as a legacy/debug snapshot.
+  // `AccessScopeService` never reads these; scope is derived live from
+  // `ownerId`/`clinicId` on every request, so a reissued link has exactly
+  // the same (current, not frozen) access as the link it replaces.
   allowedPetIdsJson: unknown;
   allowedInvoiceIdsJson: unknown;
 }

@@ -8,6 +8,11 @@ const LIVE_UPDATED_AT = new Date('2026-08-20T09:00:00.000Z');
 function createMockTx() {
   let currentStock = mockItem.currentStock;
   return {
+    // WR-2: `recordMovement` now takes a `SELECT ... FOR UPDATE` lock on the
+    // item row (via `tx.$queryRaw`) before reading `lastMovement` -- the
+    // mock's return value is irrelevant here since the caller only awaits it
+    // for its locking side effect.
+    $queryRaw: vi.fn().mockResolvedValue([]),
     stockMovement: {
       findFirst: vi.fn().mockResolvedValue(null),
       create: vi.fn().mockImplementation(({ data }: any) => Promise.resolve({ id: 'mov_adj_1', ...data })),

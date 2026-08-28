@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { Prisma } from '@prisma/client';
 import { ReplayPriority } from '@breeyo/types';
 import {
   InventoryOfflineReplayService,
@@ -47,6 +48,7 @@ function createMockReceipts(): InventoryReplayReceiptStore {
   return {
     findUnique: vi.fn().mockResolvedValue(null),
     create: vi.fn().mockResolvedValue({ operationId: 'op-1' }),
+    delete: vi.fn().mockResolvedValue(undefined),
   };
 }
 
@@ -146,6 +148,72 @@ describe('InventoryOfflineReplayService', () => {
     });
   });
 
+  describe('sync-idempotency race (WR-1)', () => {
+    it('does not let a genuine P2002 receipt-create race propagate as an unhandled error -- returns the winning request\'s ack instead', async () => {
+      vi.mocked(gateway.dispense).mockResolvedValue({
+        deductions: [{ batchId: 'batch-1', lotNumber: null, quantity: 3 }],
+        newTotal: 7,
+        movementIds: ['movement-1'],
+      } as any);
+
+      // Both concurrent replays' own `findUnique` (inside
+      // `replayInventoryOperation`) see no existing receipt -- so both run
+      // the real mutation via `gateway.dispense`. Only one `create` can win
+      // the `[clinicId, deviceId, operationId]` unique constraint; this
+      // request's `create` is the loser and hits P2002.
+      vi.mocked(receipts.findUnique)
+        .mockResolvedValueOnce(null) // initial existingReceipt check
+        .mockResolvedValueOnce({ operationId: 'op-1' }); // re-fetch after P2002 -- the winner's row
+      vi.mocked(receipts.create).mockRejectedValueOnce(
+        new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+          code: 'P2002',
+          clientVersion: '6.19.3',
+        }),
+      );
+
+      const result = await service.replayInventoryOperation(context, baseEnvelope());
+
+      expect(result.status).toBe('ACKNOWLEDGED_DUPLICATE');
+      expect(result.operationId).toBe('op-1');
+      // WR-1: the loser of the receipt-create race must never have run the
+      // underlying gateway mutation at all -- otherwise stock is deducted
+      // twice even though only one request reports APPLIED.
+      expect(gateway.dispense).not.toHaveBeenCalled();
+    });
+
+    it('never applies the gateway mutation more than once when two genuinely concurrent replays race for the same operationId', async () => {
+      vi.mocked(gateway.dispense).mockResolvedValue({
+        deductions: [{ batchId: 'batch-1', lotNumber: null, quantity: 3 }],
+        newTotal: 7,
+        movementIds: ['movement-1'],
+      } as any);
+
+      vi.mocked(receipts.findUnique)
+        .mockResolvedValueOnce(null) // request A's initial existingReceipt check
+        .mockResolvedValueOnce(null) // request B's initial existingReceipt check
+        .mockResolvedValueOnce({ operationId: 'op-1' }); // request B's re-fetch after losing the P2002 race
+      vi.mocked(receipts.create)
+        .mockResolvedValueOnce({ operationId: 'op-1' }) // request A wins the reservation
+        .mockRejectedValueOnce(
+          new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+            code: 'P2002',
+            clientVersion: '6.19.3',
+          }),
+        ); // request B loses it
+
+      const [resultA, resultB] = await Promise.all([
+        service.replayInventoryOperation(context, baseEnvelope()),
+        service.replayInventoryOperation(context, baseEnvelope()),
+      ]);
+
+      const statuses = [resultA.status, resultB.status].sort();
+      expect(statuses).toEqual(['ACKNOWLEDGED_DUPLICATE', 'APPLIED']);
+      // The double-dispense bug WR-1 fixes: before the fix, both requests ran
+      // `gateway.dispense` before the receipt race was ever resolved.
+      expect(gateway.dispense).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe('FIFO-safe dispense reconciliation (D-04, D-10, T-10-08)', () => {
     it('creates a lighter operational review instead of silently overwriting stock truth when live FIFO/batch state can no longer satisfy the queued dispense (InsufficientStockError)', async () => {
       vi.mocked(gateway.dispense).mockRejectedValue(
@@ -189,6 +257,33 @@ describe('InventoryOfflineReplayService', () => {
         quantity: 2,
         overrideBatchId: 'batch-9',
       });
+    });
+
+    it('releases the reserved receipt when creating the mismatch review task itself fails, so a legitimate retry is not permanently blocked with no review trace', async () => {
+      vi.mocked(gateway.dispense).mockRejectedValue(
+        structuredError('INSUFFICIENT_STOCK', 'Insufficient stock', 409, { itemId: ITEM_ID, requested: 3, available: 1 }),
+      );
+      vi.mocked(reviewTasks.create).mockRejectedValue(new Error('transient db error creating review task'));
+
+      await expect(service.replayInventoryOperation(context, baseEnvelope({ payload: { quantity: 3 } }))).rejects.toThrow(
+        'transient db error creating review task',
+      );
+
+      // Neither the mutation nor the review task was ever durably created --
+      // a retry of this exact operationId must be able to proceed, not be
+      // told "already handled" with no review-queue trace to show for it.
+      expect(receipts.delete).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps the reserved receipt when the mismatch review task is created successfully (happy path unchanged)', async () => {
+      vi.mocked(gateway.dispense).mockRejectedValue(
+        structuredError('INSUFFICIENT_STOCK', 'Insufficient stock', 409, { itemId: ITEM_ID, requested: 3, available: 1 }),
+      );
+
+      const result = await service.replayInventoryOperation(context, baseEnvelope({ payload: { quantity: 3 } }));
+
+      expect(result.status).toBe('REVIEW_CREATED');
+      expect(receipts.delete).not.toHaveBeenCalled();
     });
   });
 
@@ -384,6 +479,40 @@ describe('InventoryOfflineReplayService replay-broadcast wiring (verify-fix 10.3
 
     expect(broadcast.emitReplayApplied).not.toHaveBeenCalled();
     expect(broadcast.emitReplayConflictOpened).not.toHaveBeenCalled();
+  });
+
+  it('does not release the reserved receipt when the applied broadcast fails after the dispense already durably committed', async () => {
+    vi.mocked(gateway.dispense).mockResolvedValue({
+      deductions: [{ batchId: 'batch-1', lotNumber: null, quantity: 3 }],
+      newTotal: 7,
+      movementIds: ['movement-1'],
+    } as any);
+    broadcast.emitReplayApplied.mockImplementation(() => {
+      throw new Error('socket emit failed');
+    });
+
+    await expect(service.replayInventoryOperation(context, baseEnvelope())).rejects.toThrow('socket emit failed');
+
+    // The dispense already durably applied -- releasing the receipt here
+    // would let a retry of this operationId re-run `gateway.dispense` and
+    // double-apply the stock deduction.
+    expect(receipts.delete).not.toHaveBeenCalled();
+  });
+
+  it('does not release the reserved receipt when the conflict-opened broadcast fails after the mismatch review task already durably committed', async () => {
+    vi.mocked(gateway.dispense).mockRejectedValue(
+      structuredError('INSUFFICIENT_STOCK', 'Insufficient stock', 409, { itemId: ITEM_ID, requested: 3, available: 1 }),
+    );
+    broadcast.emitReplayConflictOpened.mockImplementation(() => {
+      throw new Error('socket emit failed');
+    });
+
+    await expect(service.replayInventoryOperation(context, baseEnvelope())).rejects.toThrow('socket emit failed');
+
+    // The review task already durably exists -- releasing the receipt here
+    // would let a retry create a duplicate review task for the same mismatch.
+    expect(receipts.delete).not.toHaveBeenCalled();
+    expect(reviewTasks.create).toHaveBeenCalledTimes(1);
   });
 });
 

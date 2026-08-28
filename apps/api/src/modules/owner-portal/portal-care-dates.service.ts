@@ -79,7 +79,7 @@ export class PortalCareDatesService {
     petId: string,
     now: Date = new Date(),
   ): Promise<PortalCareDatesResult | null> {
-    if (!this.accessScopeService.isPetInScope(scope, petId)) {
+    if (!(await this.accessScopeService.isPetInScope(this.db, scope, petId))) {
       return null;
     }
 

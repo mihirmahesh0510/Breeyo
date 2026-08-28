@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { offlineOperationEnvelopeSchema, saveDraftSchema } from '@breeyo/validators';
 import { ConflictSeverity, ResolutionState } from '@breeyo/types';
@@ -65,6 +66,9 @@ export interface ConsultationReplayReceiptStore {
     where: { clinicId_deviceId_operationId: { clinicId: string; deviceId: string; operationId: string } };
   }): Promise<{ operationId: string } | null>;
   create(args: { data: Record<string, unknown> }): Promise<{ operationId: string }>;
+  delete(args: {
+    where: { clinicId_deviceId_operationId: { clinicId: string; deviceId: string; operationId: string } };
+  }): Promise<unknown>;
 }
 
 /** Backed by the same `SyncConflictRecord` table the shared replay ingress
@@ -285,21 +289,42 @@ export class ConsultationOfflineReplayService {
     });
 
     if (classification.hasConflict) {
-      const conflictId = await this.createConflictRecord(context, {
-        operationId: envelope.operationId,
-        consultationId: consultation.id,
-        baselinePayload: baseline,
-        localPayload: draft,
-        serverPayload: serverDraft,
-        ownerUserId: classification.recommendedOwnerUserId!,
-      });
-      // A receipt is still recorded so a flapping resend of THIS operationId
-      // resolves as an idempotent no-op instead of creating a second
-      // conflict record for the same offline edit.
-      await this.recordReceipt(context, envelope.operationId, consultation.id);
+      // WR-1: reserve this operationId's receipt BEFORE creating the
+      // conflict record -- so two genuinely concurrent replays of the same
+      // operationId cannot both pass the earlier `findUnique` check and
+      // both create a duplicate conflict record. Only the request that wins
+      // the receipt-create race proceeds; the loser acknowledges untouched.
+      const reservation = await this.recordReceipt(context, envelope.operationId, consultation.id);
+      if (reservation.raced) {
+        // WR-1: lost the race to reserve this operationId's receipt -- a
+        // concurrent replay of the SAME operation already won and is the
+        // request of record.
+        return { operationId: envelope.operationId, status: 'ACKNOWLEDGED_DUPLICATE', consultationId: consultation.id };
+      }
+      let conflictId: string;
+      try {
+        conflictId = await this.createConflictRecord(context, {
+          operationId: envelope.operationId,
+          consultationId: consultation.id,
+          baselinePayload: baseline,
+          localPayload: draft,
+          serverPayload: serverDraft,
+          ownerUserId: classification.recommendedOwnerUserId!,
+        });
+      } catch (error) {
+        // WR-1: the conflict record never actually got created -- release
+        // the reservation so a legitimate retry of this operationId is not
+        // permanently told "already handled".
+        await this.releaseReceipt(context, envelope.operationId);
+        throw error;
+      }
+
       // Verify-fix 10.3: D-05/D-06/D-08 -- a SAFETY_CRITICAL conflict is
       // exactly the case an already-open browser/mobile view must not
-      // silently keep rendering stale/disputed state for.
+      // silently keep rendering stale/disputed state for. This runs AFTER
+      // the conflict record already durably exists, so a failure here must
+      // not release the receipt -- that would let a retry create a
+      // duplicate conflict record.
       this.broadcast.emitReplayConflictOpened({
         clinicId: context.clinicId,
         domain: EMR_SYNC_DOMAIN,
@@ -313,17 +338,34 @@ export class ConsultationOfflineReplayService {
       };
     }
 
-    if (classification.safeMergeFields.length > 0) {
-      // D-07: only clearly non-destructive fields ever reach here --
-      // classifyClinicalConflict already excluded anything the server also
-      // touched from `mergedPayload`'s applied set.
-      await this.gateway.saveDraft(consultation.id, context.clinicId, classification.mergedPayload);
+    // WR-1: reserve this operationId's receipt BEFORE saving the draft --
+    // same reasoning as the conflict branch above: only the winner of the
+    // receipt-create race ever calls `saveDraft`.
+    const reservation = await this.recordReceipt(context, envelope.operationId, consultation.id);
+    if (reservation.raced) {
+      // WR-1: lost the race to reserve this operationId's receipt -- a
+      // concurrent replay of the SAME operation already won and is the
+      // request of record.
+      return { operationId: envelope.operationId, status: 'ACKNOWLEDGED_DUPLICATE', consultationId: consultation.id };
     }
 
-    await this.recordReceipt(context, envelope.operationId, consultation.id);
+    try {
+      if (classification.safeMergeFields.length > 0) {
+        // D-07: only clearly non-destructive fields ever reach here --
+        // classifyClinicalConflict already excluded anything the server also
+        // touched from `mergedPayload`'s applied set.
+        await this.gateway.saveDraft(consultation.id, context.clinicId, classification.mergedPayload);
+      }
+    } catch (error) {
+      await this.releaseReceipt(context, envelope.operationId);
+      throw error;
+    }
+
     // Verify-fix 10.3: applied even for the true-no-op branch above (no
     // safe-merge fields) -- the replay was still processed and acknowledged,
     // matching `emitReplayApplied`'s "affected views should refresh" intent.
+    // This runs AFTER `saveDraft` already durably committed (when it ran at
+    // all), so a failure here must not release the receipt.
     this.broadcast.emitReplayApplied({
       clinicId: context.clinicId,
       domain: EMR_SYNC_DOMAIN,
@@ -351,28 +393,48 @@ export class ConsultationOfflineReplayService {
   ): Promise<ConsultationReplayOutcome> {
     const changedFieldsText = buildChangedFieldsSummary(draft, baseline);
 
+    // WR-1: reserve this operationId's receipt BEFORE adding the addendum --
+    // so two genuinely concurrent replays of the same operationId cannot
+    // both pass the earlier `findUnique` check and both append a duplicate
+    // addendum entry.
+    const reservation = await this.recordReceipt(context, envelope.operationId, consultation.id);
+    if (reservation.raced) {
+      // WR-1: lost the race to reserve this operationId's receipt -- a
+      // concurrent replay of the SAME operation already won and is the
+      // request of record.
+      return { operationId: envelope.operationId, status: 'ACKNOWLEDGED_DUPLICATE', consultationId: consultation.id };
+    }
+
+    try {
+      if (changedFieldsText) {
+        const addendum: AddendumEntry = {
+          id: crypto.randomUUID(),
+          text: `Offline edit synced after this consultation was finalized (auto-applied as addendum). ${changedFieldsText}`,
+          addedBy: context.userId,
+          addedByName: context.userName ?? 'Unknown',
+          // Original offline edit time when the envelope's `createdAt` is a
+          // valid timestamp, else the replay's own time.
+          addedAt: parseEnvelopeCreatedAt(envelope.createdAt),
+        };
+        await this.gateway.addAddendum(consultation.id, addendum);
+      }
+    } catch (error) {
+      await this.releaseReceipt(context, envelope.operationId);
+      throw error;
+    }
+
     if (changedFieldsText) {
-      const addendum: AddendumEntry = {
-        id: crypto.randomUUID(),
-        text: `Offline edit synced after this consultation was finalized (auto-applied as addendum). ${changedFieldsText}`,
-        addedBy: context.userId,
-        addedByName: context.userName ?? 'Unknown',
-        // Original offline edit time when the envelope's `createdAt` is a
-        // valid timestamp, else the replay's own time.
-        addedAt: parseEnvelopeCreatedAt(envelope.createdAt),
-      };
-      await this.gateway.addAddendum(consultation.id, addendum);
       // Verify-fix 10.3: only for a genuine apply (a real addendum was
       // added) -- the true-no-op case just below never touched anything, so
       // it must not fire a broadcast implying a view refresh is warranted.
+      // This runs AFTER `addAddendum` already durably committed, so a
+      // failure here must not release the receipt.
       this.broadcast.emitReplayApplied({
         clinicId: context.clinicId,
         domain: EMR_SYNC_DOMAIN,
         entityIds: [consultation.id],
       });
     }
-
-    await this.recordReceipt(context, envelope.operationId, consultation.id);
     return {
       operationId: envelope.operationId,
       status: 'APPLIED',
@@ -387,16 +449,64 @@ export class ConsultationOfflineReplayService {
     context: ConsultationOfflineReplayContext,
     operationId: string,
     consultationId: string,
-  ): Promise<void> {
-    await this.replayReceipts.create({
-      data: {
-        clinicId: context.clinicId,
-        deviceId: context.deviceId,
-        operationId,
-        userId: context.userId,
-        domain: EMR_SYNC_DOMAIN,
-        entityType: CONSULTATION_DRAFT_ENTITY_TYPE,
-        entityId: consultationId,
+  ): Promise<{ raced: boolean }> {
+    try {
+      await this.replayReceipts.create({
+        data: {
+          clinicId: context.clinicId,
+          deviceId: context.deviceId,
+          operationId,
+          userId: context.userId,
+          domain: EMR_SYNC_DOMAIN,
+          entityType: CONSULTATION_DRAFT_ENTITY_TYPE,
+          entityId: consultationId,
+        },
+      });
+      return { raced: false };
+    } catch (err) {
+      // WR-1: the `findUnique` in `replayConsultationDraft` and this
+      // `create` are not transactional, so a genuinely concurrent duplicate
+      // replay of the same operationId can both see no existing receipt and
+      // both reach here (both after already running their own mutation
+      // above). The `[clinicId, deviceId, operationId]` unique constraint
+      // lets exactly one of them win; the loser hits P2002. Matching
+      // `replayIngest.service.ts`'s "Verify-fix 10.9" pattern: treat that as
+      // "already acknowledged by the request that won the race" and let the
+      // caller return an idempotent-duplicate outcome instead of this
+      // surfacing as an unhandled 500.
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        const racedReceipt = await this.replayReceipts.findUnique({
+          where: {
+            clinicId_deviceId_operationId: {
+              clinicId: context.clinicId,
+              deviceId: context.deviceId,
+              operationId,
+            },
+          },
+        });
+        if (racedReceipt) {
+          return { raced: true };
+        }
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * WR-1: releases a receipt this same request just reserved (via
+   * `recordReceipt`, above) after the mutation that followed the reservation
+   * turned out to fail -- so a legitimate later retry of this exact
+   * operationId is not permanently and incorrectly told "already handled"
+   * for a mutation that never actually applied.
+   */
+  private async releaseReceipt(context: ConsultationOfflineReplayContext, operationId: string): Promise<void> {
+    await this.replayReceipts.delete({
+      where: {
+        clinicId_deviceId_operationId: {
+          clinicId: context.clinicId,
+          deviceId: context.deviceId,
+          operationId,
+        },
       },
     });
   }

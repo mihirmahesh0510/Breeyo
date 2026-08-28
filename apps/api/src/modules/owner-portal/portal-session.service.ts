@@ -41,8 +41,13 @@ export interface PortalSessionData {
  *
  * Constructed with a `TenantPrismaClient` already scoped to the validated
  * link's `clinicId` — every query here is clinic-RLS-bound, and every id it
- * queries by (`scope.ownerId`, `scope.allowedPetIds`, `scope.allowedInvoiceIds`)
- * came from `AccessScopeService.deriveScope`, never from the client.
+ * queries by (`scope.ownerId`, `scope.clinicId`) came from
+ * `AccessScopeService.deriveScope`, never from the client.
+ *
+ * WR-9: pets/invoices are queried LIVE by `ownerId`/`clinicId` on every
+ * session read, not filtered against a frozen id list captured once at
+ * issuance — a pet or invoice added after the link was issued shows up on
+ * the very next overview load, no reissue required.
  */
 export class PortalSessionService {
   constructor(private readonly db: TenantPrismaClient) {}
@@ -52,11 +57,11 @@ export class PortalSessionService {
       this.db.petOwner.findUnique({ where: { id: scope.ownerId }, select: { name: true } }),
       this.db.clinic.findUnique({ where: { id: scope.clinicId }, select: { contactPhone: true } }),
       this.db.pet.findMany({
-        where: { id: { in: scope.allowedPetIds } },
+        where: { ownerId: scope.ownerId, clinicId: scope.clinicId },
         select: { id: true, name: true, species: true, photoUrl: true },
       }),
       this.db.invoice.findMany({
-        where: { id: { in: scope.allowedInvoiceIds } },
+        where: { ownerId: scope.ownerId, clinicId: scope.clinicId, status: { not: 'DRAFT' } },
         select: { id: true, petId: true, balancePaise: true },
       }),
       this.loadRestoreState(scope.magicLinkId),

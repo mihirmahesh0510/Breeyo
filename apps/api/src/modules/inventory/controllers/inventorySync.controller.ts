@@ -15,6 +15,8 @@ import {
 } from '../services/inventoryOfflineReplay.service.js';
 import { InventoryConflictReviewService, type InventoryReviewTaskStore } from '../services/inventoryConflictReview.service.js';
 import { ReplayBroadcastService } from '../../sync/services/replayBroadcast.service.js';
+import { QueuePreemptionService } from '../../queue/services/queuePreemption.service.js';
+import { resolveQueueHighPendingCount } from '../../sync/services/queueHighPendingLookup.service.js';
 
 /**
  * Top-level shape check only, matching `queueSync.controller.ts`'s /
@@ -24,10 +26,20 @@ import { ReplayBroadcastService } from '../../sync/services/replayBroadcast.serv
  * payload schema), so one malformed envelope in a batch surfaces as a
  * `REJECTED` outcome for that item alone instead of a blanket 400 for the
  * whole reconnect batch.
+ *
+ * WR-10: `pendingQueueHighOperationIds` is the calling device's own claim
+ * (mobile's `listPendingSyncOperationsByPriority(db, ReplayPriority.QUEUE_HIGH)`)
+ * of which QUEUE_HIGH operationIds it still has queued locally -- this
+ * endpoint never receives those envelopes itself (mobile only ever posts
+ * INVENTORY_MEDIUM envelopes here), so there is nothing to pre-scan the way
+ * `replayIngest.service.ts` does for the generic ingress. The server does
+ * not trust this list verbatim: `resolveQueueHighPendingCount` verifies it
+ * against the real `SyncReplayReceipt` ledger before it can gate anything.
  */
 const inventoryReplayRequestBodySchema = z.object({
   deviceId: z.string().trim().min(1),
   operations: z.array(z.unknown()).default([]),
+  pendingQueueHighOperationIds: z.array(z.string().trim().min(1)).default([]),
 });
 
 function validationError(reply: FastifyReply, issues: { message: string }[]) {
@@ -102,8 +114,17 @@ export function buildInventoryOfflineReplayService(
  * resolves its Prisma handle from `request.db` (the tenant-scoped,
  * RLS-bound client `tenantContext` installs) instead of sharing one admin
  * client across all clinics -- same shape as `createQueueSyncController`.
+ *
+ * WR-10: also takes a `preemption` service (stateless, same default-instance
+ * convention as `createQueueSyncController`) so this endpoint -- the real
+ * one mobile calls for inventory reconnect/replay -- genuinely enforces
+ * D-12 to D-14 instead of only the unreachable generic `/sync/replay`
+ * ingress doing so.
  */
-export function createInventorySyncController(buildReplayService: (db: TenantPrismaClient) => InventoryOfflineReplayService) {
+export function createInventorySyncController(
+  buildReplayService: (db: TenantPrismaClient) => InventoryOfflineReplayService,
+  preemption: QueuePreemptionService = new QueuePreemptionService(),
+) {
   return {
     async replayHandler(request: FastifyRequest, reply: FastifyReply) {
       const body = inventoryReplayRequestBodySchema.safeParse(request.body);
@@ -124,6 +145,19 @@ export function createInventorySyncController(buildReplayService: (db: TenantPri
       const rejectedOperations: { operationId: string; message?: string }[] = [];
       const deferredOperationIds: string[] = [];
 
+      // WR-10: computed once for the whole batch -- every operation this
+      // endpoint ever receives is INVENTORY_MEDIUM tier, so the pause
+      // decision does not change operation-to-operation within one call.
+      const queueHighPendingCount = await resolveQueueHighPendingCount(request.db, {
+        clinicId: context.clinicId,
+        deviceId: context.deviceId,
+        candidateOperationIds: body.data.pendingQueueHighOperationIds,
+      });
+      const preemptionResult = preemption.pauseLowerTierReplayForQueue({
+        currentTierPriority: ReplayPriority.INVENTORY_MEDIUM,
+        queueHighPendingCount,
+      });
+
       for (const raw of body.data.operations) {
         const priority = readPriority(raw);
 
@@ -133,6 +167,15 @@ export function createInventorySyncController(buildReplayService: (db: TenantPri
         // inventory's own tier, mirroring `queueSync.controller.ts`'s exact
         // discipline for the queue-first ladder.
         if (priority !== undefined && priority !== ReplayPriority.INVENTORY_MEDIUM) {
+          deferredOperationIds.push(readOperationId(raw));
+          // eslint-disable-next-line no-continue
+          continue;
+        }
+
+        // WR-10: genuine queue-first preemption for the endpoint real
+        // clients call -- deferred here means never applied, no receipt
+        // written, left for the device to resend once QUEUE_HIGH clears.
+        if (preemptionResult.shouldPause) {
           deferredOperationIds.push(readOperationId(raw));
           // eslint-disable-next-line no-continue
           continue;

@@ -34,9 +34,10 @@ interface ReceiptRow {
  * portal's contract never exposed.
  *
  * This service is the scoped read that backs the new owner-portal route:
- * re-checks `invoiceId` against the validated token's `allowedInvoiceIds`
- * (`AccessScopeService`, the same pattern every other 09-05 service uses)
- * BEFORE ever calling billing, then delegates to
+ * re-checks `invoiceId` against the owner's LIVE invoices (WR-9:
+ * `AccessScopeService.isInvoiceInScope`'s live `ownerId`/`clinicId` query,
+ * the same pattern every other 09-05 service uses) BEFORE ever calling
+ * billing, then delegates to
  * `PaymentService.getLatestReceiptForInvoice` -- the real receipt lookup --
  * rather than a second one. Finds "most recent receipt for this invoice"
  * rather than "this exact receipt" because the owner has no `receiptId` to
@@ -50,7 +51,7 @@ export class PortalReceiptService {
   ) {}
 
   async getReceipt(scope: OwnerPortalTokenScope, invoiceId: string): Promise<PortalReceiptResult> {
-    if (!this.accessScopeService.isInvoiceInScope(scope, invoiceId)) {
+    if (!(await this.accessScopeService.isInvoiceInScope(this.db, scope, invoiceId))) {
       return { status: 'OUT_OF_SCOPE' };
     }
 

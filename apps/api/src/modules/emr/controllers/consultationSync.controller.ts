@@ -1,7 +1,10 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
+import { ReplayPriority } from '@breeyo/types';
 import type { TenantPrismaClient } from '../../../lib/prisma-rls.js';
 import { EmrRepository } from '../emr.repository.js';
+import { QueuePreemptionService } from '../../queue/services/queuePreemption.service.js';
+import { resolveQueueHighPendingCount } from '../../sync/services/queueHighPendingLookup.service.js';
 import {
   ConsultationOfflineReplayService,
   type ConsultationOfflineReplayContext,
@@ -27,10 +30,20 @@ import type { OnDutyRosterProvider } from '../../sync/services/retryEscalation.s
  * payload schema), so one malformed envelope in a batch surfaces as a
  * `REJECTED` outcome for that item alone instead of a blanket 400 for the
  * whole reconnect batch.
+ *
+ * WR-10: `pendingQueueHighOperationIds` is the calling device's own claim
+ * (mobile's `listPendingSyncOperationsByPriority(db, ReplayPriority.QUEUE_HIGH)`)
+ * of which QUEUE_HIGH operationIds it still has queued locally -- see
+ * `inventorySync.controller.ts`'s identical field for the full rationale
+ * (this endpoint only ever receives CLINICAL_MEDIUM envelopes itself, so it
+ * cannot pre-scan a mixed batch the way the generic ingress does).
+ * `resolveQueueHighPendingCount` verifies this claim against the real
+ * `SyncReplayReceipt` ledger rather than trusting it verbatim.
  */
 const consultationReplayRequestBodySchema = z.object({
   deviceId: z.string().trim().min(1),
   operations: z.array(z.unknown()).default([]),
+  pendingQueueHighOperationIds: z.array(z.string().trim().min(1)).default([]),
 });
 
 /**
@@ -57,6 +70,14 @@ function validationError(reply: FastifyReply, issues: { message: string }[]) {
       message: issues.map((issue) => issue.message).join(', '),
     },
   });
+}
+
+function readOperationId(raw: unknown): string {
+  if (raw && typeof raw === 'object' && 'operationId' in raw) {
+    const value = (raw as Record<string, unknown>).operationId;
+    if (typeof value === 'string' && value.length > 0) return value;
+  }
+  return 'unknown';
 }
 
 export function buildConsultationOfflineReplayService(
@@ -116,10 +137,17 @@ export function buildConsultationConflictResolutionService(
  * D-30: takes a factory rather than a prebuilt service, so every handler
  * resolves its Prisma handle from `request.db` (the tenant-scoped,
  * RLS-bound client) instead of sharing one admin client across all clinics.
+ *
+ * WR-10: also takes a `preemption` service (stateless, same default-instance
+ * convention as `createQueueSyncController`/`createInventorySyncController`)
+ * so this endpoint -- the real one mobile calls for consultation-draft
+ * reconnect/replay -- genuinely enforces D-12 to D-14 instead of only the
+ * unreachable generic `/sync/replay` ingress doing so.
  */
 export function createConsultationSyncController(
   buildReplayService: (db: TenantPrismaClient) => ConsultationOfflineReplayService,
   buildResolutionService: (db: TenantPrismaClient) => ConsultationConflictResolutionService,
+  preemption: QueuePreemptionService = new QueuePreemptionService(),
 ) {
   return {
     async replayHandler(request: FastifyRequest, reply: FastifyReply) {
@@ -143,8 +171,33 @@ export function createConsultationSyncController(
       const acknowledgedOperationIds: string[] = [];
       const conflictIds: string[] = [];
       const rejectedOperations: { operationId: string; message?: string }[] = [];
+      const deferredOperationIds: string[] = [];
+
+      // WR-10: computed once for the whole batch -- every operation this
+      // endpoint ever receives is CLINICAL_MEDIUM tier, so the pause
+      // decision does not change operation-to-operation within one call.
+      const queueHighPendingCount = await resolveQueueHighPendingCount(request.db, {
+        clinicId: context.clinicId,
+        deviceId: context.deviceId,
+        candidateOperationIds: body.data.pendingQueueHighOperationIds,
+      });
+      const preemptionResult = preemption.pauseLowerTierReplayForQueue({
+        currentTierPriority: ReplayPriority.CLINICAL_MEDIUM,
+        queueHighPendingCount,
+      });
 
       for (const raw of body.data.operations) {
+        // WR-10: genuine queue-first preemption for the endpoint real
+        // clients call -- deferred here means never applied, no receipt
+        // written, left for the device to resend once QUEUE_HIGH clears.
+        // D-37: no severity check here at all -- a SAFETY_CRITICAL draft
+        // conflict still waits its own CLINICAL_MEDIUM turn.
+        if (preemptionResult.shouldPause) {
+          deferredOperationIds.push(readOperationId(raw));
+          // eslint-disable-next-line no-continue
+          continue;
+        }
+
         // eslint-disable-next-line no-await-in-loop -- idempotency and
         // conflict-creation decisions must be evaluated in submission order
         // within one batch, exactly like the shared replay ingress does.
@@ -174,6 +227,7 @@ export function createConsultationSyncController(
           acknowledgedOperationIds,
           conflictIds,
           rejectedOperations,
+          deferredOperationIds,
           processedAt: new Date().toISOString(),
         },
       };

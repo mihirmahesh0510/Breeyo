@@ -84,7 +84,7 @@ export class PortalRecordsService {
   ) {}
 
   async getRecords(scope: OwnerPortalTokenScope, petId: string): Promise<PortalRecordsResult | null> {
-    if (!this.accessScopeService.isPetInScope(scope, petId)) {
+    if (!(await this.accessScopeService.isPetInScope(this.db, scope, petId))) {
       return null;
     }
 

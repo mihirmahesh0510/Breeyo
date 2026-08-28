@@ -21,8 +21,6 @@ function scope(overrides: Partial<OwnerPortalTokenScope> = {}): OwnerPortalToken
     magicLinkId: LINK_ID,
     clinicId: CLINIC,
     ownerId: OWNER,
-    allowedPetIds: [PET_1, PET_2],
-    allowedInvoiceIds: [INVOICE_1, INVOICE_2],
     defaultTab: 'OVERVIEW',
     deepLinkType: null,
     deepLinkEntityId: null,
@@ -42,9 +40,14 @@ function invoiceRow(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function buildDb(invoices: unknown[] = [invoiceRow()]) {
+// WR-9: `areInvoicesInScope` is now a live `invoice.count` query, never a
+// frozen allow-list. `invoiceCount` defaults to `invoices.length` (a clean
+// scope match); pass it explicitly to simulate a scope mismatch or a
+// belt-and-suspenders count/findMany discrepancy.
+function buildDb(invoices: unknown[] = [invoiceRow()], invoiceCount: number = invoices.length) {
   return {
     invoice: {
+      count: vi.fn().mockResolvedValue(invoiceCount),
       findMany: vi.fn().mockResolvedValue(invoices),
     },
     ownerPortalCheckoutSession: {
@@ -75,7 +78,7 @@ function buildPaymentService() {
 
 describe('PortalCheckoutService — scope re-check (OWN-06, T-09-15)', () => {
   it('refuses and never queries invoices for a selection outside the allowed-invoice scope', async () => {
-    const db = buildDb();
+    const db = buildDb([], 0); // live count comes back short: nothing resolves for this owner
     const paymentService = buildPaymentService();
     const service = new PortalCheckoutService(db as never, new AccessScopeService(), paymentService as never);
 
@@ -84,6 +87,20 @@ describe('PortalCheckoutService — scope re-check (OWN-06, T-09-15)', () => {
     expect(result).toBeNull();
     expect(db.invoice.findMany).not.toHaveBeenCalled();
     expect(paymentService.createPaymentLink).not.toHaveBeenCalled();
+  });
+
+  it('allows checkout of an invoice created AFTER the link was issued, with no reissue required (WR-9)', async () => {
+    const NEW_INVOICE = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
+    const db = buildDb([invoiceRow({ id: NEW_INVOICE })]);
+    const paymentService = buildPaymentService();
+    const service = new PortalCheckoutService(db as never, new AccessScopeService(), paymentService as never);
+
+    const result = await service.createCheckout(scope(), [NEW_INVOICE]);
+
+    expect(result).not.toBeNull();
+    expect(db.invoice.count).toHaveBeenCalledWith({
+      where: { id: { in: [NEW_INVOICE] }, ownerId: OWNER, clinicId: CLINIC, status: { not: 'DRAFT' } },
+    });
   });
 
   it('refuses an empty selection', async () => {
@@ -174,7 +191,9 @@ describe('PortalCheckoutService — snapshot persistence (D-59, D-69, D-70)', ()
   });
 
   it('refuses when a selected invoice id does not resolve inside the clinic (belt-and-suspenders on top of scope check)', async () => {
-    const db = buildDb([]); // findMany returns fewer rows than requested ids
+    // The live scope check (count) passes, but the invoice vanished (voided/
+    // deleted) between that check and this query — findMany comes back short.
+    const db = buildDb([], 1);
     const paymentService = buildPaymentService();
     const service = new PortalCheckoutService(db as never, new AccessScopeService(), paymentService as never);
 

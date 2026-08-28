@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { offlineOperationEnvelopeSchema } from '@breeyo/validators';
 import { ConflictSeverity, QueueStatus, ResolutionState, isValidTransition } from '@breeyo/types';
@@ -84,6 +85,13 @@ export interface QueueReplayReceiptStore {
     where: { clinicId_deviceId_operationId: { clinicId: string; deviceId: string; operationId: string } };
   }): Promise<{ operationId: string } | null>;
   create(args: { data: Record<string, unknown> }): Promise<{ operationId: string }>;
+  update(args: {
+    where: { clinicId_deviceId_operationId: { clinicId: string; deviceId: string; operationId: string } };
+    data: Record<string, unknown>;
+  }): Promise<unknown>;
+  delete(args: {
+    where: { clinicId_deviceId_operationId: { clinicId: string; deviceId: string; operationId: string } };
+  }): Promise<unknown>;
 }
 
 /**
@@ -239,17 +247,87 @@ export class QueueOfflineReplayService {
     domain: string,
     entityType: string,
     entityId: string,
-  ): Promise<void> {
-    await this.replayReceipts.create({
-      data: {
-        clinicId: context.clinicId,
-        deviceId: context.deviceId,
-        operationId,
-        userId: context.userId,
-        domain,
-        entityType,
-        entityId,
+  ): Promise<{ raced: boolean }> {
+    try {
+      await this.replayReceipts.create({
+        data: {
+          clinicId: context.clinicId,
+          deviceId: context.deviceId,
+          operationId,
+          userId: context.userId,
+          domain,
+          entityType,
+          entityId,
+        },
+      });
+      return { raced: false };
+    } catch (err) {
+      // WR-1: the `findUnique` in `replayQueueOperation` and this `create`
+      // are not transactional, so a genuinely concurrent duplicate replay of
+      // the same operationId can both see no existing receipt and both
+      // reach here. Every call site below reserves this receipt BEFORE
+      // running its own mutation, so the `[clinicId, deviceId, operationId]`
+      // unique constraint lets exactly one of them win the reservation; the
+      // loser hits P2002 here and never runs the mutation at all. Matching
+      // `replayIngest.service.ts`'s "Verify-fix 10.9" pattern: treat that as
+      // "already acknowledged by the request that won the race" and let the
+      // caller return an idempotent-duplicate outcome instead of this
+      // surfacing as an unhandled 500.
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        const racedReceipt = await this.replayReceipts.findUnique({
+          where: {
+            clinicId_deviceId_operationId: {
+              clinicId: context.clinicId,
+              deviceId: context.deviceId,
+              operationId,
+            },
+          },
+        });
+        if (racedReceipt) {
+          return { raced: true };
+        }
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * WR-1: releases a receipt this same request just reserved (via
+   * `recordReceipt`, above) after the mutation that followed the
+   * reservation turned out to fail -- so a legitimate later retry of this
+   * exact operationId is not permanently and incorrectly told "already
+   * handled" for a mutation that never actually applied.
+   */
+  private async releaseReceipt(context: QueueOfflineReplayContext, operationId: string): Promise<void> {
+    await this.replayReceipts.delete({
+      where: {
+        clinicId_deviceId_operationId: {
+          clinicId: context.clinicId,
+          deviceId: context.deviceId,
+          operationId,
+        },
       },
+    });
+  }
+
+  /**
+   * WR-1: a brand-new check-in's receipt must be reserved BEFORE
+   * `createEntry` runs (to close the double-check-in race), but the queue
+   * entry's own id does not exist until `createEntry` returns -- so the
+   * reservation is made against a placeholder `entityId` (the pet id, still
+   * a meaningful audit value) and corrected to the real entry id once it is
+   * known.
+   */
+  private async finalizeReceiptEntityId(context: QueueOfflineReplayContext, operationId: string, entityId: string): Promise<void> {
+    await this.replayReceipts.update({
+      where: {
+        clinicId_deviceId_operationId: {
+          clinicId: context.clinicId,
+          deviceId: context.deviceId,
+          operationId,
+        },
+      },
+      data: { entityId },
     });
   }
 
@@ -277,38 +355,59 @@ export class QueueOfflineReplayService {
     const existingActive = await this.gateway.findTodayActiveEntryForPet(context.clinicId, payload.petId, today);
 
     if (existingActive) {
-      // D-34: auto-merge into the earlier-created entry -- keep its
-      // check-in time and position, discard the duplicate. This operation
-      // still gets its own replay receipt so a future flapping replay of
-      // THIS operationId also resolves as an idempotent no-op rather than
-      // re-merging (harmlessly) or, worse, re-creating a review task.
-      //
-      // Verify-fix 10.11: "keep its check-in time" must mean the
-      // chronologically earlier of the two operations' own payload
-      // `checkedInAt` instants, not whichever operation's replay merely won
-      // the race to reach the server first. `existingActive.queuePriorityAt`
-      // already holds the payload `checkedInAt` of the operation that
-      // created it (see the "preserves the offline device's original
-      // check-in instant" rule above) -- if THIS operation's payload
-      // `checkedInAt` is actually earlier, this operation lost the
-      // arrival-order race but was the real first check-in, so the entry's
-      // ordering timestamp is corrected to match instead of silently
-      // keeping the later arrival's value.
-      const incomingCheckedInAt = new Date(payload.checkedInAt);
-      if (incomingCheckedInAt.getTime() < existingActive.queuePriorityAt.getTime()) {
-        await this.gateway.updateEntry(existingActive.id, { queuePriorityAt: incomingCheckedInAt });
+      // WR-1: reserve this operationId's receipt BEFORE the merge mutation
+      // (and the review task it produces) run -- so two genuinely
+      // concurrent replays of the same operationId cannot both pass the
+      // earlier `findUnique` check and both merge + create a duplicate
+      // review task.
+      const reservation = await this.recordReceipt(context, operationId, 'queue', QUEUE_CHECK_IN_ENTITY_TYPE, existingActive.id);
+      if (reservation.raced) {
+        // WR-1: lost the race to reserve this operationId's receipt -- a
+        // concurrent replay of the SAME operation already won it and
+        // already performed the merge + review task, so this request
+        // acknowledges rather than creating a second review task for the
+        // same operation.
+        return { operationId, status: 'ACKNOWLEDGED_DUPLICATE', entryId: existingActive.id };
       }
 
-      await this.recordReceipt(context, operationId, 'queue', QUEUE_CHECK_IN_ENTITY_TYPE, existingActive.id);
-      const reviewTaskId = await this.createOperationalReviewTask(context, {
-        operationId,
-        entryId: existingActive.id,
-        note: `Duplicate offline check-in for the same patient merged into existing queue entry ${existingActive.id} (D-34).`,
-      });
+      let reviewTaskId: string;
+      try {
+        // D-34: auto-merge into the earlier-created entry -- keep its
+        // check-in time and position, discard the duplicate.
+        //
+        // Verify-fix 10.11: "keep its check-in time" must mean the
+        // chronologically earlier of the two operations' own payload
+        // `checkedInAt` instants, not whichever operation's replay merely
+        // won the race to reach the server first. `existingActive.queuePriorityAt`
+        // already holds the payload `checkedInAt` of the operation that
+        // created it (see the "preserves the offline device's original
+        // check-in instant" rule above) -- if THIS operation's payload
+        // `checkedInAt` is actually earlier, this operation lost the
+        // arrival-order race but was the real first check-in, so the entry's
+        // ordering timestamp is corrected to match instead of silently
+        // keeping the later arrival's value.
+        const incomingCheckedInAt = new Date(payload.checkedInAt);
+        if (incomingCheckedInAt.getTime() < existingActive.queuePriorityAt.getTime()) {
+          await this.gateway.updateEntry(existingActive.id, { queuePriorityAt: incomingCheckedInAt });
+        }
+
+        reviewTaskId = await this.createOperationalReviewTask(context, {
+          operationId,
+          entryId: existingActive.id,
+          note: `Duplicate offline check-in for the same patient merged into existing queue entry ${existingActive.id} (D-34).`,
+        });
+      } catch (error) {
+        await this.releaseReceipt(context, operationId);
+        throw error;
+      }
+
       // Verify-fix 10.3: a merge still leaves a review note behind (D-10) --
       // treated as a conflict-opened broadcast, not an applied one, so an
       // open browser tab surfaces it for review rather than silently
-      // refreshing as if nothing needed a second look.
+      // refreshing as if nothing needed a second look. This runs AFTER the
+      // review task already durably exists, so a failure here must not
+      // release the receipt -- that would let a retry create a duplicate
+      // review task for the same merge.
       this.broadcast.emitReplayConflictOpened({
         clinicId: context.clinicId,
         domain: 'queue',
@@ -322,24 +421,51 @@ export class QueueOfflineReplayService {
       };
     }
 
-    const waitingCount = await this.gateway.countWaiting(context.clinicId, today);
-    const entry = await this.gateway.createEntry({
-      clinicId: context.clinicId,
-      petId: payload.petId,
-      checkedInBy: context.userId,
-      status: 'WAITING' as CreateEntryParams['status'],
-      position: waitingCount + 1,
-      isEmergency: payload.isEmergency,
-      visitReason: payload.visitReason,
-      // D-03: the offline entry is operationally real from the moment the
-      // device recorded it, so its priority time is that original instant,
-      // not "now" (the replay instant) -- otherwise an offline check-in
-      // from 40 minutes ago would unfairly jump behind patients who checked
-      // in (online) more recently but before this replay ran.
-      queuePriorityAt: new Date(payload.checkedInAt),
-    });
+    // WR-1: reserve this operationId's receipt BEFORE `createEntry` runs --
+    // so two genuinely concurrent replays of the same operationId cannot
+    // both pass the earlier `findUnique` check and both create a live
+    // queue entry. The real entry id does not exist yet, so the reservation
+    // is recorded against the pet id (still a meaningful audit value) and
+    // corrected once `createEntry` returns.
+    const reservation = await this.recordReceipt(context, operationId, 'queue', QUEUE_CHECK_IN_ENTITY_TYPE, payload.petId);
+    if (reservation.raced) {
+      // WR-1: lost the race to reserve this operationId's receipt -- a
+      // concurrent replay of the SAME operation already won it and is the
+      // request of record.
+      return { operationId, status: 'ACKNOWLEDGED_DUPLICATE' };
+    }
 
-    await this.recordReceipt(context, operationId, 'queue', QUEUE_CHECK_IN_ENTITY_TYPE, entry.id);
+    let entry: QueueEntryRecord;
+    try {
+      const waitingCount = await this.gateway.countWaiting(context.clinicId, today);
+      entry = await this.gateway.createEntry({
+        clinicId: context.clinicId,
+        petId: payload.petId,
+        checkedInBy: context.userId,
+        status: 'WAITING' as CreateEntryParams['status'],
+        position: waitingCount + 1,
+        isEmergency: payload.isEmergency,
+        visitReason: payload.visitReason,
+        // D-03: the offline entry is operationally real from the moment the
+        // device recorded it, so its priority time is that original instant,
+        // not "now" (the replay instant) -- otherwise an offline check-in
+        // from 40 minutes ago would unfairly jump behind patients who checked
+        // in (online) more recently but before this replay ran.
+        queuePriorityAt: new Date(payload.checkedInAt),
+      });
+    } catch (error) {
+      // WR-1: `createEntry` never durably committed, so it is genuinely safe
+      // to release the reservation and let a retry of this operationId
+      // proceed as if nothing happened.
+      await this.releaseReceipt(context, operationId);
+      throw error;
+    }
+
+    // A real queue entry now durably exists -- from here on, a thrown error
+    // must NOT release the receipt. Doing so would let a retry re-run
+    // `createEntry` above and create a second, duplicate live entry for the
+    // same offline check-in.
+    await this.finalizeReceiptEntityId(context, operationId, entry.id);
 
     // Verify-fix 10.3: an open browser queue board watching this entity
     // should hear about the applied replay without waiting for its own poll.
@@ -412,12 +538,31 @@ export class QueueOfflineReplayService {
       updateData.completedAt = this.now();
     }
 
-    const updated = await this.gateway.updateEntry(entry.id, updateData);
-    await this.recordReceipt(context, operationId, 'queue', QUEUE_STATUS_TRANSITION_ENTITY_TYPE, updated.id);
+    // WR-1: reserve this operationId's receipt BEFORE `updateEntry` runs --
+    // so two genuinely concurrent replays of the same operationId cannot
+    // both pass the earlier `findUnique` check and both apply the same
+    // status transition twice.
+    const reservation = await this.recordReceipt(context, operationId, 'queue', QUEUE_STATUS_TRANSITION_ENTITY_TYPE, entry.id);
+    if (reservation.raced) {
+      // WR-1: lost the race to reserve this operationId's receipt -- a
+      // concurrent replay of the SAME operation already won and is the
+      // request of record.
+      return { operationId, status: 'ACKNOWLEDGED_DUPLICATE', entryId: entry.id };
+    }
 
-    // Verify-fix 10.3: same broadcast the check-in path fires above.
+    let updated: QueueEntryRecord;
+    try {
+      updated = await this.gateway.updateEntry(entry.id, updateData);
+    } catch (error) {
+      await this.releaseReceipt(context, operationId);
+      throw error;
+    }
+
+    // Verify-fix 10.3: same broadcast the check-in path fires above. This
+    // runs AFTER `updateEntry` already durably committed, so a failure here
+    // must not release the receipt -- that would let a retry re-apply the
+    // same transition.
     this.broadcast.emitReplayApplied({ clinicId: context.clinicId, domain: 'queue', entityIds: [updated.id] });
-
     return { operationId, status: 'APPLIED', entryId: updated.id };
   }
 
@@ -427,10 +572,31 @@ export class QueueOfflineReplayService {
     entryId: string,
     { note }: { note: string },
   ): Promise<QueueReplayOutcome> {
-    await this.recordReceipt(context, operationId, 'queue', QUEUE_STATUS_TRANSITION_ENTITY_TYPE, entryId);
-    const reviewTaskId = await this.createOperationalReviewTask(context, { operationId, entryId, note });
+    // WR-1: reserve this operationId's receipt BEFORE creating the review
+    // task -- so two genuinely concurrent replays of the same operationId
+    // cannot both pass the earlier `findUnique` check and both create a
+    // duplicate review task.
+    const reservation = await this.recordReceipt(context, operationId, 'queue', QUEUE_STATUS_TRANSITION_ENTITY_TYPE, entryId);
+    if (reservation.raced) {
+      // WR-1: lost the race to reserve this operationId's receipt -- a
+      // concurrent replay of the SAME operation already won and already
+      // created the review task, so this request acknowledges rather than
+      // creating a second one.
+      return { operationId, status: 'ACKNOWLEDGED_DUPLICATE', entryId };
+    }
+    let reviewTaskId: string;
+    try {
+      reviewTaskId = await this.createOperationalReviewTask(context, { operationId, entryId, note });
+    } catch (error) {
+      await this.releaseReceipt(context, operationId);
+      throw error;
+    }
+
     // Verify-fix 10.3: D-05 review-before-overwrite -- a browser tab
     // watching this entry needs the conflict prompt, not a stale render.
+    // This runs AFTER the review task already durably exists, so a failure
+    // here must not release the receipt -- that would let a retry create a
+    // duplicate review task.
     this.broadcast.emitReplayConflictOpened({ clinicId: context.clinicId, domain: 'queue', entityIds: [entryId] });
     return { operationId, status: 'REVIEW_CREATED', entryId, reviewTaskId };
   }

@@ -20,13 +20,16 @@ export type PortalLinkIssuanceResult =
  *
  * D-84 piggybacks this on invoice finalization (`InvoiceService.finalize`)
  * rather than a separate staff-triggered action or firing on every completed
- * consultation. Callers pass only `clinicId`/`ownerId` — this service is the
- * ONLY place that decides the new link's scope, by querying the owner's
- * CURRENT pet/invoice rows itself (never a caller-supplied list), so a
- * returning owner with multiple pets/invoices sees all of them, not just
- * whichever invoice happened to trigger issuance (T-09-14, T-09-15's
- * "server-authoritative scope" invariant, applied at issuance time instead
- * of at read time).
+ * consultation. Callers pass only `clinicId`/`ownerId`.
+ *
+ * WR-9: `allowedPetIdsJson`/`allowedInvoiceIdsJson` below are now VESTIGIAL —
+ * `AccessScopeService` no longer reads them (every pet/invoice-scope
+ * decision is a live query by `ownerId`/`clinicId` at request time; see
+ * `access-scope.service.ts`). They are still computed and written here as a
+ * legacy/historical snapshot of what the owner had at the moment their first
+ * link went out (useful for debugging/audit), but nothing in this module
+ * trusts them for access control anymore, and a pet or invoice added after
+ * this row is created is still fully visible through this same link.
  *
  * Idempotent per owner: if the owner already holds a non-revoked,
  * non-expired link, this is a no-op (`ALREADY_ACTIVE`) — a returning owner
@@ -86,6 +89,10 @@ export class PortalLinkIssuanceService {
     // internal front-desk state); every other status (FINALIZED, UNPAID,
     // PARTIALLY_PAID, PAID, OVERDUE, VOIDED) is a document the clinic has
     // already produced for this owner and belongs in their portal history.
+    // WR-9: this is no longer the scope-enforcement mechanism (see the class
+    // doc comment above) — it only fills the vestigial
+    // `allowedPetIdsJson`/`allowedInvoiceIdsJson` columns for legacy/debug
+    // purposes.
     const [pets, invoices] = await Promise.all([
       this.db.pet.findMany({ where: { clinicId, ownerId }, select: { id: true } }),
       this.db.invoice.findMany({

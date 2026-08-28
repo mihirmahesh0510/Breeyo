@@ -77,9 +77,11 @@ describe('MagicLinkService.validate — READY (D-64, OWN-04)', () => {
     expect(result.data.magicLinkId).toBe(LINK_ID);
     expect(result.data.clinicId).toBe(CLINIC);
     expect(result.data.ownerId).toBe(OWNER);
-    expect(result.data.allowedPetIds).toEqual([PET_1, PET_2]);
-    expect(result.data.allowedInvoiceIds).toEqual([INVOICE_1]);
     expect(result.data.defaultTab).toBe('OVERVIEW');
+    // WR-9: scope no longer carries a frozen pet/invoice id list at all —
+    // every consumer re-checks live against `ownerId`/`clinicId` instead.
+    expect(result.data).not.toHaveProperty('allowedPetIds');
+    expect(result.data).not.toHaveProperty('allowedInvoiceIds');
   });
 });
 

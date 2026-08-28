@@ -46,6 +46,17 @@ export class StockMovementService {
    * atomic transaction rather than opening a nested one.
    */
   async recordMovement(tx: TenantTransactionClient, data: RecordMovementInput) {
+    // WR-2: under Postgres's default Read Committed isolation, a plain
+    // `findFirst` here (no lock) let two concurrent movements on the same
+    // item both read the same `lastMovement` before either committed, both
+    // compute the same `runningTotal`, and both insert -- corrupting the
+    // ledger. `SELECT ... FOR UPDATE` on the item row forces any concurrent
+    // transaction touching the SAME item (through this method, regardless of
+    // which caller -- adjustment, stock-take, fifo-dispense) to block here
+    // until this transaction commits or rolls back, so the `findFirst` below
+    // always observes a fully-settled prior movement, never a stale one.
+    await tx.$queryRaw`SELECT id FROM inventory_items WHERE id = ${data.itemId}::uuid FOR UPDATE`;
+
     const lastMovement = await tx.stockMovement.findFirst({
       where: { itemId: data.itemId, clinicId: data.clinicId },
       orderBy: { createdAt: 'desc' },

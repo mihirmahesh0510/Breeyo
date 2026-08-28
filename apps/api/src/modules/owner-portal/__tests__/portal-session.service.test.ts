@@ -20,8 +20,6 @@ function scope(overrides: Partial<OwnerPortalTokenScope> = {}): OwnerPortalToken
     magicLinkId: LINK_ID,
     clinicId: CLINIC,
     ownerId: OWNER,
-    allowedPetIds: [PET_1, PET_2],
-    allowedInvoiceIds: [INVOICE_1, INVOICE_2],
     defaultTab: 'OVERVIEW',
     deepLinkType: null,
     deepLinkEntityId: null,
@@ -82,6 +80,43 @@ describe('PortalSessionService.getSession — overview assembly (D-46 to D-56)',
       },
     ]);
     expect(session.totalDuePaise).toBe(50000);
+  });
+
+  it('queries pets/invoices LIVE by ownerId/clinicId, excluding DRAFT invoices, never by a frozen id list (WR-9)', async () => {
+    const db = buildDb();
+    const service = new PortalSessionService(db as never);
+
+    await service.getSession(scope());
+
+    expect(db.pet.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { ownerId: OWNER, clinicId: CLINIC } }),
+    );
+    expect(db.invoice.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { ownerId: OWNER, clinicId: CLINIC, status: { not: 'DRAFT' } },
+      }),
+    );
+  });
+
+  it('includes a pet/invoice created AFTER the link was issued, with no reissue required (WR-9)', async () => {
+    const NEW_PET = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
+    const NEW_INVOICE = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+    const db = buildDb({
+      pet: {
+        findMany: vi.fn().mockResolvedValue([{ id: NEW_PET, name: 'Buddy', species: 'DOG', photoUrl: null }]),
+      },
+      invoice: {
+        findMany: vi.fn().mockResolvedValue([{ id: NEW_INVOICE, petId: NEW_PET, balancePaise: 30000 }]),
+      },
+    });
+    const service = new PortalSessionService(db as never);
+
+    const session = await service.getSession(scope());
+
+    expect(session.pets).toEqual([
+      { petId: NEW_PET, name: 'Buddy', species: 'DOG', photoUrl: null, hasUnpaidInvoice: true },
+    ]);
+    expect(session.totalDuePaise).toBe(30000);
   });
 
   it('includes the clinic contact number for D-52/D-79 help-bar actions', async () => {

@@ -4,6 +4,14 @@
 // `GET /owner-portal/:token/invoices/:invoiceId/receipt` endpoint --
 // confirms a receipt actually exists before ever handing back a URL, so
 // "View Receipt" never renders a link that 404s when clicked.
+//
+// WR-8 (.planning/WHOLE-REPO-AUDIT-FIX-PLAN.md): that scoped endpoint
+// returns bare JSON, no HTML -- an owner tapping "View Receipt" saw raw
+// `{"data": {...}}` in their browser. The URL this hook resolves to must
+// point at the internal, formatted Next.js route
+// (`/portal/:token/invoice/:invoiceId/receipt`) instead of the raw API
+// contract endpoint, even though it still calls that API endpoint once to
+// confirm a receipt actually exists before handing back a link.
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { renderHook, waitFor } from '@testing-library/react';
 import { usePortalReceiptUrl } from '../hooks/usePortalReceiptUrl';
@@ -27,7 +35,7 @@ describe('usePortalReceiptUrl', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('resolves a receipt URL pointed at the scoped endpoint once the receipt is confirmed to exist', async () => {
+  it('resolves to the internal formatted receipt route, not the raw API endpoint, once the receipt is confirmed to exist', async () => {
     const fetchMock = vi.fn(async () =>
       jsonResponse(200, {
         data: {
@@ -45,8 +53,15 @@ describe('usePortalReceiptUrl', () => {
     const { result } = renderHook(() => usePortalReceiptUrl('tok-1', 'inv-1'));
 
     await waitFor(() => expect(result.current).not.toBeNull());
-    expect(result.current).toMatch(/\/api\/v1\/owner-portal\/tok-1\/invoices\/inv-1\/receipt$/);
 
+    // WR-8: the resolved link is the internal Next.js page route that
+    // renders a formatted receipt -- never the bare JSON API endpoint.
+    expect(result.current).toBe('/portal/tok-1/invoice/inv-1/receipt');
+    expect(result.current).not.toMatch(/\/api\/v1\//);
+
+    // The existence check still hits the real scoped API endpoint --
+    // otherwise an invoice with no captured payment would show a link that
+    // 404s on click.
     const [calledUrl] = fetchMock.mock.calls[0];
     expect(String(calledUrl)).toContain('/api/v1/owner-portal/tok-1/invoices/inv-1/receipt');
   });
