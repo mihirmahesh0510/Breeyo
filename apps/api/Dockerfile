@@ -59,6 +59,12 @@ RUN pnpm install --frozen-lockfile --prod
 # @prisma/client ships as a stub until `prisma generate` runs against it.
 RUN pnpm --filter @breeyo/api exec prisma generate
 
+# Run as the non-root `node` user (uid 1000, built into the official node
+# image) rather than root -- a compromised process inside the container
+# then has no write access outside what it's explicitly given below.
+RUN chown -R node:node /app
+USER node
+
 EXPOSE 3000
 
 CMD ["node", "apps/api/dist/server.js"]
