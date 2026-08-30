@@ -6,6 +6,7 @@ import * as Haptics from 'expo-haptics';
 import { EmptyState, showToast, colors } from '@breeyo/ui';
 import { useInvoice } from '../hooks/useInvoice';
 import { useInvoiceSocket } from '../hooks/useInvoiceSocket';
+import { useManagePaymentsPermission } from '../hooks/useInvoices';
 import { usePaymentMutations, type VoidInvoiceResult } from '../hooks/usePaymentMutations';
 import { useGeneratePdf } from '../../pdf/hooks/useGeneratePdf';
 import { BillingShareOptionsSheet } from '../../pdf/components/ShareOptionsSheet';
@@ -93,6 +94,7 @@ export function InvoiceDetailScreen({ invoiceId }: InvoiceDetailScreenProps) {
   const { data: invoice, isLoading, isError, refetch, isFetching } = useInvoice(invoiceId);
   const mutations = usePaymentMutations(invoiceId);
   const pdf = useGeneratePdf();
+  const { canManagePayments } = useManagePaymentsPermission();
 
   const [isPaying, setIsPaying] = useState(false);
   const [isVoiding, setIsVoiding] = useState(false);
@@ -327,6 +329,7 @@ export function InvoiceDetailScreen({ invoiceId }: InvoiceDetailScreenProps) {
           status={invoice.status}
           hasPayments={invoice.payments.length > 0}
           exceptionFlag={invoice.exceptionFlag}
+          hasManagePayments={canManagePayments}
           onPay={() => setIsPaying(true)}
           onPrint={handlePrint}
           onShare={() => setIsSharing(true)}

@@ -94,6 +94,17 @@ No framework install needed — Vitest 2.1 is configured in every workspace.
 | QR code scans correctly with a real UPI app and opens the Razorpay-hosted payment page | BIL-05 | Requires a physical device with a UPI app and live/test Razorpay credentials | Generate a payment link in the test flow, render the QR, scan with a UPI app, confirm the hosted page opens with the correct amount |
 | Webhook actually fires end-to-end from Razorpay's test dashboard | BIL-06 | Requires a publicly reachable webhook URL (ngrok/tunnel) during dev; cannot be fully simulated by unit/integration tests alone | Configure a test webhook in the Razorpay dashboard pointing at a tunneled dev URL, trigger a test payment, confirm the invoice updates |
 | PDF renders correctly across iOS and Android WebView engines, including the base64 logo | BIL-04 | `expo-print`'s underlying WebView differs by platform; visual rendering is not something Vitest can assert | Generate an invoice PDF on both an iOS simulator and an Android emulator, visually confirm logo, layout, and GST fields render correctly |
+| Post-fix navigation smoke test (E2E-BUG-FIX-PLAN.md §6.1–6.2) | BIL-03 | Both were hardcoded route strings under a namespace that cannot resolve (`(tabs)/billing` is a file, not a directory) — a manual tap-through until an automated navigation harness exists | On a real device/emulator: complete a Quick Sale checkout and confirm it lands on the invoice detail screen (not a dead end); tap an invoice from a pet's Invoices tab and confirm the same |
+| Billing empty-state / New Invoice FAB no longer overlap (E2E-BUG-FIX-PLAN.md §6.5) | — | Pure visual layout fix, no logic to assert | On a fresh clinic with zero invoices, confirm the empty-state description text and the FAB button have no overlapping bounds, on at least one small-screen device |
+
+---
+
+## E2E Bug Fix Additions (E2E-BUG-FIX-PLAN.md, 2026-08-19)
+
+| # | Behavior | Test | Why it matters |
+|---|----------|------|-----------------|
+| §6.3 | `InvoiceActionBar`'s money actions (Pay/Void/Credit Note/Refund) are absent — not merely disabled — for a caller without `MANAGE_PAYMENTS`; every pre-existing caller (which passes no `hasManagePayments`) keeps seeing them | `apps/mobile/src/features/billing/__tests__/invoice-actions.test.ts` (`MANAGE_PAYMENTS gates the money actions` describe block, plus `canManagePayments`) | Previously the buttons were filtered only by invoice status, so anyone could tap Void/Refund and only discover they lacked permission after a 403. |
+| §6.4 | Submitting a custom service or product name+price actually lands as a line in the invoice draft | `apps/mobile/src/features/billing/__tests__/InvoiceBuilderScreen.test.tsx` (`turning a custom name+price pair into a line`, `customLineFrom`) | `onAddCustom` previously only closed the sheet — the typed name and price were silently discarded. See D-60 in `06-CONTEXT.md` for why the screen-level prop-wiring itself (as opposed to `customLineFrom`'s logic) remains outside automated coverage. |
 
 ---
 

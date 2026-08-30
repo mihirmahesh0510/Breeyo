@@ -294,17 +294,21 @@ export function BillingDashboardScreen() {
             contentContainerStyle={styles.listContent}
             ListEmptyComponent={
               listState === 'searchNoResults' ? (
-                <EmptyState
-                  title={BILLING_COPY.searchNoResultsTitle}
-                  description={BILLING_COPY.searchNoResultsBody}
-                  testID="billing-search-no-results"
-                />
+                <View style={styles.emptyStateWrapper}>
+                  <EmptyState
+                    title={BILLING_COPY.searchNoResultsTitle}
+                    description={BILLING_COPY.searchNoResultsBody}
+                    testID="billing-search-no-results"
+                  />
+                </View>
               ) : listState === 'empty' ? (
-                <EmptyState
-                  title={BILLING_COPY.emptyTitle}
-                  description={BILLING_COPY.emptyBody}
-                  testID="billing-empty-state"
-                />
+                <View style={styles.emptyStateWrapper}>
+                  <EmptyState
+                    title={BILLING_COPY.emptyTitle}
+                    description={BILLING_COPY.emptyBody}
+                    testID="billing-empty-state"
+                  />
+                </View>
               ) : null
             }
             testID="billing-invoice-list"
@@ -378,6 +382,13 @@ const styles = StyleSheet.create({
     paddingTop: 8,
     // Clears the tab bar safe zone and the FAB.
     paddingBottom: 48,
+  },
+  // E2E-BUG-FIX-PLAN.md §6.5: the empty-state text otherwise overlaps the
+  // "New Invoice" FAB — the FAB is absolutely positioned outside the
+  // FlatList's own layout flow, so `listContent`'s paddingBottom alone
+  // doesn't reserve space for it under the empty/no-results copy.
+  emptyStateWrapper: {
+    paddingBottom: 96,
   },
   fab: {
     position: 'absolute',

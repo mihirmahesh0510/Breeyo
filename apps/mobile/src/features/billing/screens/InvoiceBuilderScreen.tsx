@@ -31,6 +31,7 @@ import {
   buildDraftPayload,
   buildFinalizeInput,
   classifyFinalizeError,
+  customLineFrom,
   draftFromInvoiceDetail,
   inventoryLineFrom,
   isFinalizeBlocked,
@@ -308,6 +309,24 @@ export function InvoiceBuilderScreen({
     [addLine, productQuery.data, settings?.defaultGstRate],
   );
 
+  const handleAddCustomService = useCallback(
+    (name: string, pricePaise: number) => {
+      addLine(customLineFrom('service', name, pricePaise, settings?.defaultGstRate));
+      setServiceSheetVisible(false);
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    },
+    [addLine, settings?.defaultGstRate],
+  );
+
+  const handleAddCustomProduct = useCallback(
+    (name: string, pricePaise: number) => {
+      addLine(customLineFrom('product', name, pricePaise, settings?.defaultGstRate));
+      setProductSheetVisible(false);
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    },
+    [addLine, settings?.defaultGstRate],
+  );
+
   const handleRemove = useCallback(
     (localId: string) => {
       removeLine(localId);
@@ -540,7 +559,7 @@ export function InvoiceBuilderScreen({
         onDismiss={() => setServiceSheetVisible(false)}
         services={catalogEntries}
         onSelect={handleAddService}
-        onAddCustom={() => setServiceSheetVisible(false)}
+        onAddCustom={handleAddCustomService}
         searchTerm={serviceSearch}
         onSearchTermChange={setServiceSearch}
         isSearching={catalogQuery.isFetching}
@@ -552,7 +571,7 @@ export function InvoiceBuilderScreen({
         onDismiss={() => setProductSheetVisible(false)}
         services={productEntries}
         onSelect={handleAddProduct}
-        onAddCustom={() => setProductSheetVisible(false)}
+        onAddCustom={handleAddCustomProduct}
         searchTerm={productSearch}
         onSearchTermChange={setProductSearch}
         isSearching={productQuery.isFetching}

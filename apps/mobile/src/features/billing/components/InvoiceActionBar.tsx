@@ -21,6 +21,11 @@ export interface InvoiceActionBarProps {
   hasPayments: boolean;
   /** `invoice.exceptionFlag` (D-35, D-36). Non-null suppresses money actions. */
   exceptionFlag?: string | null;
+  /**
+   * Whether the caller holds `MANAGE_PAYMENTS` (E2E-BUG-FIX-PLAN.md §6.3).
+   * Defaults to `true` — see `InvoiceActionInput.hasManagePayments`.
+   */
+  hasManagePayments?: boolean;
 
   onPay: () => void;
   onPrint: () => void;
@@ -101,6 +106,7 @@ export function InvoiceActionBar({
   status,
   hasPayments,
   exceptionFlag = null,
+  hasManagePayments = true,
   onPay,
   onPrint,
   onShare,
@@ -113,8 +119,8 @@ export function InvoiceActionBar({
   testID,
 }: InvoiceActionBarProps) {
   const input = useMemo(
-    () => ({ status, hasPayments, exceptionFlag }),
-    [status, hasPayments, exceptionFlag],
+    () => ({ status, hasPayments, exceptionFlag, hasManagePayments }),
+    [status, hasPayments, exceptionFlag, hasManagePayments],
   );
 
   const actions = useMemo(() => visibleInvoiceActions(input), [input]);

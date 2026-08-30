@@ -519,6 +519,32 @@ export function serviceLineFrom(
 }
 
 /**
+ * A hand-entered service or product with no catalog/inventory backing —
+ * `ServiceCatalogSheet.onAddCustom`/`ProductCatalogSheet.onAddCustom` hand
+ * the screen a bare name+price pair rather than a catalog entry, so
+ * `serviceLineFrom`/`inventoryLineFrom` (which both key off an entry's own
+ * id and rate) don't apply. Falls back to the clinic default rate, same as
+ * an override-less catalog entry.
+ */
+export function customLineFrom(
+  lineType: 'service' | 'product',
+  name: string,
+  pricePaise: number,
+  clinicDefaultRate: number | null | undefined,
+): InvoiceBuilderLineInput {
+  const gstRatePercent = resolveRate(undefined, clinicDefaultRate);
+
+  return {
+    lineType,
+    description: name,
+    quantity: 1,
+    unitPricePaise: pricePaise,
+    taxTreatment: treatmentForRate(gstRatePercent),
+    gstRatePercent,
+  };
+}
+
+/**
  * `InventoryItem.sellingPrice` is rupees as a `Decimal(10,2)`; every money value
  * in billing is integer paise (D-31). This is the conversion, and it is the only
  * one on the product path.

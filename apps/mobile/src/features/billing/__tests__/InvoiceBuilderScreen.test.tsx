@@ -32,6 +32,7 @@ import {
   buildDraftPayload,
   buildFinalizeInput,
   classifyFinalizeError,
+  customLineFrom,
   draftFromInvoiceDetail,
   inventoryLineFrom,
   inventorySellingPriceToPaise,
@@ -569,6 +570,40 @@ describe('turning a catalog or inventory selection into a line', () => {
     expect(line.gstRatePercent).toBe(5);
     // Adding a product by hand does not decrement stock — finalize does that.
     expect(line.stockMovementId).toBeUndefined();
+  });
+});
+
+// ─── Custom service/product lines (E2E-BUG-FIX-PLAN.md §6.4) ───────────────
+//
+// `ServiceCatalogSheet.onAddCustom` and `ProductCatalogSheet.onAddCustom` hand
+// the screen a bare `(name, pricePaise)` pair, not a catalog entry — there is
+// no `ServiceCatalogEntry`/`InventoryItem` to look up, so `serviceLineFrom`/
+// `inventoryLineFrom` don't apply. `customLineFrom` is the missing piece that
+// turns that pair into a line with no catalog/inventory id at all.
+
+describe('turning a custom name+price pair into a line', () => {
+  it('builds a custom service line with no serviceCatalogId', () => {
+    const line = customLineFrom('service', 'Suture removal', 15_000, 5);
+
+    expect(line.lineType).toBe('service');
+    expect(line.serviceCatalogId).toBeUndefined();
+    expect(line.description).toBe('Suture removal');
+    expect(line.unitPricePaise).toBe(15_000);
+    expect(line.quantity).toBe(1);
+    expect(line.gstRatePercent).toBe(5);
+    expect(line.taxTreatment).toBe('taxable');
+  });
+
+  it('builds a custom product line with no inventoryItemId', () => {
+    const line = customLineFrom('product', 'Elizabethan collar (spare)', 8_000, null);
+
+    expect(line.lineType).toBe('product');
+    expect(line.inventoryItemId).toBeUndefined();
+    expect(line.description).toBe('Elizabethan collar (spare)');
+    expect(line.unitPricePaise).toBe(8_000);
+    // No clinic default rate either → exempt, same fallback as serviceLineFrom/inventoryLineFrom.
+    expect(line.gstRatePercent).toBe(0);
+    expect(line.taxTreatment).toBe('exempt');
   });
 });
 

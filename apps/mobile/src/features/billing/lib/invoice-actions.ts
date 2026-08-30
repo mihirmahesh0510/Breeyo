@@ -103,6 +103,13 @@ export interface InvoiceActionInput {
   hasPayments: boolean;
   /** `invoices.exception_flag` (D-35, D-36). Non-null blocks money actions. */
   exceptionFlag?: string | null;
+  /**
+   * Whether the caller holds `MANAGE_PAYMENTS` (E2E-BUG-FIX-PLAN.md §6.3).
+   * Defaults to `true` so every pre-existing call site — none of which knew
+   * about permissions — keeps behaving exactly as before; only a caller that
+   * explicitly passes `false` gets the money actions hidden.
+   */
+  hasManagePayments?: boolean;
 }
 
 export interface InvoiceActionSet extends Record<InvoiceActionKey, boolean> {
@@ -154,7 +161,7 @@ const PAYMENT_TARGET_STATUSES: readonly InvoiceStatus[] = ['UNPAID', 'PARTIALLY_
 const NO_ADJUSTMENT_STATUSES: readonly InvoiceStatus[] = ['DRAFT', 'VOIDED'];
 
 export function invoiceActionSet(input: InvoiceActionInput): InvoiceActionSet {
-  const { status, hasPayments, exceptionFlag = null } = input;
+  const { status, hasPayments, exceptionFlag = null, hasManagePayments = true } = input;
 
   const blockedByException = isInvoiceActionBlocked(exceptionFlag);
 
@@ -165,8 +172,11 @@ export function invoiceActionSet(input: InvoiceActionInput): InvoiceActionSet {
 
   const canAdjust = !NO_ADJUSTMENT_STATUSES.includes(status);
 
-  const pay = !blockedByException && PAYMENT_TARGET_STATUSES.some((to) => advances(status, to));
-  const voidInvoice = !blockedByException && advances(status, 'VOIDED');
+  const pay =
+    !blockedByException &&
+    hasManagePayments &&
+    PAYMENT_TARGET_STATUSES.some((to) => advances(status, to));
+  const voidInvoice = !blockedByException && hasManagePayments && advances(status, 'VOIDED');
 
   return {
     pay,
@@ -177,8 +187,8 @@ export function invoiceActionSet(input: InvoiceActionInput): InvoiceActionSet {
     share: !isEditable,
     download: !isEditable,
     void: voidInvoice,
-    creditNote: !blockedByException && canAdjust,
-    refund: !blockedByException && canAdjust && hasPayments,
+    creditNote: !blockedByException && hasManagePayments && canAdjust,
+    refund: !blockedByException && hasManagePayments && canAdjust && hasPayments,
     edit: !blockedByException && isEditable,
     delete: !blockedByException && isEditable,
     blockedByException,
@@ -189,4 +199,11 @@ export function invoiceActionSet(input: InvoiceActionInput): InvoiceActionSet {
 export function visibleInvoiceActions(input: InvoiceActionInput): InvoiceActionKey[] {
   const actions = invoiceActionSet(input);
   return INVOICE_ACTION_ORDER.filter((key) => actions[key]);
+}
+
+export const MANAGE_PAYMENTS_PERMISSION = 'MANAGE_PAYMENTS';
+
+/** The client half of the MANAGE_PAYMENTS gate — see `hasManagePayments` above. */
+export function canManagePayments(permissions: readonly string[] | undefined): boolean {
+  return permissions?.includes(MANAGE_PAYMENTS_PERMISSION) ?? false;
 }
