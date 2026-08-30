@@ -80,6 +80,14 @@ created: 2026-04-19
 
 ---
 
+## E2E Bug Fix Additions (E2E-BUG-FIX-PLAN.md §5.1, 2026-08-19)
+
+| Behavior | Test | Why it matters |
+|----------|------|-----------------|
+| The Save/Save Changes button is disabled until name, category, unit, and a positive selling price are all filled | `apps/mobile/src/features/inventory/lib/__tests__/item-form-validation.test.ts` (`isRequiredFieldsValid`) | `requiredFieldsValid()` already existed but was never wired to the Save button's `disabled` prop — the button was clickable at all times regardless of form validity. Extracted the predicate so both the button gate and the existing silent-draft-creation effect share one tested source of truth. The category/unit picker's `BottomSheet` focus-corruption bug (§2.1) is a separate fix — re-verify manually once that lands, no additional Phase 5 code change needed for it. |
+
+---
+
 ## Validation Sign-Off
 
 - [ ] All tasks have `<automated>` verify or Wave 0 dependencies

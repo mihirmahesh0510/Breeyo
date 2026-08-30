@@ -19,6 +19,7 @@ import {
   useRemoveItemBarcode,
 } from '../hooks/useInventoryApi';
 import { ItemPhotoPicker } from '../components/ItemPhotoPicker';
+import { isRequiredFieldsValid } from '../lib/item-form-validation';
 
 interface FormBarcode {
   id: string;
@@ -110,17 +111,10 @@ export function ItemFormScreen() {
     setBarcodes(item.barcodes.map((b) => ({ id: b.id, code: b.code, format: b.format })));
   }, [existingItemQuery.data]);
 
-  const requiredFieldsValid = useCallback((): boolean => {
-    const price = Number(sellingPrice);
-    return (
-      name.trim().length > 0 &&
-      category.trim().length > 0 &&
-      unit.trim().length > 0 &&
-      sellingPrice.trim().length > 0 &&
-      !Number.isNaN(price) &&
-      price > 0
-    );
-  }, [name, category, unit, sellingPrice]);
+  const requiredFieldsValid = useCallback(
+    (): boolean => isRequiredFieldsValid({ name, category, unit, sellingPrice }),
+    [name, category, unit, sellingPrice],
+  );
 
   // Silent draft creation (create mode only), per the plan's ordering note.
   useEffect(() => {
@@ -504,7 +498,7 @@ export function ItemFormScreen() {
             label={isEditMode ? 'Save Changes' : 'Save Item'}
             onPress={handleSave}
             loading={isSaving}
-            disabled={isSaving}
+            disabled={isSaving || !requiredFieldsValid()}
             testID="item-form-save"
           />
         </View>
