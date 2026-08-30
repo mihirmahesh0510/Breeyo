@@ -48,6 +48,7 @@ Establishing a complete design system with design tokens, reusable component lib
 - **D-22:** Atomic design structure — Atoms (Button, Input) → Molecules (SearchBar) → Organisms (PatientCard). Clear hierarchy, scalable. Brad Frost methodology
 - **D-23:** Standard React prop naming conventions — follow React/React Native naming (onChange, onPress, disabled, children). Familiar, matches ecosystem, predictable for developers
 - **D-24:** Built-in accessibility by default — all components ship with ARIA labels, roles, keyboard navigation built-in. Developers can't forget. Matches WCAG 2.1 AA standard from D-06
+- **D-37 (added post-launch, E2E-BUG-FIX-PLAN.md §2.1):** Bottom sheets must dismiss any open keyboard when they become visible — `BottomSheet` now calls `Keyboard.dismiss()` on the visible transition. Without this, a field focused underneath the sheet keeps receiving keystrokes typed into the sheet's own inputs (surfaced via Inventory's category/unit picker corrupting the Selling Price field behind it; same code path is shared by every other `BottomSheet` consumer — Billing's `NewInvoiceSheet`/`ServiceCatalogSheet`/`PaymentCollectionSheet`/`RefundSheet`). This is now a required component contract for `BottomSheet` and any future sheet-style organism.
 
 ### Mobile Navigation & Interaction
 - **D-25:** Bottom tab bar as primary navigation — fixed tabs at bottom (Queue, Patients, Inventory, More). Thumb-friendly, industry standard for mobile-first apps, easy one-handed use

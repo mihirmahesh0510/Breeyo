@@ -1,6 +1,6 @@
 import { vi } from 'vitest';
 
-vi.mock('react', () => ({
+const reactMock = {
   createElement: vi.fn(),
   forwardRef: vi.fn((fn: any) => fn),
   memo: vi.fn((fn: any) => fn),
@@ -8,8 +8,20 @@ vi.mock('react', () => ({
   useCallback: vi.fn((fn: any) => fn),
   useMemo: vi.fn((fn: any) => fn()),
   useRef: vi.fn((init: any) => ({ current: init })),
-  useEffect: vi.fn(),
-}));
+  // Matches `useMemo`'s mock above: invoke immediately rather than staying a
+  // pure no-op, so components that rely on an effect's side effect (e.g.
+  // BottomSheet's Keyboard.dismiss) are actually exercised under test. This
+  // ignores the dependency array — real React's own dependency-diffing (which
+  // this mock does not attempt to reproduce) is what guarantees the effect
+  // doesn't re-run on every render in production.
+  useEffect: vi.fn((fn: any) => fn()),
+};
+
+// `import React from 'react'; React.createElement(...)` needs a default
+// export on the mock, not just named exports — components that only test
+// exported constants never hit this path, but ones that invoke the
+// component function itself (e.g. BottomSheet's Keyboard-dismiss test) do.
+vi.mock('react', () => ({ ...reactMock, default: reactMock }));
 
 vi.mock('react-native', () => ({
   Platform: { OS: 'android', select: vi.fn((obj: any) => obj.android) },
@@ -33,6 +45,7 @@ vi.mock('react-native', () => ({
   },
   Pressable: 'Pressable',
   TextInput: 'TextInput',
+  Keyboard: { dismiss: vi.fn() },
 }));
 
 const mockComponent = vi.fn(() => null);
